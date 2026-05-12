@@ -17,6 +17,7 @@ permissions:
 
 env:
   PLATFORM: linux/amd64
+  DEPLOY_USER: 'github'
   BETA_REMOTE_APP_DIR: /opt/umamoe-resources-beta
   PROD_REMOTE_APP_DIR: /opt/umamoe-resources
   BETA_HOST_PORT: '3104'
@@ -114,9 +115,11 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Create remote runtime env
+      - name: Upload deployment files
         shell: bash
         env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           IMAGE_REF: ${{ needs.build.outputs.image_ref }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MASTER_REFRESH_INTERVAL_SECONDS: ${{ secrets.MASTER_REFRESH_INTERVAL_SECONDS }}
@@ -126,6 +129,9 @@ jobs:
           RUST_LOG: ${{ secrets.RUST_LOG }}
         run: |
           set -euo pipefail
+          remote_port="${DEPLOY_PORT:-22}"
+          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${BETA_REMOTE_APP_DIR}' && chmod 700 '${BETA_REMOTE_APP_DIR}'"
+          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${BETA_REMOTE_APP_DIR}/docker-compose.yml"
           {
             printf 'IMAGE=%s\n' "$IMAGE_REF"
             printf 'HOST_PORT=%s\n' "${BETA_HOST_PORT}"
@@ -135,20 +141,7 @@ jobs:
             printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
             printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
             printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } > "$RUNNER_TEMP/umamoe-resources.env"
-
-      - name: Upload deployment files
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-        run: |
-          set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${BETA_REMOTE_APP_DIR}'"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${BETA_REMOTE_APP_DIR}/docker-compose.yml"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "$RUNNER_TEMP/umamoe-resources.env" "$DEPLOY_USER@$DEPLOY_HOST:${BETA_REMOTE_APP_DIR}/.env"
-          rm -f "$RUNNER_TEMP/umamoe-resources.env"
+          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${BETA_REMOTE_APP_DIR}/.env'"
 
       - name: Deploy remote container
         shell: bash
@@ -215,9 +208,11 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Create remote runtime env
+      - name: Upload deployment files
         shell: bash
         env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
           IMAGE_REF: ${{ needs.build.outputs.image_ref }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           MASTER_REFRESH_INTERVAL_SECONDS: ${{ secrets.MASTER_REFRESH_INTERVAL_SECONDS }}
@@ -227,6 +222,9 @@ jobs:
           RUST_LOG: ${{ secrets.RUST_LOG }}
         run: |
           set -euo pipefail
+          remote_port="${DEPLOY_PORT:-22}"
+          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${PROD_REMOTE_APP_DIR}' && chmod 700 '${PROD_REMOTE_APP_DIR}'"
+          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${PROD_REMOTE_APP_DIR}/docker-compose.yml"
           {
             printf 'IMAGE=%s\n' "$IMAGE_REF"
             printf 'HOST_PORT=%s\n' "${PROD_HOST_PORT}"
@@ -236,20 +234,7 @@ jobs:
             printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
             printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
             printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } > "$RUNNER_TEMP/umamoe-resources.env"
-
-      - name: Upload deployment files
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-        run: |
-          set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${PROD_REMOTE_APP_DIR}'"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${PROD_REMOTE_APP_DIR}/docker-compose.yml"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "$RUNNER_TEMP/umamoe-resources.env" "$DEPLOY_USER@$DEPLOY_HOST:${PROD_REMOTE_APP_DIR}/.env"
-          rm -f "$RUNNER_TEMP/umamoe-resources.env"
+          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${PROD_REMOTE_APP_DIR}/.env'"
 
       - name: Deploy remote container
         shell: bash
