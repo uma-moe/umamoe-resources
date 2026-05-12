@@ -16,27 +16,33 @@ permissions:
 
 env:
   PLATFORM: linux/amd64
-  DEPLOY_USER: 'github'
+  DEPLOY_USER: github
   REMOTE_IMAGE_DIR: /tmp/umamoe-resources-images
   IMAGE_NAME: umamoe-resources
-  BETA_REMOTE_APP_DIR: /opt/umamoe-resources-beta
-  PROD_REMOTE_APP_DIR: /opt/umamoe-resources
+  PROD_CONTAINER_NAME: umamoe-resources
+  BETA_CONTAINER_NAME: umamoe-resources-beta
+  PROD_ENV_FILE: /opt/umamoe-resources/env
+  BETA_ENV_FILE: /opt/umamoe-resources-beta/env
+  PROD_DATA_VOLUME: umamoe-resources-data
+  BETA_DATA_VOLUME: umamoe-resources-beta-data
+  APP_PORT: '3000'
   BETA_HOST_PORT: '3104'
   PROD_HOST_PORT: '3004'
 
 jobs:
   build:
+    name: Build Resources Image
     runs-on: ubuntu-latest
     outputs:
-      archive_name: ${{ steps.image.outputs.archive_name }}
-      image_tag: ${{ steps.image.outputs.image_tag }}
+      archive_name: ${{ steps.meta.outputs.archive_name }}
+      image_tag: ${{ steps.meta.outputs.image_tag }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compute image reference
-        id: image
+      - name: Set image metadata
+        id: meta
         shell: bash
         run: |
           set -euo pipefail
@@ -48,47 +54,45 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
+      - name: Build resources image
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: ${{ env.PLATFORM }}
           load: true
-          tags: ${{ steps.image.outputs.image_tag }}
+          tags: ${{ steps.meta.outputs.image_tag }}
           cache-from: type=gha,scope=umamoe-resources-image
           cache-to: type=gha,mode=max,scope=umamoe-resources-image
 
-      - name: Save image artifact
+      - name: Save resources image
         if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
-          docker save "${{ steps.image.outputs.image_tag }}" | gzip -1 > "${{ runner.temp }}/${{ steps.image.outputs.archive_name }}"
+          docker save "${{ steps.meta.outputs.image_tag }}" | gzip -1 > "${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}"
 
-      - name: Upload image artifact
+      - name: Upload resources image artifact
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: umamoe-resources-image
-          path: ${{ runner.temp }}/${{ steps.image.outputs.archive_name }}
+          path: ${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}
           if-no-files-found: error
 
   deploy_beta:
+    name: Deploy Beta
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment: beta
 
     steps:
-      - name: Download image artifact
+      - name: Download resources image artifact
         uses: actions/download-artifact@v4
         with:
           name: umamoe-resources-image
           path: ${{ runner.temp }}
-
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Mask deployment metadata
         shell: bash
@@ -97,15 +101,21 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          for value in "$DEPLOY_HOST"; do
+
+          mask_value() {
+            local value="$1"
             if [[ -n "$value" ]]; then
               echo "::add-mask::$value"
             fi
-          done
+          }
+
+          mask_value "$DEPLOY_HOST"
+
           while IFS= read -r known_host_line; do
-            if [[ -n "$known_host_line" ]]; then
-              echo "::add-mask::$known_host_line"
-            fi
+            mask_value "$known_host_line"
+            read -r known_host _ key_body _ <<< "$known_host_line"
+            mask_value "$known_host"
+            mask_value "$key_body"
           done <<< "$DEPLOY_KNOWN_HOSTS"
 
       - name: Start SSH agent
@@ -127,58 +137,87 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "DEPLOY_KNOWN_HOSTS is required for deploy host verification." >&2
+            exit 1
+          fi
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Upload deployment files
+      - name: Deploy beta container
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          MASTER_REFRESH_INTERVAL_SECONDS: ${{ secrets.MASTER_REFRESH_INTERVAL_SECONDS }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
-          RUST_LOG: ${{ secrets.RUST_LOG }}
+          HOST_PORT: ${{ env.BETA_HOST_PORT }}
+          CONTAINER_NAME: ${{ env.BETA_CONTAINER_NAME }}
+          APP_PORT: ${{ env.APP_PORT }}
+          ENV_FILE: ${{ env.BETA_ENV_FILE }}
+          DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
         run: |
           set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
-          remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${BETA_REMOTE_APP_DIR}' '${REMOTE_IMAGE_DIR}' && chmod 700 '${BETA_REMOTE_APP_DIR}'"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${BETA_REMOTE_APP_DIR}/docker-compose.yml"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:${remote_archive}"
-          {
-            printf 'IMAGE=%s\n' "$IMAGE_TAG"
-            printf 'COMPOSE_PROJECT_NAME=%s\n' 'umamoe-resources-beta'
-            printf 'CONTAINER_NAME=%s\n' 'umamoe-resources-beta'
-            printf 'DATA_VOLUME_NAME=%s\n' 'umamoe-resources-beta-data'
-            printf 'HOST_PORT=%s\n' "${BETA_HOST_PORT}"
-            printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
-            printf 'MASTER_REFRESH_INTERVAL_SECONDS=%s\n' "${MASTER_REFRESH_INTERVAL_SECONDS:-300}"
-            printf 'CLOUDFLARE_ZONE_ID=%s\n' "$CLOUDFLARE_ZONE_ID"
-            printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
-            printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
-            printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${BETA_REMOTE_APP_DIR}/env'"
 
-      - name: Deploy remote container
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${BETA_REMOTE_APP_DIR}'; docker compose --env-file env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"
+
+          ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_IMAGE_DIR'"
+          rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+
+          ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          archive="$1"
+          image_tag="$2"
+          container_name="$3"
+          app_port="$4"
+          host_port="$5"
+          env_file="$6"
+          data_volume_name="$7"
+
+          if [ ! -f "$env_file" ]; then
+            echo "Missing container env file: $env_file" >&2
+            exit 1
+          fi
+
+          gzip -dc "$archive" | docker load
+
+          docker rm -f "$container_name" >/dev/null 2>&1 || true
+          docker run -d \
+            --name "$container_name" \
+            --restart unless-stopped \
+            --add-host host.docker.internal:host-gateway \
+            --env-file "$env_file" \
+            -p "127.0.0.1:${host_port}:${app_port}" \
+            -v "$data_volume_name:/data" \
+            "$image_tag"
+
+          for _ in $(seq 1 60); do
+            running="$(docker inspect --format '{{.State.Running}}' "$container_name" 2>/dev/null || true)"
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || true)"
+
+            if [ "$health" = "healthy" ]; then
+              rm -f "$archive"
+              docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
+              exit 0
+            fi
+
+            if [ "$running" != "true" ]; then
+              docker logs --tail=120 "$container_name" || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          docker logs --tail=120 "$container_name" || true
+          exit 1
+          REMOTE_SCRIPT
 
   deploy_production:
-    if: github.event_name != 'pull_request'
+    name: Deploy Production
+    if: always() && github.event_name != 'pull_request' && needs.deploy_beta.result == 'success'
     needs:
       - build
       - deploy_beta
@@ -186,14 +225,11 @@ jobs:
     environment: production
 
     steps:
-      - name: Download image artifact
+      - name: Download resources image artifact
         uses: actions/download-artifact@v4
         with:
           name: umamoe-resources-image
           path: ${{ runner.temp }}
-
-      - name: Checkout
-        uses: actions/checkout@v4
 
       - name: Mask deployment metadata
         shell: bash
@@ -202,15 +238,21 @@ jobs:
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
-          for value in "$DEPLOY_HOST"; do
+
+          mask_value() {
+            local value="$1"
             if [[ -n "$value" ]]; then
               echo "::add-mask::$value"
             fi
-          done
+          }
+
+          mask_value "$DEPLOY_HOST"
+
           while IFS= read -r known_host_line; do
-            if [[ -n "$known_host_line" ]]; then
-              echo "::add-mask::$known_host_line"
-            fi
+            mask_value "$known_host_line"
+            read -r known_host _ key_body _ <<< "$known_host_line"
+            mask_value "$known_host"
+            mask_value "$key_body"
           done <<< "$DEPLOY_KNOWN_HOSTS"
 
       - name: Start SSH agent
@@ -232,52 +274,80 @@ jobs:
           set -euo pipefail
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
+          if [ -z "$DEPLOY_KNOWN_HOSTS" ]; then
+            echo "DEPLOY_KNOWN_HOSTS is required for deploy host verification." >&2
+            exit 1
+          fi
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
-      - name: Upload deployment files
+      - name: Deploy production container
         shell: bash
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
           ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          MASTER_REFRESH_INTERVAL_SECONDS: ${{ secrets.MASTER_REFRESH_INTERVAL_SECONDS }}
-          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
-          RUST_LOG: ${{ secrets.RUST_LOG }}
+          HOST_PORT: ${{ env.PROD_HOST_PORT }}
+          CONTAINER_NAME: ${{ env.PROD_CONTAINER_NAME }}
+          APP_PORT: ${{ env.APP_PORT }}
+          ENV_FILE: ${{ env.PROD_ENV_FILE }}
+          DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
         run: |
           set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
-          remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '${PROD_REMOTE_APP_DIR}' '${REMOTE_IMAGE_DIR}' && chmod 700 '${PROD_REMOTE_APP_DIR}'"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" deploy/docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:${PROD_REMOTE_APP_DIR}/docker-compose.yml"
-          rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:${remote_archive}"
-          {
-            printf 'IMAGE=%s\n' "$IMAGE_TAG"
-            printf 'COMPOSE_PROJECT_NAME=%s\n' 'umamoe-resources'
-            printf 'CONTAINER_NAME=%s\n' 'umamoe-resources'
-            printf 'DATA_VOLUME_NAME=%s\n' 'umamoe-resources-data'
-            printf 'HOST_PORT=%s\n' "${PROD_HOST_PORT}"
-            printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
-            printf 'MASTER_REFRESH_INTERVAL_SECONDS=%s\n' "${MASTER_REFRESH_INTERVAL_SECONDS:-300}"
-            printf 'CLOUDFLARE_ZONE_ID=%s\n' "$CLOUDFLARE_ZONE_ID"
-            printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
-            printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
-            printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${PROD_REMOTE_APP_DIR}/env'"
 
-      - name: Deploy remote container
-        shell: bash
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
-          ARCHIVE_NAME: ${{ needs.build.outputs.archive_name }}
-          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
-        run: |
-          set -euo pipefail
-          remote_port="${DEPLOY_PORT:-22}"
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${PROD_REMOTE_APP_DIR}'; docker compose --env-file env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"
+
+          ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$REMOTE_IMAGE_DIR'"
+          rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
+
+          ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          archive="$1"
+          image_tag="$2"
+          container_name="$3"
+          app_port="$4"
+          host_port="$5"
+          env_file="$6"
+          data_volume_name="$7"
+
+          if [ ! -f "$env_file" ]; then
+            echo "Missing container env file: $env_file" >&2
+            exit 1
+          fi
+
+          gzip -dc "$archive" | docker load
+
+          docker rm -f "$container_name" >/dev/null 2>&1 || true
+          docker run -d \
+            --name "$container_name" \
+            --restart unless-stopped \
+            --add-host host.docker.internal:host-gateway \
+            --env-file "$env_file" \
+            -p "127.0.0.1:${host_port}:${app_port}" \
+            -v "$data_volume_name:/data" \
+            "$image_tag"
+
+          for _ in $(seq 1 60); do
+            running="$(docker inspect --format '{{.State.Running}}' "$container_name" 2>/dev/null || true)"
+            health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container_name" 2>/dev/null || true)"
+
+            if [ "$health" = "healthy" ]; then
+              rm -f "$archive"
+              docker image prune -f --filter "until=168h" >/dev/null 2>&1 || true
+              exit 0
+            fi
+
+            if [ "$running" != "true" ]; then
+              docker logs --tail=120 "$container_name" || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          docker logs --tail=120 "$container_name" || true
+          exit 1
+          REMOTE_SCRIPT

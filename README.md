@@ -178,24 +178,25 @@ cargo run -- purge --data-dir generated-data
 
 ## Docker Deployment
 
-This repo now includes automatic Docker deployment via GitHub Actions in [.github/workflows/docker-deploy.yml](.github/workflows/docker-deploy.yml).
+This repo now deploys the same way as the backend/statistics style image-archive workflows: build the image in GitHub Actions, upload it as an artifact, copy it to the host, `docker load` it there, and restart the target container with `docker run`.
 
-What it does on pushes to `main` or `master`:
+What the workflow in [.github/workflows/docker-deploy.yml](.github/workflows/docker-deploy.yml) does on pushes to `main` or `master`:
 
 - Builds the container image from [Dockerfile](Dockerfile)
 - Saves the built image as a compressed artifact
-- Deploys the same image to beta and then production with separate remote app directories
-- Uploads [deploy/docker-compose.yml](deploy/docker-compose.yml) and a generated runtime `env` file to each remote target
-- Uploads the image artifact to the remote host, loads it with Docker, and restarts each environment with Docker Compose
+- Deploys beta first, then production
+- Copies the image archive to the remote host
+- Recreates the target container with `docker run`
+- Leaves your manual runtime env files alone
 
-The container runs the server on `0.0.0.0:3000` and stores `master.mdb` plus generated artifacts in the named Docker volume `resources-data`.
-
-Runtime files written on the remote host:
+Manual runtime env files on the remote host:
 
 - Beta: `/opt/umamoe-resources-beta/env`
 - Production: `/opt/umamoe-resources/env`
 
-Explicit runtime names:
+Those files are not written or overwritten by the workflow.
+
+Explicit runtime names managed by the workflow:
 
 - Beta container: `umamoe-resources-beta`
 - Production container: `umamoe-resources`
@@ -213,23 +214,26 @@ Required GitHub secrets:
 - `DEPLOY_PORT` optional, defaults to `22`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_KNOWN_HOSTS`
+
+Manual remote `env` files should contain the normal application env values only:
+
 - `DATABASE_URL`
+- `MASTER_REFRESH_INTERVAL_SECONDS`
+- `CLOUDFLARE_ZONE_ID`
+- `CLOUDFLARE_API_TOKEN`
 - `PUBLIC_BASE_URL`
-- `MASTER_REFRESH_INTERVAL_SECONDS` optional, defaults to `300`
-- `RUST_LOG` optional
-- `CLOUDFLARE_ZONE_ID` optional
-- `CLOUDFLARE_API_TOKEN` optional
+- `RUST_LOG`
 
-Use environment-scoped values for `PUBLIC_BASE_URL`:
+Recommended environment-specific values:
 
-- Beta environment: `https://beta.uma.moe`
-- Production environment: `https://uma.moe`
+- Beta `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PUBLIC_BASE_URL=https://beta.uma.moe`
+- Production `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PUBLIC_BASE_URL=https://uma.moe`
 
 Remote host requirements:
 
-- Docker with the Compose plugin installed
-- A user with permission to run `docker compose`
+- Docker installed
+- A user with permission to run `docker`
 - Enough temporary disk space under `/tmp/umamoe-resources-images` for the uploaded image archive during deployment
 - Network access from the container to the Postgres instance referenced by `DATABASE_URL`
 
-The remote app directories default to `/opt/umamoe-resources-beta` for beta and `/opt/umamoe-resources` for production inside [.github/workflows/docker-deploy.yml](.github/workflows/docker-deploy.yml). Those directories are created automatically by the deploy workflow with `mkdir -p` before files are copied.
+The workflow mounts the named Docker volume at `/data`, so refreshed `master.mdb` and generated resource artifacts persist across container replacements.
