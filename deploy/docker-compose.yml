@@ -1,13 +1,17 @@
+name: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be set}
+
 services:
   umamoe-resources:
     image: ${IMAGE:?IMAGE must be set}
+    container_name: ${CONTAINER_NAME:?CONTAINER_NAME must be set}
     restart: unless-stopped
     ports:
       - "${HOST_PORT:-3000}:3000"
     env_file:
-      - .env
+      - env
     volumes:
       - resources-data:/data
 
 volumes:
   resources-data:
+    name: ${DATA_VOLUME_NAME:?DATA_VOLUME_NAME must be set}
