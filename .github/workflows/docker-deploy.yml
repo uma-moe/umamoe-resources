@@ -152,6 +152,9 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:${remote_archive}"
           {
             printf 'IMAGE=%s\n' "$IMAGE_TAG"
+            printf 'COMPOSE_PROJECT_NAME=%s\n' 'umamoe-resources-beta'
+            printf 'CONTAINER_NAME=%s\n' 'umamoe-resources-beta'
+            printf 'DATA_VOLUME_NAME=%s\n' 'umamoe-resources-beta-data'
             printf 'HOST_PORT=%s\n' "${BETA_HOST_PORT}"
             printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
             printf 'MASTER_REFRESH_INTERVAL_SECONDS=%s\n' "${MASTER_REFRESH_INTERVAL_SECONDS:-300}"
@@ -159,7 +162,7 @@ jobs:
             printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
             printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
             printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${BETA_REMOTE_APP_DIR}/.env'"
+          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${BETA_REMOTE_APP_DIR}/env'"
 
       - name: Deploy remote container
         shell: bash
@@ -172,7 +175,7 @@ jobs:
           set -euo pipefail
           remote_port="${DEPLOY_PORT:-22}"
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${BETA_REMOTE_APP_DIR}'; docker compose --env-file .env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"
+          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${BETA_REMOTE_APP_DIR}'; docker compose --env-file env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"
 
   deploy_production:
     if: github.event_name != 'pull_request'
@@ -254,6 +257,9 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $remote_port" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:${remote_archive}"
           {
             printf 'IMAGE=%s\n' "$IMAGE_TAG"
+            printf 'COMPOSE_PROJECT_NAME=%s\n' 'umamoe-resources'
+            printf 'CONTAINER_NAME=%s\n' 'umamoe-resources'
+            printf 'DATA_VOLUME_NAME=%s\n' 'umamoe-resources-data'
             printf 'HOST_PORT=%s\n' "${PROD_HOST_PORT}"
             printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
             printf 'MASTER_REFRESH_INTERVAL_SECONDS=%s\n' "${MASTER_REFRESH_INTERVAL_SECONDS:-300}"
@@ -261,7 +267,7 @@ jobs:
             printf 'CLOUDFLARE_API_TOKEN=%s\n' "$CLOUDFLARE_API_TOKEN"
             printf 'PUBLIC_BASE_URL=%s\n' "$PUBLIC_BASE_URL"
             printf 'RUST_LOG=%s\n' "${RUST_LOG:-umamoe_resources=info,info}"
-          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${PROD_REMOTE_APP_DIR}/.env'"
+          } | ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "umask 077 && cat > '${PROD_REMOTE_APP_DIR}/env'"
 
       - name: Deploy remote container
         shell: bash
@@ -274,4 +280,4 @@ jobs:
           set -euo pipefail
           remote_port="${DEPLOY_PORT:-22}"
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
-          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${PROD_REMOTE_APP_DIR}'; docker compose --env-file .env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"
+          ssh -o LogLevel=ERROR -p "$remote_port" "$DEPLOY_USER@$DEPLOY_HOST" "set -euo pipefail; gzip -dc '${remote_archive}' | docker load >/dev/null; rm -f '${remote_archive}'; docker image inspect '${IMAGE_TAG}' >/dev/null; cd '${PROD_REMOTE_APP_DIR}'; docker compose --env-file env up -d --remove-orphans; docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true"

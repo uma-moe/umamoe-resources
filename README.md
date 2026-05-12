@@ -185,10 +185,22 @@ What it does on pushes to `main` or `master`:
 - Builds the container image from [Dockerfile](Dockerfile)
 - Saves the built image as a compressed artifact
 - Deploys the same image to beta and then production with separate remote app directories
-- Uploads [deploy/docker-compose.yml](deploy/docker-compose.yml) and a generated runtime `.env` file to each remote target
+- Uploads [deploy/docker-compose.yml](deploy/docker-compose.yml) and a generated runtime `env` file to each remote target
 - Uploads the image artifact to the remote host, loads it with Docker, and restarts each environment with Docker Compose
 
 The container runs the server on `0.0.0.0:3000` and stores `master.mdb` plus generated artifacts in the named Docker volume `resources-data`.
+
+Runtime files written on the remote host:
+
+- Beta: `/opt/umamoe-resources-beta/env`
+- Production: `/opt/umamoe-resources/env`
+
+Explicit runtime names:
+
+- Beta container: `umamoe-resources-beta`
+- Production container: `umamoe-resources`
+- Beta data volume: `umamoe-resources-beta-data`
+- Production data volume: `umamoe-resources-data`
 
 Fixed host ports in the workflow:
 
