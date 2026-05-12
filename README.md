@@ -183,10 +183,10 @@ This repo now includes automatic Docker deployment via GitHub Actions in [.githu
 What it does on pushes to `main` or `master`:
 
 - Builds the container image from [Dockerfile](Dockerfile)
-- Pushes the image to GHCR as `ghcr.io/<owner>/umamoe-resources:sha-<commit>`
+- Saves the built image as a compressed artifact
 - Deploys the same image to beta and then production with separate remote app directories
 - Uploads [deploy/docker-compose.yml](deploy/docker-compose.yml) and a generated runtime `.env` file to each remote target
-- Pulls the new image on the server and restarts each environment with Docker Compose
+- Uploads the image artifact to the remote host, loads it with Docker, and restarts each environment with Docker Compose
 
 The container runs the server on `0.0.0.0:3000` and stores `master.mdb` plus generated artifacts in the named Docker volume `resources-data`.
 
@@ -201,8 +201,6 @@ Required GitHub secrets:
 - `DEPLOY_PORT` optional, defaults to `22`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_KNOWN_HOSTS`
-- `GHCR_PULL_USERNAME`
-- `GHCR_PULL_TOKEN`
 - `DATABASE_URL`
 - `PUBLIC_BASE_URL`
 - `MASTER_REFRESH_INTERVAL_SECONDS` optional, defaults to `300`
@@ -210,10 +208,16 @@ Required GitHub secrets:
 - `CLOUDFLARE_ZONE_ID` optional
 - `CLOUDFLARE_API_TOKEN` optional
 
+Use environment-scoped values for `PUBLIC_BASE_URL`:
+
+- Beta environment: `https://beta.uma.moe`
+- Production environment: `https://uma.moe`
+
 Remote host requirements:
 
 - Docker with the Compose plugin installed
 - A user with permission to run `docker compose`
+- Enough temporary disk space under `/tmp/umamoe-resources-images` for the uploaded image archive during deployment
 - Network access from the container to the Postgres instance referenced by `DATABASE_URL`
 
-The remote app directories default to `/opt/umamoe-resources-beta` for beta and `/opt/umamoe-resources` for production inside [.github/workflows/docker-deploy.yml](.github/workflows/docker-deploy.yml).
+The remote app directories default to `/opt/umamoe-resources-beta` for beta and `/opt/umamoe-resources` for production inside [.github/workflows/docker-deploy.yml](.github/workflows/docker-deploy.yml). Those directories are created automatically by the deploy workflow with `mkdir -p` before files are copied.
