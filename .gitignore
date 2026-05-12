@@ -1,0 +1,5 @@
+/target/
+/target-validation/
+/generated-data/
+.env
+.env.local
