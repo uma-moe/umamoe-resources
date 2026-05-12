@@ -1,0 +1,13 @@
+services:
+  umamoe-resources:
+    image: ${IMAGE:?IMAGE must be set}
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      - resources-data:/data
+
+volumes:
+  resources-data:

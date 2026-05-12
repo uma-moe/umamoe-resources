@@ -1,0 +1,8 @@
+.env
+.env.local
+.git
+.github
+generated-data
+master.mdb
+target
+target-validation
