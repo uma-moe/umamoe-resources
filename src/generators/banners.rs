@@ -78,7 +78,7 @@ pub fn generate_character_banners(connection: &Connection) -> Result<Vec<Charact
         let start_dt = clamped_start(gacha.start_date);
         let end_dt = timestamp_to_utc(gacha.end_date);
         let year = start_dt.format("%Y").to_string().parse::<i32>()?;
-        let image = format!("{}_{}.png", year, gacha.id);
+        let image = format!("{}_{}.webp", year, gacha.id);
         let pickup_card_ids = pickup_ids(&pickups_by_gacha, gacha.id, false);
 
         banners.push(CharacterBanner {
@@ -109,7 +109,7 @@ pub fn generate_support_banners(connection: &Connection) -> Result<Vec<SupportBa
         let start_dt = clamped_start(gacha.start_date);
         let end_dt = timestamp_to_utc(gacha.end_date);
         let year = start_dt.format("%Y").to_string().parse::<i32>()?;
-        let image = format!("{}_{}.png", year, gacha.id);
+        let image = format!("{}_{}.webp", year, gacha.id);
         let pickup_card_ids = pickup_ids(&pickups_by_gacha, gacha.id, false);
 
         banners.push(SupportBanner {
@@ -146,7 +146,7 @@ pub fn generate_paid_banners(connection: &Connection) -> Result<Vec<PaidBanner>>
             gacha_type: gacha.gacha_type,
             card_type,
             year,
-            image: format!("{}.png", gacha.id),
+            image: format!("{}.webp", gacha.id),
             start_date: format_date_display(start_dt),
             end_date: format_date_display(end_dt),
             pickup_card_ids,

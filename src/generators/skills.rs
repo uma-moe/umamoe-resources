@@ -104,7 +104,7 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
                     skill_id,
                     rarity: row.get(1)?,
                     conditions: row.get(2)?,
-                    icon: format!("utx_ico_skill_{}.png", icon_id),
+                    icon: format!("utx_ico_skill_{}.webp", icon_id),
                     name: row.get(4)?,
                     description: row.get(5)?,
                     base_cost: row.get(6)?,
@@ -163,7 +163,7 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
                 description,
                 base_cost,
                 conditions: String::new(),
-                icon: "utx_ico_skill_10011.png".to_string(),
+                icon: "utx_ico_skill_10011.webp".to_string(),
             });
     }
 

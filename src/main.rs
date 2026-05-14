@@ -191,7 +191,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         spawn_refresh_loop(pool, args.clone());
     }
 
-    static_api::serve(args.data_dir, args.bind).await
+    static_api::serve(args.data_dir, args.master, args.bind).await
 }
 
 async fn refresh_from_db(
