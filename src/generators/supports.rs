@@ -27,8 +27,8 @@ pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
             "release_date": common::release_date(card.release_timestamp),
             "rarity": card.rarity,
             "href": format!("/umamusume/characters/{}-{}", card.card_id, common::slug(&name)),
-            "image": format!("chara_stand_{}_{}.png", card.chara_id, card.card_id),
-            "full_image": format!("tex_support_card_{}.png", card.card_id),
+            "image": format!("chara_stand_{}_{}.webp", card.chara_id, card.card_id),
+            "full_image": format!("tex_support_card_{}.webp", card.card_id),
             "type_icon_url": serde_json::Value::Null,
             "type_icon_alt": serde_json::Value::Null,
         }));

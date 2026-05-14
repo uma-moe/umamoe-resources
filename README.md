@@ -91,6 +91,7 @@ Useful routes:
 - `/resources/` - default resource API entry point; returns the latest manifest
 - `/resources/manifest.json` - short CDN cache, points the frontend at the current version
 - `/resources/healthz` - resource API health check
+- `/resources/current/sql?sql=SELECT%201` - read-only ad hoc SQLite query endpoint against `master.mdb`
 - `/resources/current/factors.json.gz` - short CDN cache, convenient mutable alias
 - `/resources/{version}/factors.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/race_program.json.gz` - one-year immutable CDN cache
@@ -105,6 +106,8 @@ Useful routes:
 - `/resources/{version}/skills.json.gz` - one-year immutable CDN cache
 
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
+
+The SQL endpoint returns normal JSON, not gzip. It only accepts a single `SELECT` or `WITH` statement, executes it against `master.mdb` through a read-only SQLite connection, and responds as `{ "columns": [...], "rows": [[...]], "truncated": false }`.
 
 ## Generate Only
 
