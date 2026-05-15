@@ -6,11 +6,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 use tracing::{info, warn};
 
+mod browser_proof;
 mod cache;
 mod generators;
 #[path = "../master_fetch.rs"]
 mod master_fetch;
 mod pipeline;
+mod redis_store;
 mod static_api;
 
 #[derive(Parser)]

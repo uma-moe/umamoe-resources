@@ -28,6 +28,7 @@ env:
   APP_PORT: '3000'
   BETA_HOST_PORT: '3104'
   PROD_HOST_PORT: '3004'
+  SHARED_NETWORK_NAME: umamoe-services
 
 jobs:
   build:
@@ -156,6 +157,7 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
+          SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
         run: |
           set -euo pipefail
 
@@ -165,7 +167,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -175,6 +177,7 @@ jobs:
           host_port="$5"
           env_file="$6"
           data_volume_name="$7"
+          shared_network_name="$8"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -182,11 +185,13 @@ jobs:
           fi
 
           gzip -dc "$archive" | docker load
+          docker network create "$shared_network_name" >/dev/null 2>&1 || true
 
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
             --name "$container_name" \
             --restart unless-stopped \
+            --network "$shared_network_name" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
             -p "127.0.0.1:${host_port}:${app_port}" \
@@ -293,6 +298,7 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           ENV_FILE: ${{ env.PROD_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
+          SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
         run: |
           set -euo pipefail
 
@@ -302,7 +308,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -312,6 +318,7 @@ jobs:
           host_port="$5"
           env_file="$6"
           data_volume_name="$7"
+          shared_network_name="$8"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -319,11 +326,13 @@ jobs:
           fi
 
           gzip -dc "$archive" | docker load
+          docker network create "$shared_network_name" >/dev/null 2>&1 || true
 
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
             --name "$container_name" \
             --restart unless-stopped \
+            --network "$shared_network_name" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
             -p "127.0.0.1:${host_port}:${app_port}" \
