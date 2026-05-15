@@ -2,9 +2,10 @@ use crate::pipeline::{read_manifest, read_version_manifest, ResourceManifest};
 use anyhow::Result;
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
-    CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG, VARY,
+    ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG,
+    ORIGIN, REFERER, VARY,
 };
-use axum::http::{HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
@@ -22,15 +23,34 @@ const MAX_SQL_ROWS: usize = 1_000;
 const MAX_SQL_LENGTH: usize = 16_384;
 
 #[derive(Clone)]
-struct AppState {
+pub(crate) struct AppState {
     data_dir: PathBuf,
     master_path: PathBuf,
+    pub redis_store: Option<crate::redis_store::RedisStore>,
 }
 
 pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) -> Result<()> {
+    let redis_store = match crate::redis_store::RedisStore::from_env() {
+        Ok(Some(store)) => {
+            info!("Redis token/cache store configured");
+            Some(store)
+        }
+        Ok(None) => {
+            tracing::error!(
+                "REDIS_URL not set; protected resource routes will return 503 unless bypassed"
+            );
+            None
+        }
+        Err(error) => {
+            tracing::error!("Redis token/cache store disabled: {}", error);
+            None
+        }
+    };
+
     let state = AppState {
         data_dir,
         master_path,
+        redis_store,
     };
     let app = Router::new()
         .route("/healthz", get(healthz))
@@ -44,7 +64,11 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
             "/resources/:version/:file_name",
             get(get_versioned_resource),
         )
-        .layer(CorsLayer::permissive())
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::browser_proof::api_protection_middleware,
+        ))
+        .layer(cors_layer())
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -52,6 +76,48 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
     info!(address = %bind, "serving generated resources");
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+fn cors_layer() -> CorsLayer {
+    let origins: Vec<HeaderValue> = allowed_origins()
+        .into_iter()
+        .filter_map(|origin| origin.parse().ok())
+        .collect();
+
+    CorsLayer::new()
+        .allow_origin(origins)
+        .allow_credentials(true)
+        .allow_methods([Method::GET, Method::OPTIONS])
+        .allow_headers([
+            CONTENT_TYPE,
+            AUTHORIZATION,
+            ACCEPT,
+            REFERER,
+            ORIGIN,
+            "CF-Turnstile-Token".parse().unwrap(),
+            "X-Turnstile-Token".parse().unwrap(),
+            "X-Browser-Proof".parse().unwrap(),
+            "X-API-Key".parse().unwrap(),
+        ])
+        .expose_headers([
+            "X-Browser-Proof".parse().unwrap(),
+            "X-Browser-Proof-TTL".parse().unwrap(),
+        ])
+}
+
+fn allowed_origins() -> Vec<String> {
+    std::env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| {
+            if std::env::var("DEBUG_MODE").unwrap_or_default() == "true" {
+                "http://localhost:4200,http://localhost:3000,http://127.0.0.1:4200".to_string()
+            } else {
+                "https://uma.moe,https://www.uma.moe,https://beta.uma.moe,https://honse.moe,https://www.honse.moe".to_string()
+            }
+        })
+        .split(',')
+        .map(|origin| origin.trim().to_string())
+        .filter(|origin| !origin.is_empty())
+        .collect()
 }
 
 async fn healthz() -> &'static str {
