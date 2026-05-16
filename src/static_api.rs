@@ -1,5 +1,5 @@
 use crate::pipeline::{read_manifest, read_version_manifest, ResourceManifest};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
     ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG,
@@ -52,6 +52,38 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
         master_path,
         redis_store,
     };
+
+    if let Some(internal_port) = internal_resources_port() {
+        let internal_host =
+            std::env::var("RESOURCES_INTERNAL_HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
+        let internal_bind = format!("{}:{}", internal_host, internal_port)
+            .parse::<SocketAddr>()
+            .context("failed to parse RESOURCES_INTERNAL_HOST/RESOURCES_INTERNAL_PORT")?;
+        let internal_app = resource_router(state.clone(), false);
+        tokio::spawn(async move {
+            match tokio::net::TcpListener::bind(internal_bind).await {
+                Ok(listener) => {
+                    info!(address = %internal_bind, "serving internal generated resources");
+                    if let Err(error) = axum::serve(listener, internal_app).await {
+                        tracing::error!("internal resources server stopped: {}", error);
+                    }
+                }
+                Err(error) => {
+                    tracing::error!("failed to bind internal resources server: {}", error)
+                }
+            }
+        });
+    }
+
+    let app = resource_router(state, true);
+
+    let listener = tokio::net::TcpListener::bind(bind).await?;
+    info!(address = %bind, "serving generated resources");
+    axum::serve(listener, app).await?;
+    Ok(())
+}
+
+fn resource_router(state: AppState, protected: bool) -> Router {
     let app = Router::new()
         .route("/healthz", get(healthz))
         .route("/resources", get(get_manifest))
@@ -63,19 +95,26 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
-        )
-        .layer(axum::middleware::from_fn_with_state(
+        );
+
+    let app = if protected {
+        app.layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::browser_proof::api_protection_middleware,
         ))
-        .layer(cors_layer())
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    } else {
+        app
+    };
 
-    let listener = tokio::net::TcpListener::bind(bind).await?;
-    info!(address = %bind, "serving generated resources");
-    axum::serve(listener, app).await?;
-    Ok(())
+    app.layer(cors_layer())
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
+
+fn internal_resources_port() -> Option<u16> {
+    std::env::var("RESOURCES_INTERNAL_PORT")
+        .ok()
+        .and_then(|value| value.parse().ok())
 }
 
 fn cors_layer() -> CorsLayer {
@@ -94,8 +133,6 @@ fn cors_layer() -> CorsLayer {
             ACCEPT,
             REFERER,
             ORIGIN,
-            "CF-Turnstile-Token".parse().unwrap(),
-            "X-Turnstile-Token".parse().unwrap(),
             "X-Browser-Proof".parse().unwrap(),
             "X-API-Key".parse().unwrap(),
         ])
@@ -258,9 +295,9 @@ async fn resource_response(
 }
 
 fn normalize_file_name(file_name: &str) -> Result<&str, ApiError> {
-    let valid = file_name.chars().all(|character| {
-        character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-    });
+    let valid = file_name
+        .chars()
+        .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-'));
     if !valid {
         return Err(ApiError::new(
             StatusCode::BAD_REQUEST,
@@ -285,10 +322,7 @@ fn normalize_file_name(file_name: &str) -> Result<&str, ApiError> {
 fn validate_read_only_sql(sql: &str) -> Result<(), ApiError> {
     let trimmed = sql.trim();
     if trimmed.is_empty() {
-        return Err(ApiError::new(
-            StatusCode::BAD_REQUEST,
-            "missing sql query",
-        ));
+        return Err(ApiError::new(StatusCode::BAD_REQUEST, "missing sql query"));
     }
 
     if trimmed.len() > MAX_SQL_LENGTH {

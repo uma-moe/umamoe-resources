@@ -20,7 +20,7 @@ WORKDIR /app
 COPY --from=builder /app/target/release/umamoe-resources /usr/local/bin/umamoe-resources
 
 USER appuser
-EXPOSE 3000
+EXPOSE 3000 3204
 VOLUME ["/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=5 \

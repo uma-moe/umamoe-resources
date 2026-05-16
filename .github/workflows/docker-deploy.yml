@@ -26,9 +26,12 @@ env:
   PROD_DATA_VOLUME: umamoe-resources-data
   BETA_DATA_VOLUME: umamoe-resources-beta-data
   APP_PORT: '3000'
+  INTERNAL_APP_PORT: '3204'
   BETA_HOST_PORT: '3104'
   PROD_HOST_PORT: '3004'
   SHARED_NETWORK_NAME: umamoe-services
+  PROD_SHARED_SERVICE_ALIAS: umamoe-resources
+  BETA_SHARED_SERVICE_ALIAS: umamoe-resources-beta
 
 jobs:
   build:
@@ -155,9 +158,11 @@ jobs:
           HOST_PORT: ${{ env.BETA_HOST_PORT }}
           CONTAINER_NAME: ${{ env.BETA_CONTAINER_NAME }}
           APP_PORT: ${{ env.APP_PORT }}
+          INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
+          SHARED_SERVICE_ALIAS: ${{ env.BETA_SHARED_SERVICE_ALIAS }}
         run: |
           set -euo pipefail
 
@@ -167,17 +172,19 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
           image_tag="$2"
           container_name="$3"
           app_port="$4"
-          host_port="$5"
-          env_file="$6"
-          data_volume_name="$7"
-          shared_network_name="$8"
+          internal_app_port="$5"
+          host_port="$6"
+          env_file="$7"
+          data_volume_name="$8"
+          shared_network_name="$9"
+          shared_service_alias="${10}"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -192,8 +199,13 @@ jobs:
             --name "$container_name" \
             --restart unless-stopped \
             --network "$shared_network_name" \
+            --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
+            -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
+            -e REDIS_URL=redis://redis:6379/0 \
+            -e REDIS_KEY_PREFIX=umamoe \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$data_volume_name:/data" \
             "$image_tag"
@@ -296,9 +308,11 @@ jobs:
           HOST_PORT: ${{ env.PROD_HOST_PORT }}
           CONTAINER_NAME: ${{ env.PROD_CONTAINER_NAME }}
           APP_PORT: ${{ env.APP_PORT }}
+          INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.PROD_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
+          SHARED_SERVICE_ALIAS: ${{ env.PROD_SHARED_SERVICE_ALIAS }}
         run: |
           set -euo pipefail
 
@@ -308,17 +322,19 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
           image_tag="$2"
           container_name="$3"
           app_port="$4"
-          host_port="$5"
-          env_file="$6"
-          data_volume_name="$7"
-          shared_network_name="$8"
+          internal_app_port="$5"
+          host_port="$6"
+          env_file="$7"
+          data_volume_name="$8"
+          shared_network_name="$9"
+          shared_service_alias="${10}"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -333,8 +349,13 @@ jobs:
             --name "$container_name" \
             --restart unless-stopped \
             --network "$shared_network_name" \
+            --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
+            -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
+            -e REDIS_URL=redis://redis:6379/0 \
+            -e REDIS_KEY_PREFIX=umamoe \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$data_volume_name:/data" \
             "$image_tag"
