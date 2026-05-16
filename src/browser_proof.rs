@@ -33,6 +33,12 @@ struct ErrorBody<'a> {
     status: u16,
 }
 
+#[derive(Debug)]
+enum BrowserProofError {
+    Missing,
+    Store(String),
+}
+
 pub async fn api_protection_middleware(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -72,28 +78,35 @@ pub async fn api_protection_middleware(
 
             next.run(request).await
         }
-        Err(error) => {
+        Err(BrowserProofError::Missing) => {
             warn!(
-                "Invalid browser proof from ip {} on {}: {}",
-                client_ip, path, error
+                "Invalid browser proof from ip {} on {}: proof is not present in shared store",
+                client_ip, path
             );
             json_error(StatusCode::FORBIDDEN, "browser_proof_required")
+        }
+        Err(BrowserProofError::Store(error)) => {
+            error!("Browser proof store unavailable: {}", error);
+            json_error(StatusCode::SERVICE_UNAVAILABLE, "browser_proof_unavailable")
         }
     }
 }
 
-async fn verify_browser_proof(store: &RedisStore, token: &str) -> Result<String, String> {
+async fn verify_browser_proof(
+    store: &RedisStore,
+    token: &str,
+) -> Result<String, BrowserProofError> {
     let key = store.hashed_key("browser-proof", token);
     let exists = store
         .get_string(&key)
         .await
-        .map_err(|error| format!("proof store unavailable: {}", error))?
+        .map_err(BrowserProofError::Store)?
         .is_some();
 
     if exists {
         Ok(format!("browser-proof:{}", key))
     } else {
-        Err("proof is not present in shared store".to_string())
+        Err(BrowserProofError::Missing)
     }
 }
 
@@ -120,7 +133,7 @@ fn should_skip_api_protection(method: &Method, path: &str) -> bool {
 }
 
 fn api_protection_bypassed() -> bool {
-    env_bool("API_PROTECTION_BYPASS") || env_bool("TURNSTILE_BYPASS")
+    env_bool("API_PROTECTION_BYPASS")
 }
 
 fn browser_rate_limit(method: &Method) -> u32 {
