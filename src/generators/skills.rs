@@ -19,6 +19,7 @@ struct DbSkill {
 
 pub fn generate(connection: &Connection) -> Result<Value> {
     let db_skills = load_db_skills(connection)?;
+    let (unique_skill_ids, inherited_skill_ids) = load_unique_skill_ids(connection)?;
     let character_skill_ids = load_character_skill_ids(connection)?;
     let support_skill_ids = load_support_skill_ids(connection)?;
     let mut entries = Vec::with_capacity(db_skills.len());
@@ -46,6 +47,13 @@ pub fn generate(connection: &Connection) -> Result<Value> {
         }
         if let Some(base_cost) = skill.base_cost {
             entry.insert("base_cost".to_string(), Value::from(base_cost));
+        }
+        if unique_skill_ids.contains(&skill.skill_id) || inherited_skill_ids.contains(&skill.skill_id)
+        {
+            entry.insert("unique".to_string(), Value::Bool(true));
+        }
+        if inherited_skill_ids.contains(&skill.skill_id) {
+            entry.insert("inherited".to_string(), Value::Bool(true));
         }
         if !skill.conditions.is_empty() {
             entry.insert(
@@ -168,6 +176,39 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
     }
 
     Ok(skills)
+}
+
+fn load_unique_skill_ids(connection: &Connection) -> Result<(BTreeSet<i64>, BTreeSet<i64>)> {
+    let mut statement = connection.prepare(
+        r#"
+        SELECT id, unique_skill_id_1, unique_skill_id_2
+        FROM skill_data
+        WHERE unique_skill_id_1 > 0 OR unique_skill_id_2 > 0
+        ORDER BY id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+
+    let mut unique_skill_ids = BTreeSet::new();
+    let mut inherited_skill_ids = BTreeSet::new();
+    for row in rows {
+        let (inherited_skill_id, primary_unique_skill_id, secondary_unique_skill_id) = row?;
+        inherited_skill_ids.insert(inherited_skill_id);
+        if primary_unique_skill_id > 0 {
+            unique_skill_ids.insert(primary_unique_skill_id);
+        }
+        if secondary_unique_skill_id > 0 {
+            unique_skill_ids.insert(secondary_unique_skill_id);
+        }
+    }
+
+    Ok((unique_skill_ids, inherited_skill_ids))
 }
 
 fn load_character_skill_ids(connection: &Connection) -> Result<BTreeMap<i64, BTreeSet<i64>>> {

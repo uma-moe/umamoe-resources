@@ -109,6 +109,27 @@ All resource JSON routes return precompressed bytes with `Content-Encoding: gzip
 
 The SQL endpoint returns normal JSON, not gzip. It only accepts a single `SELECT` or `WITH` statement, executes it against `master.mdb` through a read-only SQLite connection, and responds as `{ "columns": [...], "rows": [[...]], "truncated": false }`.
 
+## Beta And Local Auth
+
+Protected resource routes still use browser-proof validation by default.
+
+For beta or local development, you can configure a shared static token instead:
+
+```powershell
+$env:STATIC_AUTH_TOKEN="replace-me"
+```
+
+The server also accepts `BETA_STATIC_AUTH_TOKEN` as a fallback env name if you want the variable to stay beta-specific.
+
+When either variable is set, protected routes accept either of these headers:
+
+```text
+Authorization: Bearer replace-me
+X-API-Key: replace-me
+```
+
+Leave the variable unset in normal production if you only want Redis-backed browser-proof access.
+
 ## Generate Only
 
 ```powershell
@@ -178,6 +199,26 @@ You can purge them manually from the latest manifest:
 ```powershell
 cargo run -- purge --data-dir generated-data
 ```
+
+## Local Docker
+
+For local containerized development, use [compose.yaml](compose.yaml). It builds the service image, starts Redis, mounts your local `master.mdb` and `generated-data`, and exposes the API on `127.0.0.1:3000`.
+
+Start it with:
+
+```powershell
+docker compose up --build
+```
+
+The compose stack sets `STATIC_AUTH_TOKEN=local-dev-token` by default so protected routes are immediately testable. You can override that by creating a local `.env` from `.env.example` and changing `STATIC_AUTH_TOKEN` there.
+
+Example request from Windows PowerShell:
+
+```powershell
+curl.exe -H "X-API-Key: local-dev-token" http://127.0.0.1:3000/resources/manifest.json
+```
+
+If you want automatic `master_versions` refreshes inside Docker, set `RESOURCE_DATABASE_URL` in `.env` instead of `DATABASE_URL`. The hostname must be reachable from the container, so use `host.docker.internal` or another container name, not `127.0.0.1`.
 
 ## Docker Deployment
 

@@ -1,0 +1,37 @@
+services:
+  resources:
+    build:
+      context: .
+    ports:
+      - "3000:3000"
+    environment:
+      DEBUG_MODE: ${DEBUG_MODE:-true}
+      STATIC_AUTH_TOKEN: ${STATIC_AUTH_TOKEN:-local-dev-token}
+      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:3000,http://127.0.0.1:4200}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-umamoe}
+      DATABASE_URL: ${RESOURCE_DATABASE_URL:-}
+      MASTER_REFRESH_INTERVAL_SECONDS: ${MASTER_REFRESH_INTERVAL_SECONDS:-300}
+      RUST_LOG: ${RUST_LOG:-umamoe_resources=info,info}
+    volumes:
+      - ./master.mdb:/data/master.mdb
+      - ./generated-data:/data/generated-data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis-data:/data
+
+volumes:
+  redis-data:
