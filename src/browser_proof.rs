@@ -18,6 +18,9 @@ use crate::{redis_store::RedisStore, static_api::AppState};
 
 const BROWSER_PROOF_COOKIE: &str = "uma_browser_proof";
 const BROWSER_PROOF_HEADER: &str = "X-Browser-Proof";
+const API_KEY_HEADER: &str = "X-API-Key";
+const STATIC_AUTH_TOKEN_ENV: &str = "STATIC_AUTH_TOKEN";
+const BETA_STATIC_AUTH_TOKEN_ENV: &str = "BETA_STATIC_AUTH_TOKEN";
 
 static RATE_LIMITS: OnceLock<Mutex<HashMap<String, RateWindow>>> = OnceLock::new();
 
@@ -49,6 +52,10 @@ pub async fn api_protection_middleware(
     let path = request.uri().path().to_string();
 
     if should_skip_api_protection(&method, &path) || api_protection_bypassed() {
+        return next.run(request).await;
+    }
+
+    if has_static_auth_token(&headers) {
         return next.run(request).await;
     }
 
@@ -114,6 +121,38 @@ fn extract_browser_proof(headers: &HeaderMap) -> Option<&str> {
     header_str(headers, BROWSER_PROOF_HEADER)
         .filter(|value| !value.trim().is_empty())
         .or_else(|| cookie_value(headers, BROWSER_PROOF_COOKIE))
+}
+
+fn has_static_auth_token(headers: &HeaderMap) -> bool {
+    configured_static_auth_token()
+        .as_deref()
+        .is_some_and(|configured_token| matches_static_auth_token(headers, configured_token))
+}
+
+fn configured_static_auth_token() -> Option<String> {
+    env_string(STATIC_AUTH_TOKEN_ENV).or_else(|| env_string(BETA_STATIC_AUTH_TOKEN_ENV))
+}
+
+fn matches_static_auth_token(headers: &HeaderMap, configured_token: &str) -> bool {
+    extract_static_auth_token(headers).is_some_and(|token| token == configured_token)
+}
+
+fn extract_static_auth_token<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+    header_str(headers, API_KEY_HEADER)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| bearer_token(headers))
+}
+
+fn bearer_token<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+    let authorization = header_str(headers, "Authorization")?;
+    let (scheme, token) = authorization.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("Bearer") {
+        return None;
+    }
+
+    let token = token.trim();
+    (!token.is_empty()).then_some(token)
 }
 
 fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -214,6 +253,13 @@ fn env_bool(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn env_string(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn env_u32(name: &str, default: u32) -> u32 {
     std::env::var(name)
         .ok()
@@ -238,4 +284,43 @@ fn rate_limited(retry_after: u64) -> Response {
         response.headers_mut().insert(RETRY_AFTER, value);
     }
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{extract_static_auth_token, matches_static_auth_token};
+    use axum::http::{HeaderMap, HeaderValue};
+
+    #[test]
+    fn extracts_static_auth_from_api_key_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", HeaderValue::from_static("beta-secret"));
+
+        assert_eq!(extract_static_auth_token(&headers), Some("beta-secret"));
+    }
+
+    #[test]
+    fn extracts_static_auth_from_bearer_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("Authorization", HeaderValue::from_static("Bearer beta-secret"));
+
+        assert_eq!(extract_static_auth_token(&headers), Some("beta-secret"));
+    }
+
+    #[test]
+    fn ignores_non_bearer_authorization_header() {
+        let mut headers = HeaderMap::new();
+        headers.insert("Authorization", HeaderValue::from_static("Basic beta-secret"));
+
+        assert_eq!(extract_static_auth_token(&headers), None);
+    }
+
+    #[test]
+    fn matches_only_configured_static_token() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", HeaderValue::from_static("beta-secret"));
+
+        assert!(matches_static_auth_token(&headers, "beta-secret"));
+        assert!(!matches_static_auth_token(&headers, "different-secret"));
+    }
 }
