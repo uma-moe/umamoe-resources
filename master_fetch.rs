@@ -362,9 +362,11 @@ async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<(
     let mdb_data = decompress_lz4(&mdb_compressed)?;
 
     if let Some(parent) = Path::new(output_path).parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create parent directory for {}", output_path))?;
     }
-    std::fs::write(output_path, &mdb_data)?;
+    std::fs::write(output_path, &mdb_data)
+        .with_context(|| format!("failed to write master.mdb to {}", output_path))?;
     info!(
         "Saved master.mdb: {} bytes ({:.2} MB)",
         mdb_data.len(),
@@ -417,7 +419,8 @@ pub async fn maybe_update_master_mdb(pool: &PgPool, mdb_path: &str) -> Result<bo
         combined
     );
     fetch_master_mdb(&resource_version, mdb_path).await?;
-    std::fs::write(&marker_path, &combined)?;
+    std::fs::write(&marker_path, &combined)
+        .with_context(|| format!("failed to write master version marker to {}", marker_path))?;
 
     Ok(true)
 }
