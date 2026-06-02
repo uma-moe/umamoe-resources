@@ -1,7 +1,11 @@
 use crate::generators::common;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
+use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+
+const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SupportCardDbEntry {
@@ -21,7 +25,7 @@ struct DbSupportCard {
     release_timestamp: i64,
 }
 
-pub fn generate(connection: &Connection) -> Result<Vec<SupportCardDbEntry>> {
+pub fn generate(connection: &Connection) -> Result<Value> {
     let names = common::load_character_name_map(connection)?;
     let mut entries = Vec::new();
 
@@ -47,7 +51,58 @@ pub fn generate(connection: &Connection) -> Result<Vec<SupportCardDbEntry>> {
             .then_with(|| common::numeric_id(&b.id).cmp(&common::numeric_id(&a.id)))
     });
 
-    Ok(entries)
+    merge_with_jp_support_cards_db(entries)
+}
+
+fn merge_with_jp_support_cards_db(generated_entries: Vec<SupportCardDbEntry>) -> Result<Value> {
+    let jp_entries: Value = serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
+        .context("failed to parse bundled src/jp_data/support-cards-db.json")?;
+    let jp_entries = jp_entries
+        .as_array()
+        .context("src/jp_data/support-cards-db.json must be a JSON array")?;
+
+    let mut merged_by_id = BTreeMap::new();
+    for entry in jp_entries {
+        let object = entry
+            .as_object()
+            .context("src/jp_data/support-cards-db.json entries must be JSON objects")?;
+        let id = object
+            .get("id")
+            .and_then(Value::as_str)
+            .context("src/jp_data/support-cards-db.json entries must have string id")?;
+        merged_by_id.insert(id.to_string(), object.clone());
+    }
+
+    for generated_entry in generated_entries {
+        let id = generated_entry.id.clone();
+        let generated_object = serde_json::to_value(generated_entry)?
+            .as_object()
+            .context("generated support card entry must be a JSON object")?
+            .clone();
+
+        let entry = merged_by_id.entry(id).or_insert_with(Map::new);
+        for (key, value) in generated_object {
+            entry.insert(key, value);
+        }
+    }
+
+    let mut merged_entries = merged_by_id.into_values().collect::<Vec<_>>();
+    merged_entries.sort_by(|a, b| {
+        let a_release_date = string_field(a, "release_date");
+        let b_release_date = string_field(b, "release_date");
+        b_release_date.cmp(a_release_date).then_with(|| {
+            common::numeric_id(string_field(b, "id"))
+                .cmp(&common::numeric_id(string_field(a, "id")))
+        })
+    });
+
+    Ok(Value::Array(
+        merged_entries.into_iter().map(Value::Object).collect(),
+    ))
+}
+
+fn string_field<'a>(entry: &'a Map<String, Value>, field: &str) -> &'a str {
+    entry.get(field).and_then(Value::as_str).unwrap_or_default()
 }
 
 fn load_support_cards(connection: &Connection) -> Result<Vec<DbSupportCard>> {

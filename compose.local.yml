@@ -43,7 +43,7 @@ services:
     ports:
       - "127.0.0.1:${LOCAL_RESOURCES_PORT:-3004}:3000"
     volumes:
-      - ./master.mdb:/data/master.mdb:ro
+      - ./master.mdb:/data/master.mdb
       - ./generated-data:/data/generated-data
     depends_on:
       redis:

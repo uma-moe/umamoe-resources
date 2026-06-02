@@ -5,7 +5,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 const CHARACTER_NAME_CATEGORY: i64 = 6;
-const BUNDLED_CHARACTER_NAMES_JSON: &[u8] = include_bytes!("../character_names.json");
+const BUNDLED_CHARACTER_NAMES_JSON: &[u8] = include_bytes!("../jp_data/character_names.json");
 
 pub fn load_character_name_map(connection: &Connection) -> Result<BTreeMap<i64, String>> {
     let mut name_map = BTreeMap::new();
@@ -32,7 +32,7 @@ pub fn load_character_name_map(connection: &Connection) -> Result<BTreeMap<i64, 
 
 pub fn read_character_names() -> Result<Value> {
     serde_json::from_slice(BUNDLED_CHARACTER_NAMES_JSON)
-        .context("failed to parse bundled src/character_names.json")
+        .context("failed to parse bundled src/jp_data/character_names.json")
 }
 
 pub fn load_global_character_names(connection: &Connection) -> Result<Vec<(i64, String)>> {
