@@ -15,6 +15,14 @@ pub struct SupportCardDbEntry {
     #[serde(rename = "type")]
     card_type: String,
     release_date: String,
+    #[serde(rename = "isReleased_en")]
+    is_released_en: bool,
+    #[serde(rename = "isReleased_tw")]
+    is_released_tw: Option<bool>,
+    #[serde(rename = "isReleased_cn")]
+    is_released_cn: Option<bool>,
+    #[serde(rename = "isReleased_jp")]
+    is_released_jp: bool,
 }
 
 struct DbSupportCard {
@@ -42,6 +50,10 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             rarity: card.rarity,
             card_type: card.card_type,
             release_date: common::release_date(Some(card.release_timestamp)),
+            is_released_en: true,
+            is_released_tw: None,
+            is_released_cn: None,
+            is_released_jp: false,
         });
     }
 
@@ -70,7 +82,12 @@ fn merge_with_jp_support_cards_db(generated_entries: Vec<SupportCardDbEntry>) ->
             .get("id")
             .and_then(Value::as_str)
             .context("src/jp_data/support-cards-db.json entries must have string id")?;
-        merged_by_id.insert(id.to_string(), object.clone());
+        let mut object = object.clone();
+        object.insert("isReleased_en".to_string(), Value::Bool(false));
+        object.insert("isReleased_tw".to_string(), Value::Null);
+        object.insert("isReleased_cn".to_string(), Value::Null);
+        object.insert("isReleased_jp".to_string(), Value::Bool(true));
+        merged_by_id.insert(id.to_string(), object);
     }
 
     for generated_entry in generated_entries {
@@ -81,9 +98,14 @@ fn merge_with_jp_support_cards_db(generated_entries: Vec<SupportCardDbEntry>) ->
             .clone();
 
         let entry = merged_by_id.entry(id).or_insert_with(Map::new);
+        let is_released_jp = entry
+            .get("isReleased_jp")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         for (key, value) in generated_object {
             entry.insert(key, value);
         }
+        entry.insert("isReleased_jp".to_string(), Value::Bool(is_released_jp));
     }
 
     let mut merged_entries = merged_by_id.into_values().collect::<Vec<_>>();

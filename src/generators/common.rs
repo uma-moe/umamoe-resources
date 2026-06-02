@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use rusqlite::Connection;
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const CHARACTER_NAME_CATEGORY: i64 = 6;
 const BUNDLED_CHARACTER_NAMES_JSON: &[u8] = include_bytes!("../jp_data/character_names.json");
@@ -33,6 +33,23 @@ pub fn load_character_name_map(connection: &Connection) -> Result<BTreeMap<i64, 
 pub fn read_character_names() -> Result<Value> {
     serde_json::from_slice(BUNDLED_CHARACTER_NAMES_JSON)
         .context("failed to parse bundled src/jp_data/character_names.json")
+}
+
+pub fn load_jp_character_ids() -> Result<BTreeSet<i64>> {
+    let names = read_character_names()?;
+    let mut ids = BTreeSet::new();
+
+    for chara_id in names
+        .as_object()
+        .context("character_names.json must be a JSON object")?
+        .keys()
+    {
+        if let Ok(chara_id) = chara_id.parse::<i64>() {
+            ids.insert(chara_id);
+        }
+    }
+
+    Ok(ids)
 }
 
 pub fn load_global_character_names(connection: &Connection) -> Result<Vec<(i64, String)>> {
