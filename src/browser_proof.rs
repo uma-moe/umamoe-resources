@@ -172,6 +172,10 @@ async fn dry_run_api_protection(
                     path = %context.path,
                     set_cookie_count = headers.get_all("Set-Cookie").iter().count(),
                     has_proof_header = headers.get(BROWSER_PROOF_HEADER).is_some(),
+                    proof_source = headers
+                        .get(auth_common::BROWSER_PROOF_SOURCE_HEADER)
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or("<none>"),
                     "Resources auth dry-run browser proof bootstrap would succeed"
                 ),
                 Err(error) => log_auth_dry_run_error("browser_proof_bootstrap", path, error),
@@ -579,6 +583,7 @@ mod tests {
         );
         source.insert("X-Browser-Proof", HeaderValue::from_static("proof"));
         source.insert("X-Browser-Proof-TTL", HeaderValue::from_static("300"));
+        source.insert("X-Browser-Proof-Source", HeaderValue::from_static("turnstile"));
 
         forward_browser_proof_headers(&source, &mut target);
 
@@ -605,6 +610,12 @@ mod tests {
                 .get("X-Browser-Proof-TTL")
                 .and_then(|value| value.to_str().ok()),
             Some("300")
+        );
+        assert_eq!(
+            target
+                .get("X-Browser-Proof-Source")
+                .and_then(|value| value.to_str().ok()),
+            Some("turnstile")
         );
     }
 
