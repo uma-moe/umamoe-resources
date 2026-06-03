@@ -23,9 +23,8 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200,http://localhost:3001,http://localhost:3002,http://localhost:3004}
-      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-true}
-      REDIS_URL: redis://redis:6379/0
-      REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-umamoe}
+      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-false}
+      AUTH_INTERNAL_BASE_URL: ${AUTH_INTERNAL_BASE_URL:-http://umamoe-backend:3201}
       RESOURCES_INTERNAL_HOST: 0.0.0.0
       RESOURCES_INTERNAL_PORT: 3204
       MASTER_REFRESH_INTERVAL_SECONDS: ${MASTER_REFRESH_INTERVAL_SECONDS:-300}
@@ -46,8 +45,8 @@ services:
       - ./master.mdb:/data/master.mdb
       - ./generated-data:/data/generated-data
     depends_on:
-      redis:
-        condition: service_healthy
+      backend:
+        condition: service_started
     networks:
       default:
         aliases:
@@ -113,7 +112,8 @@ services:
       SEARCH_INTERNAL_PORT: 3202
       SYNC_INTERVAL_SECS: ${SYNC_INTERVAL_SECS:-300}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200,http://localhost:3001,http://localhost:3002,http://localhost:3004}
-      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-true}
+      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-false}
+      AUTH_INTERNAL_BASE_URL: ${AUTH_INTERNAL_BASE_URL:-http://umamoe-backend:3201}
       REDIS_URL: redis://redis:6379/0
       REDIS_KEY_PREFIX: ${REDIS_KEY_PREFIX:-umamoe}
       RUST_LOG: ${RUST_LOG:-umamoe_search=info}
