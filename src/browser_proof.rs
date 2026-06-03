@@ -1,26 +1,20 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{
-        header::{CONTENT_TYPE, REFERER, SET_COOKIE},
-        HeaderMap, Method, Request, StatusCode,
-    },
+    http::{header::CONTENT_TYPE, HeaderMap, Method, Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
 use serde::{Deserialize, Serialize};
 use std::{sync::OnceLock, time::Duration};
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
+use crate::auth_common::{
+    self, AuthRequestContext as AuthContext, BrowserProofRequest, Credential, BROWSER_PROOF_HEADER,
+};
 use crate::static_api::AppState;
-use reqwest::Url;
 
-const BROWSER_PROOF_COOKIE: &str = "uma_browser_proof";
-const BROWSER_PROOF_HEADER: &str = "X-Browser-Proof";
-const BROWSER_PROOF_TTL_HEADER: &str = "X-Browser-Proof-TTL";
-const API_KEY_HEADER: &str = "X-API-Key";
-const API_TOKEN_HEADER: &str = "X-API-Token";
 const AUTH_INTERNAL_BASE_URL_ENV: &str = "AUTH_INTERNAL_BASE_URL";
 const AUTH_VERIFY_INTERNAL_URL_ENV: &str = "AUTH_VERIFY_INTERNAL_URL";
 const AUTH_BROWSER_PROOF_INTERNAL_URL_ENV: &str = "AUTH_BROWSER_PROOF_INTERNAL_URL";
@@ -35,45 +29,12 @@ struct ErrorBody<'a> {
     status: u16,
 }
 
-#[derive(Debug, Serialize)]
-struct AuthContext<'a> {
-    method: &'a str,
-    path: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    origin: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    referer: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    host: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    record_usage: Option<bool>,
-}
-
-#[derive(Debug, Serialize)]
-struct BrowserProofRequest<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    origin: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    referer: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    host: Option<&'a str>,
-}
-
 #[derive(Debug, Deserialize)]
 struct AuthVerifyResponse {
     valid: bool,
     credential: Option<String>,
     message: Option<String>,
     error: Option<String>,
-}
-
-#[derive(Debug)]
-enum Credential<'a> {
-    ApiCredential {
-        header_name: &'static str,
-        value: &'a str,
-    },
-    BrowserProof(&'a str),
 }
 
 #[derive(Debug)]
@@ -101,11 +62,16 @@ pub async fn api_protection_middleware(
 ) -> Response {
     let path = request.uri().path().to_string();
 
-    if should_skip_api_protection(&method, &path) || api_protection_bypassed() {
+    if should_skip_api_protection(&method, &path) {
         return next.run(request).await;
     }
 
     let context = request_context(&headers, &method, &path);
+
+    if api_protection_bypassed() {
+        dry_run_api_protection(&headers, &method, &path, &context).await;
+        return next.run(request).await;
+    }
 
     if let Some(credential) = extract_api_credential(&headers) {
         return match verify_with_backend(credential, &context).await {
@@ -136,9 +102,101 @@ pub async fn api_protection_middleware(
     json_error(StatusCode::FORBIDDEN, "browser_proof_required")
 }
 
+async fn dry_run_api_protection(
+    headers: &HeaderMap,
+    method: &Method,
+    path: &str,
+    context: &AuthContext,
+) {
+    log_auth_dry_run_request(context, headers);
+
+    if let Some(credential) = extract_api_credential(headers) {
+        let (header_name, token_len) = match &credential {
+            Credential::ApiCredential { header_name, value } => (*header_name, value.len()),
+            Credential::BrowserProof(_) => unreachable!("API extractor cannot return proof"),
+        };
+
+        info!(
+            method = %context.method,
+            path = %context.path,
+            host = context.host.as_deref().unwrap_or("<none>"),
+            header_name,
+            token_len,
+            "Resources auth dry-run verifying API credential"
+        );
+
+        match verify_with_backend(credential, context).await {
+            Ok(()) => info!(
+                method = %context.method,
+                path = %context.path,
+                credential = "api",
+                "Resources auth dry-run would allow request"
+            ),
+            Err(error) => log_auth_dry_run_error("api", path, error),
+        }
+        return;
+    }
+
+    if let Some(proof) = extract_browser_proof(headers) {
+        info!(
+            method = %context.method,
+            path = %context.path,
+            host = context.host.as_deref().unwrap_or("<none>"),
+            proof_len = proof.len(),
+            "Resources auth dry-run verifying browser proof"
+        );
+
+        match verify_with_backend(Credential::BrowserProof(proof), context).await {
+            Ok(()) => info!(
+                method = %context.method,
+                path = %context.path,
+                credential = "browser_proof",
+                "Resources auth dry-run would allow request"
+            ),
+            Err(error) => log_auth_dry_run_error("browser_proof", path, error),
+        }
+        return;
+    }
+
+    if *method == Method::GET || *method == Method::HEAD {
+        if api_protection_dry_run_bootstrap() {
+            info!(
+                method = %context.method,
+                path = %context.path,
+                host = context.host.as_deref().unwrap_or("<none>"),
+                "Resources auth dry-run requesting browser proof bootstrap"
+            );
+            match request_browser_proof(context).await {
+                Ok(headers) => info!(
+                    method = %context.method,
+                    path = %context.path,
+                    set_cookie_count = headers.get_all("Set-Cookie").iter().count(),
+                    has_proof_header = headers.get(BROWSER_PROOF_HEADER).is_some(),
+                    "Resources auth dry-run browser proof bootstrap would succeed"
+                ),
+                Err(error) => log_auth_dry_run_error("browser_proof_bootstrap", path, error),
+            }
+        } else {
+            info!(
+                method = %context.method,
+                path = %context.path,
+                host = context.host.as_deref().unwrap_or("<none>"),
+                "Resources auth dry-run would bootstrap browser proof; backend bootstrap call skipped"
+            );
+        }
+        return;
+    }
+
+    warn!(
+        method = %method,
+        path,
+        "Resources auth dry-run would reject request: missing API credential or browser proof"
+    );
+}
+
 async fn verify_with_backend(
     credential: Credential<'_>,
-    context: &AuthContext<'_>,
+    context: &AuthContext,
 ) -> Result<(), AuthError> {
     let mut request = auth_client()
         .post(auth_verify_internal_url())
@@ -181,13 +239,13 @@ async fn verify_with_backend(
     Ok(())
 }
 
-async fn request_browser_proof(context: &AuthContext<'_>) -> Result<HeaderMap, AuthError> {
+async fn request_browser_proof(context: &AuthContext) -> Result<HeaderMap, AuthError> {
     let response = auth_client()
         .post(auth_browser_proof_internal_url())
         .header(CONTENT_TYPE, "application/json")
         .json(&BrowserProofRequest {
-            origin: context.origin,
-            referer: context.referer,
+            origin: context.origin.as_deref(),
+            referer: context.referer.as_deref(),
             host: context.host.as_deref(),
         })
         .send()
@@ -206,68 +264,25 @@ async fn request_browser_proof(context: &AuthContext<'_>) -> Result<HeaderMap, A
     Ok(response.headers().clone())
 }
 
-fn request_context<'a>(
-    headers: &'a HeaderMap,
-    method: &'a Method,
-    path: &'a str,
-) -> AuthContext<'a> {
-    AuthContext {
-        method: method.as_str(),
-        path,
-        origin: header_str(headers, "Origin"),
-        referer: header_str(headers, REFERER.as_str()),
-        host: browser_context_host(headers),
-        record_usage: extract_api_credential(headers).map(|_| true),
-    }
+fn request_context(headers: &HeaderMap, method: &Method, path: &str) -> AuthContext {
+    auth_common::request_context(headers, method, path)
 }
 
 fn extract_api_credential(headers: &HeaderMap) -> Option<Credential<'_>> {
-    header_str(headers, API_KEY_HEADER)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| Credential::ApiCredential {
-            header_name: API_KEY_HEADER,
-            value,
-        })
-        .or_else(|| {
-            header_str(headers, API_TOKEN_HEADER)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|value| Credential::ApiCredential {
-                    header_name: API_TOKEN_HEADER,
-                    value,
-                })
-        })
+    auth_common::extract_api_credential(headers)
 }
 
 fn extract_browser_proof(headers: &HeaderMap) -> Option<&str> {
-    header_str(headers, BROWSER_PROOF_HEADER)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or_else(|| cookie_value(headers, BROWSER_PROOF_COOKIE))
+    auth_common::extract_browser_proof(headers)
 }
 
 fn forward_browser_proof_headers(source: &HeaderMap, target: &mut HeaderMap) {
-    for value in source.get_all(SET_COOKIE).iter() {
-        target.append(SET_COOKIE, value.clone());
-    }
-
-    for header_name in [BROWSER_PROOF_HEADER, BROWSER_PROOF_TTL_HEADER] {
-        for value in source.get_all(header_name).iter() {
-            target.append(header_name, value.clone());
-        }
-    }
+    auth_common::forward_browser_proof_headers(source, target);
 }
 
+#[cfg(test)]
 fn browser_context_host(headers: &HeaderMap) -> Option<String> {
-    header_str(headers, "Origin")
-        .and_then(url_host)
-        .or_else(|| header_str(headers, REFERER.as_str()).and_then(url_host))
-}
-
-fn url_host(value: &str) -> Option<String> {
-    let parsed = Url::parse(value).ok()?;
-    parsed.host_str().map(ToString::to_string)
+    auth_common::browser_context_host(headers)
 }
 
 fn auth_client() -> &'static reqwest::Client {
@@ -347,27 +362,54 @@ fn auth_error_response(error: AuthError, path: &str) -> Response {
     }
 }
 
-fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
-    headers.get(name).and_then(|value| value.to_str().ok())
+fn log_auth_dry_run_request(context: &AuthContext, headers: &HeaderMap) {
+    info!(
+        method = %context.method,
+        path = %context.path,
+        origin = context.origin.as_deref().unwrap_or("<none>"),
+        referer = context.referer.as_deref().unwrap_or("<none>"),
+        host = context.host.as_deref().unwrap_or("<none>"),
+        has_authorization = headers.contains_key(auth_common::AUTHORIZATION_HEADER),
+        has_bearer = auth_common::extract_bearer_token(headers).is_some(),
+        has_api_credential = auth_common::extract_api_credential(headers).is_some(),
+        has_browser_proof = auth_common::extract_browser_proof(headers).is_some(),
+        "Resources auth dry-run request"
+    );
 }
 
-fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
-    let cookie = header_str(headers, "Cookie")?;
-    cookie.split(';').find_map(|part| {
-        let (cookie_name, value) = part.trim().split_once('=')?;
-        (cookie_name == name && !value.trim().is_empty()).then_some(value)
-    })
+fn log_auth_dry_run_error(credential: &'static str, path: &str, error: AuthError) {
+    match error {
+        AuthError::Invalid {
+            status,
+            error,
+            message,
+        } => warn!(
+            path,
+            credential,
+            status = status.as_u16(),
+            auth_error = error,
+            message,
+            "Resources auth dry-run would reject request"
+        ),
+        AuthError::Unavailable(message) => error!(
+            path,
+            credential,
+            message,
+            "Resources auth dry-run backend unavailable"
+        ),
+    }
 }
 
 fn should_skip_api_protection(method: &Method, path: &str) -> bool {
-    *method == Method::OPTIONS
-        || path == "/health"
-        || path == "/healthz"
-        || path == "/resources/healthz"
+    auth_common::should_skip_api_protection(method, path, &["/resources/healthz"])
 }
 
 fn api_protection_bypassed() -> bool {
     env_bool("API_PROTECTION_BYPASS")
+}
+
+fn api_protection_dry_run_bootstrap() -> bool {
+    env_bool("API_PROTECTION_DRY_RUN_BOOTSTRAP")
 }
 
 fn env_bool(name: &str) -> bool {
@@ -471,8 +513,11 @@ mod tests {
 
         assert_eq!(context.method, "GET");
         assert_eq!(context.path, "/resources/some-file.json");
-        assert_eq!(context.origin, Some("https://uma.moe"));
-        assert_eq!(context.referer, Some("https://uma.moe/resources"));
+        assert_eq!(context.origin.as_deref(), Some("https://uma.moe"));
+        assert_eq!(
+            context.referer.as_deref(),
+            Some("https://uma.moe/resources")
+        );
         assert_eq!(context.host.as_deref(), Some("uma.moe"));
         assert_eq!(context.record_usage, Some(true));
     }
@@ -487,9 +532,30 @@ mod tests {
     }
 
     #[test]
-    fn omits_host_without_browser_context() {
+    fn derives_browser_context_host_from_original_host_without_origin() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Original-Host", HeaderValue::from_static("beta.uma.moe"));
+        headers.insert("Host", HeaderValue::from_static("umamoe-resources"));
+
+        assert_eq!(
+            browser_context_host(&headers).as_deref(),
+            Some("beta.uma.moe")
+        );
+    }
+
+    #[test]
+    fn derives_browser_context_host_from_forwarded_host_without_origin() {
         let mut headers = HeaderMap::new();
         headers.insert("X-Forwarded-Host", HeaderValue::from_static("uma.moe"));
+        headers.insert("Host", HeaderValue::from_static("umamoe-resources"));
+
+        assert_eq!(browser_context_host(&headers).as_deref(), Some("uma.moe"));
+    }
+
+    #[test]
+    fn omits_internal_host_without_browser_context() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Forwarded-Host", HeaderValue::from_static("umamoe-proxy"));
         headers.insert("Host", HeaderValue::from_static("umamoe-resources"));
 
         assert_eq!(browser_context_host(&headers), None);
