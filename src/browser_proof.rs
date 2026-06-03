@@ -1,34 +1,32 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{header::RETRY_AFTER, HeaderMap, HeaderValue, Method, Request, StatusCode},
+    http::{
+        header::{CONTENT_TYPE, HOST, REFERER, SET_COOKIE},
+        HeaderMap, Method, Request, StatusCode,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
     Json,
 };
-use serde::Serialize;
-use std::{
-    collections::HashMap,
-    sync::{Mutex, OnceLock},
-    time::{Duration, Instant},
-};
+use serde::{Deserialize, Serialize};
+use std::{sync::OnceLock, time::Duration};
 use tracing::{error, warn};
 
-use crate::{redis_store::RedisStore, static_api::AppState};
+use crate::static_api::AppState;
 
 const BROWSER_PROOF_COOKIE: &str = "uma_browser_proof";
 const BROWSER_PROOF_HEADER: &str = "X-Browser-Proof";
+const BROWSER_PROOF_TTL_HEADER: &str = "X-Browser-Proof-TTL";
 const API_KEY_HEADER: &str = "X-API-Key";
-const STATIC_AUTH_TOKEN_ENV: &str = "STATIC_AUTH_TOKEN";
-const BETA_STATIC_AUTH_TOKEN_ENV: &str = "BETA_STATIC_AUTH_TOKEN";
+const API_TOKEN_HEADER: &str = "X-API-Token";
+const AUTH_INTERNAL_BASE_URL_ENV: &str = "AUTH_INTERNAL_BASE_URL";
+const AUTH_VERIFY_INTERNAL_URL_ENV: &str = "AUTH_VERIFY_INTERNAL_URL";
+const AUTH_BROWSER_PROOF_INTERNAL_URL_ENV: &str = "AUTH_BROWSER_PROOF_INTERNAL_URL";
+const AUTH_INTERNAL_TIMEOUT_SECONDS_ENV: &str = "AUTH_INTERNAL_TIMEOUT_SECONDS";
+const DEFAULT_AUTH_INTERNAL_BASE_URL: &str = "http://umamoe-backend:3201";
 
-static RATE_LIMITS: OnceLock<Mutex<HashMap<String, RateWindow>>> = OnceLock::new();
-
-#[derive(Debug, Clone, Copy)]
-struct RateWindow {
-    count: u32,
-    reset_at: Instant,
-}
+static AUTH_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 #[derive(Debug, Serialize)]
 struct ErrorBody<'a> {
@@ -36,14 +34,65 @@ struct ErrorBody<'a> {
     status: u16,
 }
 
+#[derive(Debug, Serialize)]
+struct AuthContext<'a> {
+    method: &'a str,
+    path: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    referer: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    record_usage: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+struct BrowserProofRequest<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    origin: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    referer: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    host: Option<&'a str>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthVerifyResponse {
+    valid: bool,
+    credential: Option<String>,
+    message: Option<String>,
+    error: Option<String>,
+}
+
 #[derive(Debug)]
-enum BrowserProofError {
-    Missing,
-    Store(String),
+enum Credential<'a> {
+    ApiCredential {
+        header_name: &'static str,
+        value: &'a str,
+    },
+    BrowserProof(&'a str),
+}
+
+#[derive(Debug)]
+enum AuthError {
+    Invalid {
+        status: StatusCode,
+        error: &'static str,
+        message: String,
+    },
+    Unavailable(String),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ExpectedCredential {
+    Api,
+    BrowserProof,
 }
 
 pub async fn api_protection_middleware(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     headers: HeaderMap,
     method: Method,
     request: Request<Body>,
@@ -55,104 +104,235 @@ pub async fn api_protection_middleware(
         return next.run(request).await;
     }
 
-    if has_static_auth_token(&headers) {
-        return next.run(request).await;
+    let context = request_context(&headers, &method, &path);
+
+    if let Some(credential) = extract_api_credential(&headers) {
+        return match verify_with_backend(credential, &context).await {
+            Ok(()) => next.run(request).await,
+            Err(error) => auth_error_response(error, &path),
+        };
     }
 
-    let Some(store) = state.redis_store.as_ref() else {
-        error!("REDIS_URL is required for resources browser proof validation");
-        return json_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "browser_proof_store_unavailable",
-        );
-    };
+    if let Some(proof) = extract_browser_proof(&headers) {
+        return match verify_with_backend(Credential::BrowserProof(proof), &context).await {
+            Ok(()) => next.run(request).await,
+            Err(error) => auth_error_response(error, &path),
+        };
+    }
 
-    let client_ip = extract_client_ip(&headers);
-    let Some(proof) = extract_browser_proof(&headers) else {
-        warn!("Browser proof required for ip {} on {}", client_ip, path);
-        return json_error(StatusCode::FORBIDDEN, "browser_proof_required");
-    };
-
-    match verify_browser_proof(store, proof).await {
-        Ok(rate_limit_key) => {
-            let limit = browser_rate_limit(&method);
-            if let Some(retry_after) =
-                check_rate_limit(rate_limit_key, limit, Duration::from_secs(60))
-            {
-                warn!("Browser proof rate limited on {}", path);
-                return rate_limited(retry_after);
+    if method == Method::GET || method == Method::HEAD {
+        return match request_browser_proof(&context).await {
+            Ok(proof_headers) => {
+                let mut response = next.run(request).await;
+                forward_browser_proof_headers(&proof_headers, response.headers_mut());
+                response
             }
+            Err(error) => auth_error_response(error, &path),
+        };
+    }
 
-            next.run(request).await
+    warn!("Missing API credential or browser proof on {}", path);
+    json_error(StatusCode::FORBIDDEN, "browser_proof_required")
+}
+
+async fn verify_with_backend(
+    credential: Credential<'_>,
+    context: &AuthContext<'_>,
+) -> Result<(), AuthError> {
+    let mut request = auth_client()
+        .post(auth_verify_internal_url())
+        .header(CONTENT_TYPE, "application/json")
+        .json(context);
+
+    let expected_credential = match credential {
+        Credential::ApiCredential { header_name, value } => {
+            request = request.header(header_name, value);
+            ExpectedCredential::Api
         }
-        Err(BrowserProofError::Missing) => {
-            warn!(
-                "Invalid browser proof from ip {} on {}: proof is not present in shared store",
-                client_ip, path
-            );
-            json_error(StatusCode::FORBIDDEN, "browser_proof_required")
+        Credential::BrowserProof(value) => {
+            request = request.header(BROWSER_PROOF_HEADER, value);
+            ExpectedCredential::BrowserProof
         }
-        Err(BrowserProofError::Store(error)) => {
-            error!("Browser proof store unavailable: {}", error);
-            json_error(StatusCode::SERVICE_UNAVAILABLE, "browser_proof_unavailable")
-        }
+    };
+
+    let response = request
+        .send()
+        .await
+        .map_err(|error| AuthError::Unavailable(error.to_string()))?;
+
+    let status = response.status();
+    let body = response
+        .json::<AuthVerifyResponse>()
+        .await
+        .map_err(|error| AuthError::Unavailable(error.to_string()))?;
+
+    if status != StatusCode::OK || !body.valid || !credential_matches(&body, expected_credential) {
+        return Err(AuthError::Invalid {
+            status: auth_failure_status(expected_credential, status),
+            error: auth_failure_error(expected_credential),
+            message: body
+                .error
+                .or(body.message)
+                .unwrap_or_else(|| auth_failure_error(expected_credential).to_string()),
+        });
+    }
+
+    Ok(())
+}
+
+async fn request_browser_proof(context: &AuthContext<'_>) -> Result<HeaderMap, AuthError> {
+    let response = auth_client()
+        .post(auth_browser_proof_internal_url())
+        .header(CONTENT_TYPE, "application/json")
+        .json(&BrowserProofRequest {
+            origin: context.origin,
+            referer: context.referer,
+            host: context.host,
+        })
+        .send()
+        .await
+        .map_err(|error| AuthError::Unavailable(error.to_string()))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(AuthError::Invalid {
+            status: StatusCode::FORBIDDEN,
+            error: "browser_proof_required",
+            message: format!("browser proof bootstrap failed with {}", status),
+        });
+    }
+
+    Ok(response.headers().clone())
+}
+
+fn request_context<'a>(
+    headers: &'a HeaderMap,
+    method: &'a Method,
+    path: &'a str,
+) -> AuthContext<'a> {
+    AuthContext {
+        method: method.as_str(),
+        path,
+        origin: header_str(headers, "Origin"),
+        referer: header_str(headers, REFERER.as_str()),
+        host: header_str(headers, HOST.as_str()),
+        record_usage: extract_api_credential(headers).map(|_| true),
     }
 }
 
-async fn verify_browser_proof(
-    store: &RedisStore,
-    token: &str,
-) -> Result<String, BrowserProofError> {
-    let key = store.hashed_key("browser-proof", token);
-    let exists = store
-        .get_string(&key)
-        .await
-        .map_err(BrowserProofError::Store)?
-        .is_some();
-
-    if exists {
-        Ok(format!("browser-proof:{}", key))
-    } else {
-        Err(BrowserProofError::Missing)
-    }
+fn extract_api_credential(headers: &HeaderMap) -> Option<Credential<'_>> {
+    header_str(headers, API_KEY_HEADER)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| Credential::ApiCredential {
+            header_name: API_KEY_HEADER,
+            value,
+        })
+        .or_else(|| {
+            header_str(headers, API_TOKEN_HEADER)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|value| Credential::ApiCredential {
+                    header_name: API_TOKEN_HEADER,
+                    value,
+                })
+        })
 }
 
 fn extract_browser_proof(headers: &HeaderMap) -> Option<&str> {
     header_str(headers, BROWSER_PROOF_HEADER)
-        .filter(|value| !value.trim().is_empty())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
         .or_else(|| cookie_value(headers, BROWSER_PROOF_COOKIE))
 }
 
-fn has_static_auth_token(headers: &HeaderMap) -> bool {
-    configured_static_auth_token()
-        .as_deref()
-        .is_some_and(|configured_token| matches_static_auth_token(headers, configured_token))
-}
-
-fn configured_static_auth_token() -> Option<String> {
-    env_string(STATIC_AUTH_TOKEN_ENV).or_else(|| env_string(BETA_STATIC_AUTH_TOKEN_ENV))
-}
-
-fn matches_static_auth_token(headers: &HeaderMap, configured_token: &str) -> bool {
-    extract_static_auth_token(headers).is_some_and(|token| token == configured_token)
-}
-
-fn extract_static_auth_token<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
-    header_str(headers, API_KEY_HEADER)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or_else(|| bearer_token(headers))
-}
-
-fn bearer_token<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
-    let authorization = header_str(headers, "Authorization")?;
-    let (scheme, token) = authorization.split_once(' ')?;
-    if !scheme.eq_ignore_ascii_case("Bearer") {
-        return None;
+fn forward_browser_proof_headers(source: &HeaderMap, target: &mut HeaderMap) {
+    for value in source.get_all(SET_COOKIE).iter() {
+        target.append(SET_COOKIE, value.clone());
     }
 
-    let token = token.trim();
-    (!token.is_empty()).then_some(token)
+    for header_name in [BROWSER_PROOF_HEADER, BROWSER_PROOF_TTL_HEADER] {
+        for value in source.get_all(header_name).iter() {
+            target.append(header_name, value.clone());
+        }
+    }
+}
+
+fn auth_client() -> &'static reqwest::Client {
+    AUTH_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(env_u64(
+                AUTH_INTERNAL_TIMEOUT_SECONDS_ENV,
+                5,
+            )))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new())
+    })
+}
+
+fn auth_verify_internal_url() -> String {
+    env_string(AUTH_VERIFY_INTERNAL_URL_ENV)
+        .unwrap_or_else(|| format!("{}/api/auth/verify/internal", auth_internal_base_url()))
+}
+
+fn auth_browser_proof_internal_url() -> String {
+    env_string(AUTH_BROWSER_PROOF_INTERNAL_URL_ENV).unwrap_or_else(|| {
+        format!(
+            "{}/api/auth/browser-proof/internal",
+            auth_internal_base_url()
+        )
+    })
+}
+
+fn auth_internal_base_url() -> String {
+    env_string(AUTH_INTERNAL_BASE_URL_ENV)
+        .unwrap_or_else(|| DEFAULT_AUTH_INTERNAL_BASE_URL.to_string())
+        .trim_end_matches('/')
+        .to_string()
+}
+
+fn credential_matches(body: &AuthVerifyResponse, expected_credential: ExpectedCredential) -> bool {
+    match expected_credential {
+        ExpectedCredential::Api => true,
+        ExpectedCredential::BrowserProof => body.credential.as_deref() == Some("browser_proof"),
+    }
+}
+
+fn auth_failure_status(
+    expected_credential: ExpectedCredential,
+    backend_status: StatusCode,
+) -> StatusCode {
+    if backend_status == StatusCode::UNAUTHORIZED
+        || matches!(expected_credential, ExpectedCredential::Api)
+    {
+        StatusCode::UNAUTHORIZED
+    } else {
+        StatusCode::FORBIDDEN
+    }
+}
+
+fn auth_failure_error(expected_credential: ExpectedCredential) -> &'static str {
+    match expected_credential {
+        ExpectedCredential::Api => "invalid_api_key",
+        ExpectedCredential::BrowserProof => "browser_proof_required",
+    }
+}
+
+fn auth_error_response(error: AuthError, path: &str) -> Response {
+    match error {
+        AuthError::Invalid {
+            status,
+            error,
+            message,
+        } => {
+            warn!("Auth rejected on {}: {}", path, message);
+            json_error(status, error)
+        }
+        AuthError::Unavailable(message) => {
+            error!("Backend auth unavailable on {}: {}", path, message);
+            json_error(StatusCode::SERVICE_UNAVAILABLE, "auth_unavailable")
+        }
+    }
 }
 
 fn header_str<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
@@ -163,7 +343,7 @@ fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     let cookie = header_str(headers, "Cookie")?;
     cookie.split(';').find_map(|part| {
         let (cookie_name, value) = part.trim().split_once('=')?;
-        (cookie_name == name).then_some(value)
+        (cookie_name == name && !value.trim().is_empty()).then_some(value)
     })
 }
 
@@ -173,78 +353,6 @@ fn should_skip_api_protection(method: &Method, path: &str) -> bool {
 
 fn api_protection_bypassed() -> bool {
     env_bool("API_PROTECTION_BYPASS")
-}
-
-fn browser_rate_limit(method: &Method) -> u32 {
-    if *method == Method::GET || *method == Method::HEAD {
-        env_u32("API_BROWSER_READS_PER_MINUTE", 120)
-    } else {
-        env_u32("API_BROWSER_WRITES_PER_MINUTE", 30)
-    }
-}
-
-fn check_rate_limit(key: String, limit: u32, window: Duration) -> Option<u64> {
-    if limit == 0 {
-        return None;
-    }
-
-    let limits = RATE_LIMITS.get_or_init(|| Mutex::new(HashMap::new()));
-    let Ok(mut limits) = limits.lock() else {
-        return Some(1);
-    };
-    let now = Instant::now();
-
-    if limits.len() > 10_000 {
-        limits.retain(|_, value| value.reset_at > now);
-    }
-
-    if let Some(entry) = limits.get_mut(&key) {
-        if now >= entry.reset_at {
-            entry.count = 1;
-            entry.reset_at = now + window;
-            return None;
-        }
-
-        if entry.count >= limit {
-            return Some(
-                entry
-                    .reset_at
-                    .saturating_duration_since(now)
-                    .as_secs()
-                    .max(1),
-            );
-        }
-
-        entry.count += 1;
-        return None;
-    }
-
-    limits.insert(
-        key,
-        RateWindow {
-            count: 1,
-            reset_at: now + window,
-        },
-    );
-    None
-}
-
-fn extract_client_ip(headers: &HeaderMap) -> String {
-    if let Some(cf_ip) = header_str(headers, "CF-Connecting-IP") {
-        return cf_ip.to_string();
-    }
-
-    if let Some(forwarded_for) = header_str(headers, "X-Forwarded-For") {
-        if let Some(first_ip) = forwarded_for.split(',').next() {
-            return first_ip.trim().to_string();
-        }
-    }
-
-    if let Some(real_ip) = header_str(headers, "X-Real-IP") {
-        return real_ip.to_string();
-    }
-
-    "unknown".to_string()
 }
 
 fn env_bool(name: &str) -> bool {
@@ -260,10 +368,10 @@ fn env_string(name: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
-fn env_u32(name: &str, default: u32) -> u32 {
+fn env_u64(name: &str, default: u64) -> u64 {
     std::env::var(name)
         .ok()
-        .and_then(|value| value.parse::<u32>().ok())
+        .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(default)
 }
 
@@ -278,49 +386,136 @@ fn json_error(status: StatusCode, error: &'static str) -> Response {
         .into_response()
 }
 
-fn rate_limited(retry_after: u64) -> Response {
-    let mut response = json_error(StatusCode::TOO_MANY_REQUESTS, "rate_limited");
-    if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
-        response.headers_mut().insert(RETRY_AFTER, value);
-    }
-    response
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{extract_static_auth_token, matches_static_auth_token};
-    use axum::http::{HeaderMap, HeaderValue};
+    use super::{
+        extract_api_credential, extract_browser_proof, forward_browser_proof_headers,
+        request_context, should_skip_api_protection, Credential,
+    };
+    use axum::http::{HeaderMap, HeaderValue, Method};
 
     #[test]
-    fn extracts_static_auth_from_api_key_header() {
+    fn extracts_api_key_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("X-API-Key", HeaderValue::from_static("beta-secret"));
+        headers.insert("X-API-Key", HeaderValue::from_static("uma_k_test"));
 
-        assert_eq!(extract_static_auth_token(&headers), Some("beta-secret"));
+        assert!(matches!(
+            extract_api_credential(&headers),
+            Some(Credential::ApiCredential {
+                header_name: "X-API-Key",
+                value: "uma_k_test"
+            })
+        ));
     }
 
     #[test]
-    fn extracts_static_auth_from_bearer_header() {
+    fn extracts_api_token_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", HeaderValue::from_static("Bearer beta-secret"));
+        headers.insert("X-API-Token", HeaderValue::from_static("uma_t_test"));
 
-        assert_eq!(extract_static_auth_token(&headers), Some("beta-secret"));
+        assert!(matches!(
+            extract_api_credential(&headers),
+            Some(Credential::ApiCredential {
+                header_name: "X-API-Token",
+                value: "uma_t_test"
+            })
+        ));
     }
 
     #[test]
-    fn ignores_non_bearer_authorization_header() {
+    fn extracts_browser_proof_header() {
         let mut headers = HeaderMap::new();
-        headers.insert("Authorization", HeaderValue::from_static("Basic beta-secret"));
+        headers.insert("X-Browser-Proof", HeaderValue::from_static("proof"));
 
-        assert_eq!(extract_static_auth_token(&headers), None);
+        assert_eq!(extract_browser_proof(&headers), Some("proof"));
     }
 
     #[test]
-    fn matches_only_configured_static_token() {
+    fn extracts_browser_proof_cookie() {
         let mut headers = HeaderMap::new();
-        headers.insert("X-API-Key", HeaderValue::from_static("beta-secret"));
+        headers.insert(
+            "Cookie",
+            HeaderValue::from_static("other=1; uma_browser_proof=proof-cookie"),
+        );
 
-        assert!(matches_static_auth_token(&headers, "beta-secret"));
-        assert!(!matches_static_auth_token(&headers, "different-secret"));
+        assert_eq!(extract_browser_proof(&headers), Some("proof-cookie"));
+    }
+
+    #[test]
+    fn includes_usage_tracking_only_for_api_credentials() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-API-Key", HeaderValue::from_static("uma_k_test"));
+        headers.insert("Origin", HeaderValue::from_static("https://uma.moe"));
+        headers.insert(
+            "Referer",
+            HeaderValue::from_static("https://uma.moe/resources"),
+        );
+        headers.insert("Host", HeaderValue::from_static("uma.moe"));
+
+        let context = request_context(&headers, &Method::GET, "/resources/some-file.json");
+
+        assert_eq!(context.method, "GET");
+        assert_eq!(context.path, "/resources/some-file.json");
+        assert_eq!(context.origin, Some("https://uma.moe"));
+        assert_eq!(context.referer, Some("https://uma.moe/resources"));
+        assert_eq!(context.host, Some("uma.moe"));
+        assert_eq!(context.record_usage, Some(true));
+    }
+
+    #[test]
+    fn forwards_browser_proof_bootstrap_headers() {
+        let mut source = HeaderMap::new();
+        let mut target = HeaderMap::new();
+        source.insert(
+            "Set-Cookie",
+            HeaderValue::from_static("uma_browser_proof=proof; Path=/"),
+        );
+        source.append(
+            "Set-Cookie",
+            HeaderValue::from_static("uma_browser_proof_sig=sig; Path=/"),
+        );
+        source.insert("X-Browser-Proof", HeaderValue::from_static("proof"));
+        source.insert("X-Browser-Proof-TTL", HeaderValue::from_static("300"));
+
+        forward_browser_proof_headers(&source, &mut target);
+
+        let cookies = target
+            .get_all("Set-Cookie")
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            cookies,
+            vec![
+                "uma_browser_proof=proof; Path=/",
+                "uma_browser_proof_sig=sig; Path=/"
+            ]
+        );
+        assert_eq!(
+            target
+                .get("X-Browser-Proof")
+                .and_then(|value| value.to_str().ok()),
+            Some("proof")
+        );
+        assert_eq!(
+            target
+                .get("X-Browser-Proof-TTL")
+                .and_then(|value| value.to_str().ok()),
+            Some("300")
+        );
+    }
+
+    #[test]
+    fn skips_api_protection_for_health_endpoints() {
+        assert!(should_skip_api_protection(&Method::GET, "/healthz"));
+        assert!(should_skip_api_protection(&Method::HEAD, "/healthz"));
+        assert!(should_skip_api_protection(
+            &Method::GET,
+            "/resources/healthz"
+        ));
+        assert!(should_skip_api_protection(
+            &Method::HEAD,
+            "/resources/healthz"
+        ));
     }
 }

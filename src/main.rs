@@ -12,7 +12,6 @@ mod generators;
 #[path = "../master_fetch.rs"]
 mod master_fetch;
 mod pipeline;
-mod redis_store;
 mod static_api;
 
 #[derive(Parser)]

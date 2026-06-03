@@ -26,31 +26,12 @@ const MAX_SQL_LENGTH: usize = 16_384;
 pub(crate) struct AppState {
     data_dir: PathBuf,
     master_path: PathBuf,
-    pub redis_store: Option<crate::redis_store::RedisStore>,
 }
 
 pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) -> Result<()> {
-    let redis_store = match crate::redis_store::RedisStore::from_env() {
-        Ok(Some(store)) => {
-            info!("Redis token/cache store configured");
-            Some(store)
-        }
-        Ok(None) => {
-            tracing::error!(
-                "REDIS_URL not set; protected resource routes will return 503 unless bypassed"
-            );
-            None
-        }
-        Err(error) => {
-            tracing::error!("Redis token/cache store disabled: {}", error);
-            None
-        }
-    };
-
     let state = AppState {
         data_dir,
         master_path,
-        redis_store,
     };
 
     if let Some(internal_port) = internal_resources_port() {
@@ -126,7 +107,7 @@ fn cors_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(origins)
         .allow_credentials(true)
-        .allow_methods([Method::GET, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::HEAD, Method::OPTIONS])
         .allow_headers([
             CONTENT_TYPE,
             AUTHORIZATION,
@@ -135,8 +116,10 @@ fn cors_layer() -> CorsLayer {
             ORIGIN,
             "X-Browser-Proof".parse().unwrap(),
             "X-API-Key".parse().unwrap(),
+            "X-API-Token".parse().unwrap(),
         ])
         .expose_headers([
+            "Set-Cookie".parse().unwrap(),
             "X-Browser-Proof".parse().unwrap(),
             "X-Browser-Proof-TTL".parse().unwrap(),
         ])

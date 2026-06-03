@@ -204,8 +204,7 @@ jobs:
             --env-file "$env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
-            -e REDIS_URL=redis://redis:6379/0 \
-            -e REDIS_KEY_PREFIX=umamoe \
+            -e AUTH_INTERNAL_BASE_URL=http://umamoe-backend:3201 \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$data_volume_name:/data" \
             "$image_tag"
@@ -354,8 +353,7 @@ jobs:
             --env-file "$env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
-            -e REDIS_URL=redis://redis:6379/0 \
-            -e REDIS_KEY_PREFIX=umamoe \
+            -e AUTH_INTERNAL_BASE_URL=http://umamoe-backend:3201 \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$data_volume_name:/data" \
             "$image_tag"
