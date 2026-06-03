@@ -116,6 +116,7 @@ fn cors_layer() -> CorsLayer {
             REFERER,
             ORIGIN,
             "X-Browser-Proof".parse().unwrap(),
+            "X-Browser-Proof-Source".parse().unwrap(),
             "X-API-Key".parse().unwrap(),
             "X-API-Token".parse().unwrap(),
         ])
@@ -123,6 +124,7 @@ fn cors_layer() -> CorsLayer {
             "Set-Cookie".parse().unwrap(),
             "X-Browser-Proof".parse().unwrap(),
             "X-Browser-Proof-TTL".parse().unwrap(),
+            "X-Browser-Proof-Source".parse().unwrap(),
         ])
 }
 
