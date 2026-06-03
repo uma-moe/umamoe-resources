@@ -409,13 +409,17 @@ fn api_protection_bypassed() -> bool {
 }
 
 fn api_protection_dry_run_bootstrap() -> bool {
-    env_bool("API_PROTECTION_DRY_RUN_BOOTSTRAP")
+    env_bool_default("API_PROTECTION_DRY_RUN_BOOTSTRAP", true)
 }
 
 fn env_bool(name: &str) -> bool {
+    env_bool_default(name, false)
+}
+
+fn env_bool_default(name: &str, default: bool) -> bool {
     std::env::var(name)
         .map(|value| value.eq_ignore_ascii_case("true") || value == "1")
-        .unwrap_or(false)
+        .unwrap_or(default)
 }
 
 fn env_string(name: &str) -> Option<String> {
