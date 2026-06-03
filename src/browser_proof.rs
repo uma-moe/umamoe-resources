@@ -35,6 +35,25 @@ struct AuthVerifyResponse {
     credential: Option<String>,
     message: Option<String>,
     error: Option<String>,
+    usage_recorded: Option<bool>,
+    user_id: Option<String>,
+    api_key: Option<AuthVerifyApiKey>,
+    browser_proof: Option<AuthVerifyBrowserProof>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthVerifyApiKey {
+    user_id: Option<String>,
+    usage_recorded: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AuthVerifyBrowserProof {
+    subject: Option<String>,
+    user_id: Option<String>,
+    host: Option<String>,
+    source: Option<String>,
+    context_matches_proof: Option<bool>,
 }
 
 #[derive(Debug)]
@@ -75,14 +94,14 @@ pub async fn api_protection_middleware(
 
     if let Some(credential) = extract_api_credential(&headers) {
         return match verify_with_backend(credential, &context).await {
-            Ok(()) => next.run(request).await,
+            Ok(_) => next.run(request).await,
             Err(error) => auth_error_response(error, &path),
         };
     }
 
     if let Some(proof) = extract_browser_proof(&headers) {
         return match verify_with_backend(Credential::BrowserProof(proof), &context).await {
-            Ok(()) => next.run(request).await,
+            Ok(_) => next.run(request).await,
             Err(error) => auth_error_response(error, &path),
         };
     }
@@ -126,12 +145,7 @@ async fn dry_run_api_protection(
         );
 
         match verify_with_backend(credential, context).await {
-            Ok(()) => info!(
-                method = %context.method,
-                path = %context.path,
-                credential = "api",
-                "Resources auth dry-run would allow request"
-            ),
+            Ok(response) => log_auth_dry_run_resolved("api", context, &response),
             Err(error) => log_auth_dry_run_error("api", path, error),
         }
         return;
@@ -147,12 +161,7 @@ async fn dry_run_api_protection(
         );
 
         match verify_with_backend(Credential::BrowserProof(proof), context).await {
-            Ok(()) => info!(
-                method = %context.method,
-                path = %context.path,
-                credential = "browser_proof",
-                "Resources auth dry-run would allow request"
-            ),
+            Ok(response) => log_auth_dry_run_resolved("browser_proof", context, &response),
             Err(error) => log_auth_dry_run_error("browser_proof", path, error),
         }
         return;
@@ -201,7 +210,7 @@ async fn dry_run_api_protection(
 async fn verify_with_backend(
     credential: Credential<'_>,
     context: &AuthContext,
-) -> Result<(), AuthError> {
+) -> Result<AuthVerifyResponse, AuthError> {
     let mut request = auth_client()
         .post(auth_verify_internal_url())
         .header(CONTENT_TYPE, "application/json")
@@ -240,7 +249,7 @@ async fn verify_with_backend(
         });
     }
 
-    Ok(())
+    Ok(body)
 }
 
 async fn request_browser_proof(context: &AuthContext) -> Result<HeaderMap, AuthError> {
@@ -381,6 +390,29 @@ fn log_auth_dry_run_request(context: &AuthContext, headers: &HeaderMap) {
     );
 }
 
+fn log_auth_dry_run_resolved(
+    expected_credential: &'static str,
+    context: &AuthContext,
+    response: &AuthVerifyResponse,
+) {
+    info!(
+        method = %context.method,
+        path = %context.path,
+        expected_credential,
+        valid = response.valid,
+        credential = response.credential.as_deref().unwrap_or("<none>"),
+        message = response.message.as_deref().unwrap_or("<none>"),
+        error = response.error.as_deref().unwrap_or("<none>"),
+        user_id = response.resolved_user_id().unwrap_or("<none>"),
+        usage_recorded = response.resolved_usage_recorded(),
+        proof_source = response.proof_source().unwrap_or("<none>"),
+        proof_subject = response.proof_subject().unwrap_or("<none>"),
+        proof_host = response.proof_host().unwrap_or("<none>"),
+        context_matches_proof = response.context_matches_proof(),
+        "Resources auth dry-run resolved backend credential"
+    );
+}
+
 fn log_auth_dry_run_error(credential: &'static str, path: &str, error: AuthError) {
     match error {
         AuthError::Invalid {
@@ -401,6 +433,52 @@ fn log_auth_dry_run_error(credential: &'static str, path: &str, error: AuthError
             message,
             "Resources auth dry-run backend unavailable"
         ),
+    }
+}
+
+impl AuthVerifyResponse {
+    fn resolved_user_id(&self) -> Option<&str> {
+        self.api_key
+            .as_ref()
+            .and_then(|api_key| api_key.user_id.as_deref())
+            .or_else(|| {
+                self.browser_proof
+                    .as_ref()
+                    .and_then(|proof| proof.user_id.as_deref())
+            })
+            .or(self.user_id.as_deref())
+    }
+
+    fn resolved_usage_recorded(&self) -> bool {
+        self.api_key
+            .as_ref()
+            .and_then(|api_key| api_key.usage_recorded)
+            .or(self.usage_recorded)
+            .unwrap_or(false)
+    }
+
+    fn proof_source(&self) -> Option<&str> {
+        self.browser_proof
+            .as_ref()
+            .and_then(|proof| proof.source.as_deref())
+    }
+
+    fn proof_subject(&self) -> Option<&str> {
+        self.browser_proof
+            .as_ref()
+            .and_then(|proof| proof.subject.as_deref())
+    }
+
+    fn proof_host(&self) -> Option<&str> {
+        self.browser_proof
+            .as_ref()
+            .and_then(|proof| proof.host.as_deref())
+    }
+
+    fn context_matches_proof(&self) -> Option<bool> {
+        self.browser_proof
+            .as_ref()
+            .and_then(|proof| proof.context_matches_proof)
     }
 }
 
