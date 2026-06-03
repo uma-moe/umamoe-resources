@@ -66,6 +66,7 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
 
 fn resource_router(state: AppState, protected: bool) -> Router {
     let app = Router::new()
+        .route("/health", get(healthz))
         .route("/healthz", get(healthz))
         .route("/resources", get(get_manifest))
         .route("/resources/", get(get_manifest))
