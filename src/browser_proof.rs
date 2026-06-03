@@ -2,7 +2,7 @@ use axum::{
     body::Body,
     extract::State,
     http::{
-        header::{CONTENT_TYPE, HOST, REFERER, SET_COOKIE},
+        header::{CONTENT_TYPE, REFERER, SET_COOKIE},
         HeaderMap, Method, Request, StatusCode,
     },
     middleware::Next,
@@ -14,6 +14,7 @@ use std::{sync::OnceLock, time::Duration};
 use tracing::{error, warn};
 
 use crate::static_api::AppState;
+use reqwest::Url;
 
 const BROWSER_PROOF_COOKIE: &str = "uma_browser_proof";
 const BROWSER_PROOF_HEADER: &str = "X-Browser-Proof";
@@ -43,7 +44,7 @@ struct AuthContext<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     referer: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    host: Option<&'a str>,
+    host: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     record_usage: Option<bool>,
 }
@@ -187,7 +188,7 @@ async fn request_browser_proof(context: &AuthContext<'_>) -> Result<HeaderMap, A
         .json(&BrowserProofRequest {
             origin: context.origin,
             referer: context.referer,
-            host: context.host,
+            host: context.host.as_deref(),
         })
         .send()
         .await
@@ -215,7 +216,7 @@ fn request_context<'a>(
         path,
         origin: header_str(headers, "Origin"),
         referer: header_str(headers, REFERER.as_str()),
-        host: header_str(headers, HOST.as_str()),
+        host: browser_context_host(headers),
         record_usage: extract_api_credential(headers).map(|_| true),
     }
 }
@@ -256,6 +257,17 @@ fn forward_browser_proof_headers(source: &HeaderMap, target: &mut HeaderMap) {
             target.append(header_name, value.clone());
         }
     }
+}
+
+fn browser_context_host(headers: &HeaderMap) -> Option<String> {
+    header_str(headers, "Origin")
+        .and_then(url_host)
+        .or_else(|| header_str(headers, REFERER.as_str()).and_then(url_host))
+}
+
+fn url_host(value: &str) -> Option<String> {
+    let parsed = Url::parse(value).ok()?;
+    parsed.host_str().map(ToString::to_string)
 }
 
 fn auth_client() -> &'static reqwest::Client {
@@ -348,7 +360,10 @@ fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
 }
 
 fn should_skip_api_protection(method: &Method, path: &str) -> bool {
-    *method == Method::OPTIONS || path == "/healthz" || path == "/resources/healthz"
+    *method == Method::OPTIONS
+        || path == "/health"
+        || path == "/healthz"
+        || path == "/resources/healthz"
 }
 
 fn api_protection_bypassed() -> bool {
@@ -389,8 +404,8 @@ fn json_error(status: StatusCode, error: &'static str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_api_credential, extract_browser_proof, forward_browser_proof_headers,
-        request_context, should_skip_api_protection, Credential,
+        browser_context_host, extract_api_credential, extract_browser_proof,
+        forward_browser_proof_headers, request_context, should_skip_api_protection, Credential,
     };
     use axum::http::{HeaderMap, HeaderValue, Method};
 
@@ -458,8 +473,26 @@ mod tests {
         assert_eq!(context.path, "/resources/some-file.json");
         assert_eq!(context.origin, Some("https://uma.moe"));
         assert_eq!(context.referer, Some("https://uma.moe/resources"));
-        assert_eq!(context.host, Some("uma.moe"));
+        assert_eq!(context.host.as_deref(), Some("uma.moe"));
         assert_eq!(context.record_usage, Some(true));
+    }
+
+    #[test]
+    fn derives_browser_context_host_from_origin_before_service_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert("Origin", HeaderValue::from_static("https://uma.moe"));
+        headers.insert("Host", HeaderValue::from_static("umamoe-resources"));
+
+        assert_eq!(browser_context_host(&headers).as_deref(), Some("uma.moe"));
+    }
+
+    #[test]
+    fn omits_host_without_browser_context() {
+        let mut headers = HeaderMap::new();
+        headers.insert("X-Forwarded-Host", HeaderValue::from_static("uma.moe"));
+        headers.insert("Host", HeaderValue::from_static("umamoe-resources"));
+
+        assert_eq!(browser_context_host(&headers), None);
     }
 
     #[test]
@@ -509,6 +542,8 @@ mod tests {
     fn skips_api_protection_for_health_endpoints() {
         assert!(should_skip_api_protection(&Method::GET, "/healthz"));
         assert!(should_skip_api_protection(&Method::HEAD, "/healthz"));
+        assert!(should_skip_api_protection(&Method::GET, "/health"));
+        assert!(should_skip_api_protection(&Method::HEAD, "/health"));
         assert!(should_skip_api_protection(
             &Method::GET,
             "/resources/healthz"
