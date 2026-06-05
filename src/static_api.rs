@@ -26,12 +26,14 @@ const MAX_SQL_LENGTH: usize = 16_384;
 pub(crate) struct AppState {
     data_dir: PathBuf,
     master_path: PathBuf,
+    protected: bool,
 }
 
 pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) -> Result<()> {
     let state = AppState {
         data_dir,
         master_path,
+        protected: false,
     };
 
     if let Some(internal_port) = internal_resources_port() {
@@ -64,7 +66,9 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
     Ok(())
 }
 
-fn resource_router(state: AppState, protected: bool) -> Router {
+fn resource_router(mut state: AppState, protected: bool) -> Router {
+    state.protected = protected;
+
     let app = Router::new()
         .route("/health", get(healthz))
         .route("/healthz", get(healthz))
@@ -143,8 +147,8 @@ fn allowed_origins() -> Vec<String> {
         .collect()
 }
 
-async fn healthz() -> &'static str {
-    "ok"
+async fn healthz() -> Json<HealthResponse> {
+    Json(HealthResponse { status: "ok" })
 }
 
 async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiError> {
@@ -163,7 +167,11 @@ async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiErro
     );
     headers.insert(
         CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=60, s-maxage=300, stale-while-revalidate=86400"),
+        HeaderValue::from_static(manifest_cache_control(state.protected)),
+    );
+    headers.insert(
+        VARY,
+        HeaderValue::from_static(protected_vary_header(state.protected)),
     );
     headers.insert(CONTENT_LENGTH, header_value(manifest_bytes.len())?);
     Ok((headers, manifest_bytes).into_response())
@@ -180,6 +188,7 @@ async fn get_current_resource(
         &manifest.version,
         &file_name,
         false,
+        state.protected,
     )
     .await
 }
@@ -194,6 +203,11 @@ struct SqlQueryResponse {
     columns: Vec<String>,
     rows: Vec<Vec<serde_json::Value>>,
     truncated: bool,
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
 }
 
 async fn get_current_sql(
@@ -232,7 +246,15 @@ async fn get_versioned_resource(
     } else {
         read_version_manifest(&state.data_dir, &version).map_err(internal_error)?
     };
-    resource_response(&state.data_dir, &manifest, &version, &file_name, true).await
+    resource_response(
+        &state.data_dir,
+        &manifest,
+        &version,
+        &file_name,
+        true,
+        state.protected,
+    )
+    .await
 }
 
 async fn resource_response(
@@ -241,6 +263,7 @@ async fn resource_response(
     version: &str,
     file_name: &str,
     immutable: bool,
+    protected: bool,
 ) -> Result<Response, ApiError> {
     let logical_file_name = normalize_file_name(file_name)?;
     let artifact = manifest
@@ -264,20 +287,53 @@ async fn resource_response(
         )
     })?;
 
-    let cache_control = if immutable {
-        "public, max-age=31536000, immutable"
-    } else {
-        "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
-    };
-
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, header_value(&artifact.content_type)?);
     headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static(cache_control));
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(resource_cache_control(protected, immutable)),
+    );
     headers.insert(ETAG, header_value(&artifact.etag)?);
-    headers.insert(VARY, HeaderValue::from_static("Accept-Encoding"));
+    headers.insert(
+        VARY,
+        HeaderValue::from_static(resource_vary_header(protected)),
+    );
     headers.insert(CONTENT_LENGTH, header_value(gzip_bytes.len())?);
     Ok((headers, gzip_bytes).into_response())
+}
+
+fn manifest_cache_control(protected: bool) -> &'static str {
+    if protected {
+        "private, max-age=60, stale-while-revalidate=86400"
+    } else {
+        "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+    }
+}
+
+fn resource_cache_control(protected: bool, immutable: bool) -> &'static str {
+    match (protected, immutable) {
+        (true, true) => "private, max-age=31536000, immutable",
+        (true, false) => "private, max-age=60, stale-while-revalidate=86400",
+        (false, true) => "public, max-age=31536000, immutable",
+        (false, false) => "public, max-age=60, s-maxage=300, stale-while-revalidate=86400",
+    }
+}
+
+fn protected_vary_header(protected: bool) -> &'static str {
+    if protected {
+        "Cookie, X-Browser-Proof"
+    } else {
+        "Accept-Encoding"
+    }
+}
+
+fn resource_vary_header(protected: bool) -> &'static str {
+    if protected {
+        "Accept-Encoding, Cookie, X-Browser-Proof"
+    } else {
+        "Accept-Encoding"
+    }
 }
 
 fn normalize_file_name(file_name: &str) -> Result<&str, ApiError> {
@@ -423,7 +479,10 @@ impl IntoResponse for ApiError {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_read_only_sql;
+    use super::{
+        manifest_cache_control, resource_cache_control, resource_vary_header,
+        validate_read_only_sql,
+    };
 
     #[test]
     fn allows_select_queries() {
@@ -440,5 +499,33 @@ mod tests {
     #[test]
     fn rejects_multiple_statements() {
         assert!(validate_read_only_sql("SELECT 1; SELECT 2").is_err());
+    }
+
+    #[test]
+    fn protected_resources_are_not_shared_cacheable() {
+        assert_eq!(
+            manifest_cache_control(true),
+            "private, max-age=60, stale-while-revalidate=86400"
+        );
+        assert_eq!(
+            resource_cache_control(true, true),
+            "private, max-age=31536000, immutable"
+        );
+        assert_eq!(
+            resource_vary_header(true),
+            "Accept-Encoding, Cookie, X-Browser-Proof"
+        );
+    }
+
+    #[test]
+    fn internal_resources_keep_public_cache_headers() {
+        assert_eq!(
+            manifest_cache_control(false),
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+        );
+        assert_eq!(
+            resource_cache_control(false, true),
+            "public, max-age=31536000, immutable"
+        );
     }
 }
