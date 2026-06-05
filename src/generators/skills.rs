@@ -48,7 +48,8 @@ pub fn generate(connection: &Connection) -> Result<Value> {
         if let Some(base_cost) = skill.base_cost {
             entry.insert("base_cost".to_string(), Value::from(base_cost));
         }
-        if unique_skill_ids.contains(&skill.skill_id) || inherited_skill_ids.contains(&skill.skill_id)
+        if unique_skill_ids.contains(&skill.skill_id)
+            || inherited_skill_ids.contains(&skill.skill_id)
         {
             entry.insert("unique".to_string(), Value::Bool(true));
         }

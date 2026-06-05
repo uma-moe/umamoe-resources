@@ -236,8 +236,7 @@ fn spawn_refresh_loop(pool: PgPool, args: ServeArgs) {
 
     info!(
         interval_seconds,
-        purge_on_refresh,
-        "automatic master refresh enabled"
+        purge_on_refresh, "automatic master refresh enabled"
     );
 
     tokio::spawn(async move {
@@ -247,14 +246,8 @@ fn spawn_refresh_loop(pool: PgPool, args: ServeArgs) {
         loop {
             interval.tick().await;
 
-            if let Err(error) = refresh_from_db(
-                &pool,
-                &master,
-                &data_dir,
-                write_json,
-                purge_on_refresh,
-            )
-            .await
+            if let Err(error) =
+                refresh_from_db(&pool, &master, &data_dir, write_json, purge_on_refresh).await
             {
                 warn!(error = %error, "automatic master refresh failed");
             }

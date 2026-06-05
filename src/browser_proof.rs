@@ -106,7 +106,7 @@ pub async fn api_protection_middleware(
         };
     }
 
-    if method == Method::GET || method == Method::HEAD {
+    if can_bootstrap_browser_read(&method, &path) {
         return match request_browser_proof(&context).await {
             Ok(proof_headers) => {
                 let mut response = next.run(request).await;
@@ -119,6 +119,10 @@ pub async fn api_protection_middleware(
 
     warn!("Missing API credential or browser proof on {}", path);
     json_error(StatusCode::FORBIDDEN, "browser_proof_required")
+}
+
+fn can_bootstrap_browser_read(method: &Method, path: &str) -> bool {
+    (*method == Method::GET || *method == Method::HEAD) && path == "/resources/manifest.json"
 }
 
 async fn dry_run_api_protection(
@@ -260,6 +264,9 @@ async fn request_browser_proof(context: &AuthContext) -> Result<HeaderMap, AuthE
             origin: context.origin.as_deref(),
             referer: context.referer.as_deref(),
             host: context.host.as_deref(),
+            client_ip: context.client_ip.as_deref(),
+            user_agent: context.user_agent.as_deref(),
+            warmup_marker: context.warmup_marker.as_deref(),
         })
         .send()
         .await
@@ -267,9 +274,18 @@ async fn request_browser_proof(context: &AuthContext) -> Result<HeaderMap, AuthE
 
     let status = response.status();
     if !status.is_success() {
+        let is_rate_limited = status == StatusCode::TOO_MANY_REQUESTS;
         return Err(AuthError::Invalid {
-            status: StatusCode::FORBIDDEN,
-            error: "browser_proof_required",
+            status: if is_rate_limited {
+                StatusCode::TOO_MANY_REQUESTS
+            } else {
+                StatusCode::FORBIDDEN
+            },
+            error: if is_rate_limited {
+                "rate_limited"
+            } else {
+                "browser_proof_required"
+            },
             message: format!("browser proof bootstrap failed with {}", status),
         });
     }
@@ -429,9 +445,7 @@ fn log_auth_dry_run_error(credential: &'static str, path: &str, error: AuthError
         ),
         AuthError::Unavailable(message) => error!(
             path,
-            credential,
-            message,
-            "Resources auth dry-run backend unavailable"
+            credential, message, "Resources auth dry-run backend unavailable"
         ),
     }
 }
@@ -532,8 +546,9 @@ fn json_error(status: StatusCode, error: &'static str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::{
-        browser_context_host, extract_api_credential, extract_browser_proof,
-        forward_browser_proof_headers, request_context, should_skip_api_protection, Credential,
+        browser_context_host, can_bootstrap_browser_read, extract_api_credential,
+        extract_browser_proof, forward_browser_proof_headers, request_context,
+        should_skip_api_protection, Credential,
     };
     use axum::http::{HeaderMap, HeaderValue, Method};
 
@@ -661,7 +676,10 @@ mod tests {
         );
         source.insert("X-Browser-Proof", HeaderValue::from_static("proof"));
         source.insert("X-Browser-Proof-TTL", HeaderValue::from_static("300"));
-        source.insert("X-Browser-Proof-Source", HeaderValue::from_static("turnstile"));
+        source.insert(
+            "X-Browser-Proof-Source",
+            HeaderValue::from_static("turnstile"),
+        );
 
         forward_browser_proof_headers(&source, &mut target);
 
@@ -710,6 +728,26 @@ mod tests {
         assert!(should_skip_api_protection(
             &Method::HEAD,
             "/resources/healthz"
+        ));
+    }
+
+    #[test]
+    fn bootstraps_only_resource_manifest() {
+        assert!(can_bootstrap_browser_read(
+            &Method::GET,
+            "/resources/manifest.json"
+        ));
+        assert!(can_bootstrap_browser_read(
+            &Method::HEAD,
+            "/resources/manifest.json"
+        ));
+        assert!(!can_bootstrap_browser_read(
+            &Method::GET,
+            "/resources/current/factors.json.gz"
+        ));
+        assert!(!can_bootstrap_browser_read(
+            &Method::POST,
+            "/resources/manifest.json"
         ));
     }
 }
