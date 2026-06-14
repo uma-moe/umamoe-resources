@@ -27,6 +27,8 @@ static AUTH_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 struct ErrorBody<'a> {
     error: &'a str,
     status: u16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<&'a str>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -538,9 +540,19 @@ fn json_error(status: StatusCode, error: &'static str) -> Response {
         Json(ErrorBody {
             error,
             status: status.as_u16(),
+            message: error_message(error),
         }),
     )
         .into_response()
+}
+
+fn error_message(error: &'static str) -> Option<&'static str> {
+    match error {
+        "browser_proof_required" => Some(
+            "This endpoint requires a browser proof. Browser clients should wait for the Turnstile/browser-proof exchange and retry. Bots, scripts, and integrations should use an API key instead; API keys can be generated from your Uma account at any time.",
+        ),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

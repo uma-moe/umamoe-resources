@@ -11,7 +11,12 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://localhost:3000,http://127.0.0.1:4200}
       DATABASE_URL: ${RESOURCE_DATABASE_URL:-}
       MASTER_REFRESH_INTERVAL_SECONDS: ${MASTER_REFRESH_INTERVAL_SECONDS:-300}
+      PURGE_ON_REFRESH: ${PURGE_ON_REFRESH:-false}
+      CONFIRMED_BANNER_DATES_URL: ${CONFIRMED_BANNER_DATES_URL:-}
+      CONFIRMED_BANNER_DATES_PATH: ${CONFIRMED_BANNER_DATES_PATH:-/config/confirmed_global_banner_dates.csv}
+      CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS: ${CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS:-60}
       RUST_LOG: ${RUST_LOG:-umamoe_resources=info,info}
     volumes:
       - ./master.mdb:/data/master.mdb
       - ./generated-data:/data/generated-data
+      - ./config:/config

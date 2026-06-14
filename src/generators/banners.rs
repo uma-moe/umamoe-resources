@@ -19,6 +19,8 @@ pub struct CharacterBanner {
     pub image_path: String,
     pub start_date_string: String,
     pub end_date_string: String,
+    #[serde(skip_serializing)]
+    pub start_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -29,6 +31,8 @@ pub struct SupportBanner {
     pub start_date: String,
     pub end_date: String,
     pub pickup_card_ids: Vec<i64>,
+    #[serde(skip_serializing)]
+    pub start_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -41,6 +45,8 @@ pub struct PaidBanner {
     pub start_date: String,
     pub end_date: String,
     pub pickup_card_ids: Vec<i64>,
+    #[serde(skip_serializing)]
+    pub start_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone)]
@@ -91,6 +97,7 @@ pub fn generate_character_banners(connection: &Connection) -> Result<Vec<Charact
             image_path: format!("assets/images/character/banner/{}", image),
             start_date_string: format_date_display(start_dt),
             end_date_string: format_date_display(end_dt),
+            start_at: start_dt,
         });
     }
 
@@ -119,6 +126,7 @@ pub fn generate_support_banners(connection: &Connection) -> Result<Vec<SupportBa
             start_date: format_date_display(start_dt),
             end_date: format_date_display(end_dt),
             pickup_card_ids,
+            start_at: start_dt,
         });
     }
 
@@ -150,6 +158,7 @@ pub fn generate_paid_banners(connection: &Connection) -> Result<Vec<PaidBanner>>
             start_date: format_date_display(start_dt),
             end_date: format_date_display(end_dt),
             pickup_card_ids,
+            start_at: start_dt,
         });
     }
 

@@ -51,7 +51,12 @@ pub fn generate_resources(
     let master_sha256 = sha256_hex(&master_bytes);
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    let version = sanitize_version(&marker);
+    let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
+    let version = sanitize_version(&format!(
+        "{}-timeline-{}",
+        marker,
+        &confirmed_dates_hash[..12]
+    ));
     let version_dir = out_dir.join(&version);
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("failed to create {}", version_dir.display()))?;

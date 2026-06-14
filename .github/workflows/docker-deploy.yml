@@ -23,8 +23,11 @@ env:
   BETA_CONTAINER_NAME: umamoe-resources-beta
   PROD_ENV_FILE: /opt/umamoe-resources/env
   BETA_ENV_FILE: /opt/umamoe-resources-beta/env
+  PROD_CONFIG_DIR: /opt/umamoe-resources/config
+  BETA_CONFIG_DIR: /opt/umamoe-resources-beta/config
   PROD_DATA_VOLUME: umamoe-resources-data
   BETA_DATA_VOLUME: umamoe-resources-beta-data
+  CONFIRMED_BANNER_DATES_CONTAINER_PATH: /config/confirmed_global_banner_dates.csv
   APP_PORT: '3000'
   INTERNAL_APP_PORT: '3204'
   BETA_HOST_PORT: '3104'
@@ -162,7 +165,9 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
+          CONFIG_DIR: ${{ env.BETA_CONFIG_DIR }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
+          CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.BETA_SHARED_SERVICE_ALIAS }}
           AUTH_INTERNAL_BASE_URL: ${{ env.BETA_AUTH_INTERNAL_BASE_URL }}
@@ -175,7 +180,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -185,10 +190,12 @@ jobs:
           internal_app_port="$5"
           host_port="$6"
           env_file="$7"
-          data_volume_name="$8"
-          shared_network_name="$9"
-          shared_service_alias="${10}"
-          auth_internal_base_url="${11}"
+          config_dir="$8"
+          data_volume_name="$9"
+          confirmed_banner_dates_container_path="${10}"
+          shared_network_name="${11}"
+          shared_service_alias="${12}"
+          auth_internal_base_url="${13}"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -197,6 +204,7 @@ jobs:
 
           gzip -dc "$archive" | docker load
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
+          mkdir -p "$config_dir"
 
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
@@ -209,7 +217,9 @@ jobs:
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
+            -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
+            -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             "$image_tag"
 
@@ -313,7 +323,9 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.PROD_ENV_FILE }}
+          CONFIG_DIR: ${{ env.PROD_CONFIG_DIR }}
           DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
+          CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.PROD_SHARED_SERVICE_ALIAS }}
           AUTH_INTERNAL_BASE_URL: ${{ env.PROD_AUTH_INTERNAL_BASE_URL }}
@@ -326,7 +338,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -336,10 +348,12 @@ jobs:
           internal_app_port="$5"
           host_port="$6"
           env_file="$7"
-          data_volume_name="$8"
-          shared_network_name="$9"
-          shared_service_alias="${10}"
-          auth_internal_base_url="${11}"
+          config_dir="$8"
+          data_volume_name="$9"
+          confirmed_banner_dates_container_path="${10}"
+          shared_network_name="${11}"
+          shared_service_alias="${12}"
+          auth_internal_base_url="${13}"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -348,6 +362,7 @@ jobs:
 
           gzip -dc "$archive" | docker load
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
+          mkdir -p "$config_dir"
 
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
@@ -360,7 +375,9 @@ jobs:
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
+            -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
+            -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             "$image_tag"
 
