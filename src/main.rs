@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tracing::{info, warn};
 
@@ -72,8 +73,17 @@ struct ServeArgs {
     #[arg(long, env = "MASTER_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 300)]
     refresh_interval_seconds: u64,
     /// Purge manifest/current CDN URLs after an automatic refresh.
-    #[arg(long)]
+    #[arg(long, env = "PURGE_ON_REFRESH")]
     purge_on_refresh: bool,
+    /// Optional CSV URL for phone-friendly confirmed banner date updates.
+    #[arg(long, env = "CONFIRMED_BANNER_DATES_URL")]
+    confirmed_banner_dates_url: Option<String>,
+    /// Local path used to cache confirmed banner dates fetched from the URL.
+    #[arg(long, env = "CONFIRMED_BANNER_DATES_PATH")]
+    confirmed_banner_dates_path: Option<PathBuf>,
+    /// How often the server checks CONFIRMED_BANNER_DATES_URL for edits.
+    #[arg(long, env = "CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 60)]
+    confirmed_banner_dates_refresh_interval_seconds: u64,
     /// Also write plain .json files beside the .json.gz artifacts during startup generation.
     #[arg(long)]
     write_json: bool,
@@ -93,6 +103,9 @@ impl Default for ServeArgs {
             database_url: None,
             refresh_interval_seconds: 300,
             purge_on_refresh: false,
+            confirmed_banner_dates_url: None,
+            confirmed_banner_dates_path: None,
+            confirmed_banner_dates_refresh_interval_seconds: 60,
             write_json: false,
             no_generate: false,
         }
@@ -151,7 +164,33 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(args: ServeArgs) -> Result<()> {
-    let refresh_pool = match args.database_url.as_deref() {
+    let confirmed_banner_dates_url = confirmed_banner_dates_url(&args).map(ToOwned::to_owned);
+    let confirmed_banner_dates_path = confirmed_banner_dates_path(&args);
+    if let Some(path) = confirmed_banner_dates_path.as_ref() {
+        std::env::set_var("CONFIRMED_BANNER_DATES_PATH", path);
+    }
+
+    if let (Some(url), Some(path)) = (
+        confirmed_banner_dates_url.as_deref(),
+        confirmed_banner_dates_path.as_ref(),
+    ) {
+        match refresh_confirmed_banner_dates_from_url(url, path).await {
+            Ok(true) => info!(
+                path = %path.display(),
+                "loaded updated confirmed banner dates before serving"
+            ),
+            Ok(false) => info!(
+                path = %path.display(),
+                "confirmed banner dates already up to date before serving"
+            ),
+            Err(error) => warn!(
+                error = %error,
+                "failed to fetch confirmed banner dates before serving; using cached or bundled dates"
+            ),
+        }
+    }
+
+    let refresh_pool = match database_url(&args) {
         Some(database_url) => Some(
             PgPool::connect(database_url)
                 .await
@@ -193,7 +232,42 @@ async fn serve(args: ServeArgs) -> Result<()> {
         spawn_refresh_loop(pool, args.clone());
     }
 
+    match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
+        (Some(url), Some(path)) => {
+            spawn_confirmed_banner_dates_url_refresh_loop(args.clone(), path, url);
+        }
+        (None, Some(path)) => {
+            spawn_confirmed_banner_dates_file_refresh_loop(args.clone(), path);
+        }
+        _ => {}
+    }
+
     static_api::serve(args.data_dir, args.master, args.bind).await
+}
+
+fn confirmed_banner_dates_url(args: &ServeArgs) -> Option<&str> {
+    args.confirmed_banner_dates_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+}
+
+fn database_url(args: &ServeArgs) -> Option<&str> {
+    args.database_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+}
+
+fn confirmed_banner_dates_path(args: &ServeArgs) -> Option<PathBuf> {
+    args.confirmed_banner_dates_path
+        .as_ref()
+        .filter(|path| !path.as_os_str().is_empty())
+        .cloned()
+        .or_else(|| {
+            confirmed_banner_dates_url(args)
+                .map(|_| args.data_dir.join("confirmed_global_banner_dates.csv"))
+        })
 }
 
 async fn refresh_from_db(
@@ -253,4 +327,199 @@ fn spawn_refresh_loop(pool: PgPool, args: ServeArgs) {
             }
         }
     });
+}
+
+fn spawn_confirmed_banner_dates_url_refresh_loop(args: ServeArgs, path: PathBuf, url: String) {
+    let interval_seconds = args.confirmed_banner_dates_refresh_interval_seconds;
+    let master = args.master;
+    let data_dir = args.data_dir;
+    let write_json = args.write_json;
+    let purge_on_refresh = args.purge_on_refresh;
+
+    info!(
+        interval_seconds,
+        url,
+        path = %path.display(),
+        purge_on_refresh,
+        "automatic confirmed banner dates refresh enabled"
+    );
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+
+            if let Err(error) = refresh_from_confirmed_banner_dates_url(
+                &url,
+                &path,
+                &master,
+                &data_dir,
+                write_json,
+                purge_on_refresh,
+            )
+            .await
+            {
+                warn!(error = %error, "confirmed banner dates refresh failed");
+            }
+        }
+    });
+}
+
+fn spawn_confirmed_banner_dates_file_refresh_loop(args: ServeArgs, path: PathBuf) {
+    let interval_seconds = args.confirmed_banner_dates_refresh_interval_seconds;
+    let master = args.master;
+    let data_dir = args.data_dir;
+    let write_json = args.write_json;
+    let purge_on_refresh = args.purge_on_refresh;
+
+    info!(
+        interval_seconds,
+        path = %path.display(),
+        purge_on_refresh,
+        "automatic mounted confirmed banner dates refresh enabled"
+    );
+
+    tokio::spawn(async move {
+        let mut last_hash = match confirmed_banner_dates_file_hash(&path).await {
+            Ok(hash) => hash,
+            Err(error) => {
+                warn!(error = %error, "failed to read mounted confirmed banner dates before polling");
+                None
+            }
+        };
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+        interval.tick().await;
+
+        loop {
+            interval.tick().await;
+
+            match confirmed_banner_dates_file_hash(&path).await {
+                Ok(current_hash) if current_hash != last_hash => {
+                    last_hash = current_hash;
+                    if last_hash.is_none() {
+                        warn!(
+                            path = %path.display(),
+                            "mounted confirmed banner dates file disappeared; keeping current generated resources"
+                        );
+                        continue;
+                    }
+
+                    if let Err(error) = regenerate_after_confirmed_banner_dates_change(
+                        &master,
+                        &data_dir,
+                        write_json,
+                        purge_on_refresh,
+                    )
+                    .await
+                    {
+                        warn!(error = %error, "failed to regenerate after mounted confirmed banner dates changed");
+                    }
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(error = %error, "mounted confirmed banner dates refresh failed");
+                }
+            }
+        }
+    });
+}
+
+async fn refresh_from_confirmed_banner_dates_url(
+    url: &str,
+    path: &Path,
+    master: &PathBuf,
+    out: &PathBuf,
+    write_json: bool,
+    purge: bool,
+) -> Result<bool> {
+    if !refresh_confirmed_banner_dates_from_url(url, path).await? {
+        return Ok(false);
+    }
+
+    regenerate_after_confirmed_banner_dates_change(master, out, write_json, purge).await?;
+    Ok(true)
+}
+
+async fn regenerate_after_confirmed_banner_dates_change(
+    master: &PathBuf,
+    out: &PathBuf,
+    write_json: bool,
+    purge: bool,
+) -> Result<()> {
+    let manifest = pipeline::generate_resources(master, out, write_json)?;
+    info!(
+        version = manifest.version,
+        artifacts = manifest.artifacts.len(),
+        "regenerated resources after confirmed banner date update"
+    );
+
+    if purge {
+        cache::purge_manifest_current_urls(&manifest).await?;
+    } else {
+        warn!("confirmed banner dates changed; run `purge --data-dir {}` or set PURGE_ON_REFRESH=true to clear current CDN URLs", out.display());
+    }
+
+    Ok(())
+}
+
+async fn refresh_confirmed_banner_dates_from_url(url: &str, path: &Path) -> Result<bool> {
+    let response = reqwest::get(url)
+        .await
+        .with_context(|| format!("failed to fetch confirmed banner dates from {url}"))?
+        .error_for_status()
+        .with_context(|| format!("confirmed banner dates URL returned an error: {url}"))?;
+    let body = response
+        .text()
+        .await
+        .with_context(|| format!("failed to read confirmed banner dates response from {url}"))?;
+    let body = normalize_text_file(&body);
+
+    generators::timeline::validate_confirmed_dates_csv(&body)
+        .context("remote confirmed banner dates CSV is invalid")?;
+
+    let existing = tokio::fs::read_to_string(path).await.ok();
+    if existing.as_deref() == Some(body.as_str()) {
+        return Ok(false);
+    }
+
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    tokio::fs::write(path, body)
+        .await
+        .with_context(|| format!("failed to write {}", path.display()))?;
+
+    Ok(true)
+}
+
+async fn confirmed_banner_dates_file_hash(path: &Path) -> Result<Option<String>> {
+    let body = match tokio::fs::read_to_string(path).await {
+        Ok(body) => normalize_text_file(&body),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()));
+        }
+    };
+
+    generators::timeline::validate_confirmed_dates_csv(&body).with_context(|| {
+        format!(
+            "mounted confirmed banner dates CSV is invalid: {}",
+            path.display()
+        )
+    })?;
+
+    Ok(Some(hex::encode(Sha256::digest(body.as_bytes()))))
+}
+
+fn normalize_text_file(value: &str) -> String {
+    let mut normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+    if !normalized.ends_with('\n') {
+        normalized.push('\n');
+    }
+    normalized
 }

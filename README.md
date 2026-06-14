@@ -7,10 +7,11 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `factors.json` generation from `text_data` category `147`
 - `race_program.json` generation from `single_mode_program`
 - `character_banners.json`, `supports_banners.json`, and `paid_gacha_banners.json` generation from `gacha_data` + `gacha_available`
+- `banner_timeline.json` generation from bundled JP banner/event history plus confirmed global anchors from `master.mdb` and `src/jp_data/confirmed_global_banner_dates.csv`
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
 - `character_names.json` overlay generation from the bundled mapping, with names refreshed from global `text_data` category `6`
 - `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` DB-first generation from `master.mdb`
-- Versioned gzip artifacts under `generated-data/{master-version}/`
+- Versioned gzip artifacts under `generated-data/{master-version}-timeline-{hash}/`
 - `generated-data/manifest.json` for frontend discovery
 - HTTP serving with CDN-friendly cache headers
 - Cloudflare purge hook for mutable `manifest` and `current` URLs
@@ -98,6 +99,7 @@ Useful routes:
 - `/resources/{version}/character_banners.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/supports_banners.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/paid_gacha_banners.json.gz` - one-year immutable CDN cache
+- `/resources/{version}/banner_timeline.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/affinity.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/character_names.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/character.json.gz` - one-year immutable CDN cache
@@ -140,6 +142,52 @@ Generation emits `character_names.json` from the bundled `src/character_names.js
 
 `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` are generated from `master.mdb` and the bundled character-name mapping only. No external frontend data directory is read during generation.
 
+Confirmed global timeline dates for `banner_timeline.json` live in `src/jp_data/confirmed_global_banner_dates.csv`. To confirm a newly announced schedule entry, append one line:
+
+```csv
+character,30104,2026-07-02
+support,30105,2026-07-02
+paid,50009,2026-07-08
+story,07_uma_musume_summer_story_banner,2025-10-14
+champions,14,2026-06-21
+legend,12,2026-06-07
+```
+
+Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
+
+Months are inferred as complete schedules. If the CSV contains any confirmed timeline entry in a global month, `banner_timeline.json` treats that whole month as closed and shifts unknown future predictions out of that month. This matches the monthly schedule release pattern: once July is entered, there should be no more unconfirmed July entries predicted by the site.
+
+`banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, and campaign entries. Character and support banners define the baseline acceleration curve. Paid/story/champions/legend/campaign confirmations then apply isolated same-family residual corrections on top of that baseline, and non-banner events can still snap to nearby banner groups when confirmed history shows that JP/global grouping pattern.
+
+The resource also includes prediction likelihood metadata. The calculation block reports observed character-banner monthly count, adjacent character-banner gap, weekday, and day-of-month frequencies; unconfirmed events include a compact `prediction.calendar_likelihood` score showing how common that predicted month shape, spacing, and release date are compared with confirmed schedules.
+
+For server-side phone-friendly updates, edit the mounted file on the host:
+
+```text
+/opt/umamoe-resources/config/confirmed_global_banner_dates.csv
+```
+
+The deploy workflow mounts that directory into the production container at `/config` and starts the service with:
+
+```text
+CONFIRMED_BANNER_DATES_PATH=/config/confirmed_global_banner_dates.csv
+CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
+PURGE_ON_REFRESH=true
+```
+
+The container polls the mounted file, validates the CSV, regenerates resources when it changes, and purges mutable Cloudflare resource URLs when `PURGE_ON_REFRESH=true`.
+The mounted file is layered on top of the bundled CSV, so it can contain only new or corrected lines instead of the full history.
+
+If you prefer editing a raw GitHub/Gist URL instead of the server file, configure:
+
+```text
+CONFIRMED_BANNER_DATES_URL=https://raw.githubusercontent.com/<owner>/umamoe-resources/master/src/jp_data/confirmed_global_banner_dates.csv
+CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
+PURGE_ON_REFRESH=true
+```
+
+The confirmation CSV hash is part of the generated resource version, so clients that read `/resources/manifest.json` will see a new versioned `banner_timeline.json.gz` path after an edit.
+
 For debugging, also write plain JSON beside the gzip files:
 
 ```powershell
@@ -151,13 +199,14 @@ Output layout:
 ```text
 generated-data/
 	manifest.json
-	1.21.0-10005900/
+	1.21.0-10005900-timeline-0123abcd4567/
 		manifest.json
 		factors.json.gz
 		race_program.json.gz
 		character_banners.json.gz
 		supports_banners.json.gz
 		paid_gacha_banners.json.gz
+		banner_timeline.json.gz
 		affinity.json.gz
 		character_names.json.gz
 		character.json.gz
@@ -246,6 +295,8 @@ Explicit runtime names managed by the workflow:
 - Production container: `umamoe-resources`
 - Beta data volume: `umamoe-resources-beta-data`
 - Production data volume: `umamoe-resources-data`
+- Beta confirmed-banner config dir: `/opt/umamoe-resources-beta/config`
+- Production confirmed-banner config dir: `/opt/umamoe-resources/config`
 
 Fixed host ports in the workflow:
 
@@ -263,6 +314,9 @@ Manual remote `env` files should contain the normal application env values only:
 
 - `DATABASE_URL`
 - `MASTER_REFRESH_INTERVAL_SECONDS`
+- `PURGE_ON_REFRESH`
+- `CONFIRMED_BANNER_DATES_URL` if using a remote CSV instead of the mounted `/opt` file
+- `CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS`
 - `CLOUDFLARE_ZONE_ID`
 - `CLOUDFLARE_API_TOKEN`
 - `PUBLIC_BASE_URL`
@@ -270,8 +324,8 @@ Manual remote `env` files should contain the normal application env values only:
 
 Recommended environment-specific values:
 
-- Beta `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PUBLIC_BASE_URL=https://beta.uma.moe`
-- Production `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PUBLIC_BASE_URL=https://uma.moe`
+- Beta `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://beta.uma.moe`
+- Production `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://uma.moe`
 
 Remote host requirements:
 

@@ -1,0 +1,170 @@
+# Confirmed global timeline dates used by banner_timeline.json.
+#
+# Format:
+# type,key,date
+#
+# type: character, support, paid, story, champions, legend, or campaign
+# key: for banners, a bare gacha id, image stem, .png, or .webp all work
+# key: for story/campaign, use the image stem, .png, or .webp
+# key: for champions/legend, use the 0-based index or full key like champions_meeting_0
+# date: YYYY-MM-DD; generated timestamps use 22:00 UTC for that date
+#
+# Schedule months are closed automatically. If this file contains any timeline
+# entry in a global month, the predictor assumes that month was published as a
+# complete monthly schedule and will not place unconfirmed entries inside that
+# month.
+#
+# Example:
+# character,30104,2026-07-02
+# support,30105,2026-07-02
+# story,07_uma_musume_summer_story_banner,2025-10-14
+# champions,14,2026-06-21
+
+character,30004,2025-06-27
+character,30006,2025-07-02
+character,30008,2025-07-10
+character,30010,2025-07-16
+character,30012,2025-07-27
+character,30014,2025-08-03
+character,30016,2025-08-11
+character,30018,2025-08-20
+character,30020,2025-08-28
+character,30022,2025-09-07
+character,30024,2025-09-17
+character,30026,2025-09-21
+character,30028,2025-10-02
+character,30030,2025-10-07
+character,30032,2025-10-14
+character,30034,2025-10-21
+character,30036,2025-10-30
+character,30038,2025-11-06
+character,30040,2025-11-11
+character,30042,2025-11-19
+character,30044,2025-11-24
+character,30046,2025-12-01
+character,30048,2025-12-08
+character,30050,2025-12-14
+character,30052,2025-12-18
+character,30054,2025-12-28
+character,30056,2026-01-05
+character,30058,2026-01-15
+character,30060,2026-01-22
+character,30062,2026-01-29
+character,30064,2026-02-05
+character,30066,2026-02-11
+character,30068,2026-02-18
+character,30070,2026-02-25
+character,30072,2026-03-05
+character,30074,2026-03-12
+character,30076,2026-03-22
+character,30078,2026-03-26
+character,30080,2026-04-05
+character,30082,2026-04-12
+character,30084,2026-04-20
+character,30086,2026-04-26
+character,30088,2026-04-30
+character,30090,2026-05-10
+character,30092,2026-05-18
+character,30094,2026-05-28
+character,30096,2026-06-04
+character,30098,2026-06-11
+character,30100,2026-06-18
+character,30102,2026-06-25
+
+support,30005,2025-06-27
+support,30007,2025-07-02
+support,30009,2025-07-10
+support,30011,2025-07-16
+support,30013,2025-07-27
+support,30015,2025-08-03
+support,30017,2025-08-11
+support,30019,2025-08-20
+support,30021,2025-08-28
+support,30023,2025-09-07
+support,30025,2025-09-17
+support,30027,2025-09-21
+support,30029,2025-10-02
+support,30031,2025-10-07
+support,30033,2025-10-14
+support,30035,2025-10-21
+support,30037,2025-10-30
+support,30039,2025-11-06
+support,30041,2025-11-11
+support,30043,2025-11-19
+support,30045,2025-11-24
+support,30047,2025-12-01
+support,30049,2025-12-08
+support,30051,2025-12-14
+support,30053,2025-12-18
+support,30055,2025-12-28
+support,30057,2026-01-05
+support,30059,2026-01-15
+support,30061,2026-01-22
+support,30063,2026-01-29
+support,30065,2026-02-05
+support,30067,2026-02-11
+support,30069,2026-02-18
+support,30071,2026-02-25
+support,30073,2026-03-05
+support,30075,2026-03-12
+support,30077,2026-03-22
+support,30079,2026-03-26
+support,30081,2026-04-05
+support,30083,2026-04-12
+support,30085,2026-04-20
+support,30087,2026-04-26
+support,30089,2026-04-30
+support,30091,2026-05-10
+support,30093,2026-05-18
+support,30095,2026-05-28
+support,30097,2026-06-04
+support,30099,2026-06-11
+support,30101,2026-06-18
+support,30103,2026-06-25
+
+paid,50003,2025-11-03
+paid,50004,2025-11-03
+
+story,03_chase_your_dreams_banner,2025-06-27
+story,03_brand_new_friend_banner,2025-07-16
+story,05_blooming_maidens_june_pride_banner,2025-08-28
+story,06_fantasy_world_uma_nest_banner,2025-09-21
+story,07_uma_musume_summer_story_banner,2025-10-14
+story,09_make_up_in_halloween_banner,2025-11-24
+story,10_the_sounds_of_autumn_banner,2025-12-14
+story,11_miracles_of_the_holy_night_banner,2026-01-05
+story,01_patisserie_grandeur_banner,2026-02-18
+story,02_flapping_run_up_banner,2026-03-12
+story,03_tonight_at_the_ligne_droite_banner,2026-04-05
+story,05_silks_and_three_riddles_banner,2026-05-18
+story,06_seek_solve_summer_walk_banner,2026-06-11
+
+champions,0,2025-08-17
+champions,1,2025-09-07
+champions,2,2025-10-07
+champions,3,2025-10-30
+champions,4,2025-11-16
+champions,5,2025-12-08
+champions,6,2025-12-28
+champions,7,2026-01-19
+champions,8,2026-02-09
+champions,9,2026-03-02
+champions,10,2026-03-26
+champions,11,2026-04-20
+champions,12,2026-05-10
+champions,13,2026-05-31
+champions,14,2026-06-21
+
+legend,0,2025-07-06
+legend,1,2025-07-27
+legend,2,2025-08-21
+legend,3,2025-09-11
+legend,4,2025-10-26
+legend,5,2025-11-13
+legend,6,2025-12-04
+legend,7,2025-12-22
+legend,8,2026-01-22
+legend,9,2026-02-26
+legend,10,2026-03-23
+legend,11,2026-05-07
+legend,12,2026-06-07

@@ -12,6 +12,7 @@ pub mod race_program;
 pub mod skills;
 pub mod support_cards_db;
 pub mod supports;
+pub mod timeline;
 
 pub struct ResourceOutput {
     pub file_name: &'static str,
@@ -19,20 +20,24 @@ pub struct ResourceOutput {
 }
 
 pub fn generate_all(connection: &Connection) -> Result<Vec<ResourceOutput>> {
+    let character_banners = banners::generate_character_banners(connection)?;
+    let support_banners = banners::generate_support_banners(connection)?;
+    let paid_banners = banners::generate_paid_banners(connection)?;
+
     let mut outputs = vec![
         output("factors.json", factors::generate(connection)?)?,
         output("race_program.json", race_program::generate(connection)?)?,
+        output("character_banners.json", &character_banners)?,
+        output("supports_banners.json", &support_banners)?,
+        output("paid_gacha_banners.json", &paid_banners)?,
         output(
-            "character_banners.json",
-            banners::generate_character_banners(connection)?,
-        )?,
-        output(
-            "supports_banners.json",
-            banners::generate_support_banners(connection)?,
-        )?,
-        output(
-            "paid_gacha_banners.json",
-            banners::generate_paid_banners(connection)?,
+            "banner_timeline.json",
+            timeline::generate(
+                connection,
+                &character_banners,
+                &support_banners,
+                &paid_banners,
+            )?,
         )?,
         output("affinity.json", affinity::generate(connection)?)?,
     ];
