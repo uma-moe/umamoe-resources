@@ -41,7 +41,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 7;
+const TIMELINE_ALGORITHM_VERSION: u8 = 8;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BannerTimeline {
@@ -2397,6 +2397,15 @@ fn image_stem(image: &str) -> &str {
     image
 }
 
+fn webp_image_reference(image: &str) -> String {
+    let stem = image_stem(image);
+    if stem.is_empty() {
+        String::new()
+    } else {
+        format!("{stem}.webp")
+    }
+}
+
 impl DatePrediction {
     fn into_info(self) -> PredictionInfo {
         PredictionInfo {
@@ -2421,8 +2430,8 @@ fn load_timeline_character_banners() -> Result<Vec<TimelineCharacterBanner>> {
             Ok(TimelineCharacterBanner {
                 gacha_id: banner.gacha_id,
                 year: banner.year,
-                image: banner.image,
-                image_path: banner.image_path,
+                image: webp_image_reference(&banner.image),
+                image_path: webp_image_reference(&banner.image_path),
                 start_at: parse_timeline_date(&banner.start_date)?,
                 end_at: parse_timeline_date(&banner.end_date)?,
                 pickup_card_ids: banner.pickup_card_ids,
@@ -2442,7 +2451,7 @@ fn load_timeline_support_banners() -> Result<Vec<TimelineSupportBanner>> {
             Ok(TimelineSupportBanner {
                 gacha_id: banner.gacha_id,
                 year: banner.year,
-                image: banner.image,
+                image: webp_image_reference(&banner.image),
                 start_at: parse_timeline_date(&banner.start_date)?,
                 end_at: parse_timeline_date(&banner.end_date)?,
                 pickup_card_ids: banner.pickup_card_ids,
@@ -2464,7 +2473,7 @@ fn load_timeline_paid_banners() -> Result<Vec<TimelinePaidBanner>> {
                 gacha_type: banner.gacha_type,
                 card_type: banner.card_type,
                 year: banner.year,
-                image: banner.image,
+                image: webp_image_reference(&banner.image),
                 start_at: parse_timeline_date(&banner.start_date)?,
                 end_at: parse_timeline_date(&banner.end_date)?,
                 pickup_card_ids: banner.pickup_card_ids,
@@ -2483,7 +2492,7 @@ fn load_timeline_story_events() -> Result<Vec<TimelineStoryEvent>> {
         .map(|event| {
             Ok(TimelineStoryEvent {
                 event_name: event.event_name,
-                image: event.image,
+                image: webp_image_reference(&event.image),
                 start_at: parse_timeline_date(&event.start_date)?,
                 end_at: parse_timeline_date(&event.end_date)?,
             })
@@ -2530,7 +2539,9 @@ fn load_timeline_legend_races() -> Result<Vec<TimelineLegendRace>> {
                 .unwrap_or_default()
                 .into_iter()
                 .filter_map(|boss| boss.image)
-                .map(|image| TimelineLegendBoss { image })
+                .map(|image| TimelineLegendBoss {
+                    image: webp_image_reference(&image),
+                })
                 .collect::<Vec<_>>();
 
             Ok(TimelineLegendRace {
@@ -2562,7 +2573,7 @@ fn load_timeline_campaigns() -> Result<Vec<TimelineCampaign>> {
         .map(|campaign| {
             Ok(TimelineCampaign {
                 campaign_id: campaign.campaign_id,
-                image: campaign.image,
+                image: webp_image_reference(&campaign.image),
                 start_at: parse_timeline_date(&campaign.start_date)?,
                 end_at: parse_timeline_date(&campaign.end_date)?,
             })
@@ -2793,7 +2804,9 @@ mod tests {
         annotate_calendar_likelihoods, apply_closed_schedule_adjustment, apply_family_adjustment,
         calculate_global_date, calculate_recent_acceleration_rate,
         first_release_after_global_month, latest_closed_global_month,
-        load_bundled_support_card_names, monotonic_schedule_anchors, parse_confirmed_banner_dates,
+        load_bundled_support_card_names, load_timeline_campaigns, load_timeline_character_banners,
+        load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
+        load_timeline_support_banners, monotonic_schedule_anchors, parse_confirmed_banner_dates,
         utc_date, BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel,
         CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction,
         FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo,
@@ -2830,6 +2843,38 @@ mod tests {
         assert_eq!(dates[4].key, "champions_meeting_14");
         assert_eq!(dates[5].kind, ConfirmedTimelineKind::Legend);
         assert_eq!(dates[5].key, "legend_race_12");
+    }
+
+    #[test]
+    fn bundled_timeline_image_references_emit_webp() {
+        for banner in
+            load_timeline_character_banners().expect("character timeline data should parse")
+        {
+            assert_webp_reference(&banner.image);
+            assert_webp_reference(&banner.image_path);
+        }
+
+        for banner in load_timeline_support_banners().expect("support timeline data should parse") {
+            assert_webp_reference(&banner.image);
+        }
+
+        for banner in load_timeline_paid_banners().expect("paid timeline data should parse") {
+            assert_webp_reference(&banner.image);
+        }
+
+        for event in load_timeline_story_events().expect("story timeline data should parse") {
+            assert_webp_reference(&event.image);
+        }
+
+        for event in load_timeline_legend_races().expect("legend timeline data should parse") {
+            for boss in event.bosses {
+                assert_webp_reference(&boss.image);
+            }
+        }
+
+        for campaign in load_timeline_campaigns().expect("campaign timeline data should parse") {
+            assert_webp_reference(&campaign.image);
+        }
     }
 
     #[test]
@@ -3173,5 +3218,16 @@ mod tests {
                 anchor_global_date: None,
             },
         }
+    }
+
+    fn assert_webp_reference(image: &str) {
+        assert!(
+            image.ends_with(".webp"),
+            "expected timeline image reference to use .webp: {image}"
+        );
+        assert!(
+            !image.to_ascii_lowercase().ends_with(".png"),
+            "timeline image reference still uses .png: {image}"
+        );
     }
 }
