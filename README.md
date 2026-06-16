@@ -151,13 +151,14 @@ paid,50009,2026-07-08
 story,07_uma_musume_summer_story_banner,2025-10-14
 champions,14,2026-06-21
 legend,12,2026-06-07
+anniversary,1,2025-10-26
 ```
 
-Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
+Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. Anniversary rows use the marker index, where `1` is the first half-anniversary. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
 
-Months are inferred as complete schedules. If the CSV contains any confirmed timeline entry in a global month, `banner_timeline.json` treats that whole month as closed and shifts unknown future predictions out of that month. This matches the monthly schedule release pattern: once July is entered, there should be no more unconfirmed July entries predicted by the site.
+Months are inferred as complete schedules. If the CSV contains any confirmed timeline entry in a global month, `banner_timeline.json` treats that whole month as closed and shifts unknown future predictions and unconfirmed anniversary markers out of that month. This matches the monthly schedule release pattern: once July is entered, there should be no more unconfirmed July entries predicted by the site.
 
-`banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, and campaign entries. Character and support banners define the baseline acceleration curve. Paid/story/champions/legend/campaign confirmations then apply isolated same-family residual corrections on top of that baseline, and non-banner events can still snap to nearby banner groups when confirmed history shows that JP/global grouping pattern.
+`banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, and campaign entries, plus anniversary marker metadata in the top-level `anniversaries` array. Character and support banners define the baseline acceleration curve. Paid/story/champions/legend/campaign confirmations then apply isolated same-family residual corrections on top of that baseline, and non-banner events can still snap to nearby banner groups when confirmed history shows that JP/global grouping pattern.
 
 The resource also includes prediction likelihood metadata. The calculation block reports observed character-banner monthly count, adjacent character-banner gap, weekday, and day-of-month frequencies; unconfirmed events include a compact `prediction.calendar_likelihood` score showing how common that predicted month shape, spacing, and release date are compared with confirmed schedules.
 

@@ -41,12 +41,13 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 8;
+const TIMELINE_ALGORITHM_VERSION: u8 = 9;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BannerTimeline {
     pub version: u8,
     pub calculation: TimelineCalculation,
+    pub anniversaries: Vec<TimelineAnniversary>,
     pub events: Vec<BannerTimelineEvent>,
 }
 
@@ -201,6 +202,17 @@ pub struct EventTypeCalendarLikelihood {
     pub month_day_likelihoods: Vec<CountLikelihood>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct TimelineAnniversary {
+    pub index: u32,
+    pub label: String,
+    pub jp_date: DateTime<Utc>,
+    pub global_date: DateTime<Utc>,
+    pub is_confirmed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub schedule_adjustment_days: Option<i64>,
+}
+
 #[derive(Debug, Clone)]
 struct CalibrationAnchor {
     jp: DateTime<Utc>,
@@ -216,6 +228,7 @@ struct ConfirmedDateLookup {
     champions: BTreeMap<String, DateTime<Utc>>,
     legend: BTreeMap<String, DateTime<Utc>>,
     campaign: BTreeMap<String, DateTime<Utc>>,
+    anniversary: BTreeMap<u32, DateTime<Utc>>,
     closed_global_months: BTreeSet<(i32, u32)>,
 }
 
@@ -228,6 +241,7 @@ enum ConfirmedTimelineKind {
     Champions,
     Legend,
     Campaign,
+    Anniversary,
 }
 
 #[derive(Debug, Clone)]
@@ -550,6 +564,7 @@ pub fn generate(
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
+    let anniversaries = timeline_anniversaries(&events, &confirmed_dates);
 
     events.sort_by(|a, b| {
         a.global_release_date
@@ -587,6 +602,7 @@ pub fn generate(
             latest_confirmed_jp_date: latest_anchor.as_ref().map(|anchor| anchor.jp),
             latest_confirmed_global_date: latest_anchor.map(|anchor| anchor.global),
         },
+        anniversaries,
         events,
     })
 }
@@ -1961,6 +1977,7 @@ fn build_confirmed_date_lookup(
         champions: BTreeMap::new(),
         legend: BTreeMap::new(),
         campaign: BTreeMap::new(),
+        anniversary: BTreeMap::new(),
         closed_global_months: BTreeSet::new(),
     };
 
@@ -2019,6 +2036,11 @@ fn build_confirmed_date_lookup(
                     lookup
                         .campaign
                         .insert(image_key(&confirmed_date.key), confirmed_date.global_date);
+                }
+                ConfirmedTimelineKind::Anniversary => {
+                    if let Some(index) = parse_confirmed_anniversary_index(&confirmed_date.key) {
+                        lookup.anniversary.insert(index, confirmed_date.global_date);
+                    }
                 }
             }
         }
@@ -2115,6 +2137,9 @@ fn parse_confirmed_timeline_kind(value: &str) -> Option<ConfirmedTimelineKind> {
         "campaign" | "mission_campaign" | "mission-campaign" => {
             Some(ConfirmedTimelineKind::Campaign)
         }
+        "anniversary" | "anniv" | "half_anniversary" | "half-anniversary" => {
+            Some(ConfirmedTimelineKind::Anniversary)
+        }
         _ => None,
     }
 }
@@ -2127,7 +2152,18 @@ fn parse_confirmed_timeline_key(kind: ConfirmedTimelineKind, value: &str) -> Opt
         ConfirmedTimelineKind::Story | ConfirmedTimelineKind::Campaign => Some(image_key(value)),
         ConfirmedTimelineKind::Champions => Some(indexed_event_key("champions_meeting", value)),
         ConfirmedTimelineKind::Legend => Some(indexed_event_key("legend_race", value)),
+        ConfirmedTimelineKind::Anniversary => {
+            parse_confirmed_anniversary_index(value).map(|index| index.to_string())
+        }
     }
+}
+
+fn parse_confirmed_anniversary_index(value: &str) -> Option<u32> {
+    let key = image_key(value)
+        .replace("half_anniversary_", "")
+        .replace("anniversary_", "");
+    let index = key.parse::<u32>().ok()?;
+    (index > 0).then_some(index)
 }
 
 fn parse_confirmed_banner_id(value: &str) -> Option<i64> {
@@ -2385,6 +2421,125 @@ fn monotonic_schedule_anchors(anchors: &[CalibrationAnchor]) -> Vec<CalibrationA
     }
 
     monotonic
+}
+
+fn timeline_anniversaries(
+    events: &[BannerTimelineEvent],
+    confirmed_dates: &ConfirmedDateLookup,
+) -> Vec<TimelineAnniversary> {
+    let end_date = events
+        .iter()
+        .map(|event| event.global_release_date)
+        .max()
+        .map(|latest| latest + Duration::days(14))
+        .unwrap_or_else(global_timeline_start_date);
+
+    timeline_anniversaries_through(end_date, confirmed_dates)
+}
+
+fn timeline_anniversaries_through(
+    end_date: DateTime<Utc>,
+    confirmed_dates: &ConfirmedDateLookup,
+) -> Vec<TimelineAnniversary> {
+    let mut anniversaries = Vec::new();
+    let mut index = 1;
+
+    loop {
+        let global_date = confirmed_dates
+            .anniversary
+            .get(&index)
+            .copied()
+            .unwrap_or_else(|| projected_global_anniversary_date(index));
+
+        if global_date > end_date {
+            break;
+        }
+
+        anniversaries.push(TimelineAnniversary {
+            index,
+            label: anniversary_label(index),
+            jp_date: projected_jp_anniversary_date(index),
+            global_date,
+            is_confirmed: confirmed_dates.anniversary.contains_key(&index),
+            schedule_adjustment_days: None,
+        });
+
+        index += 1;
+    }
+
+    apply_closed_anniversary_adjustment(&mut anniversaries, confirmed_dates);
+    anniversaries
+}
+
+fn apply_closed_anniversary_adjustment(
+    anniversaries: &mut [TimelineAnniversary],
+    confirmed_dates: &ConfirmedDateLookup,
+) {
+    let Some(schedule_floor) = latest_closed_global_month(confirmed_dates)
+        .map(|(year, month)| first_release_after_global_month(year, month))
+    else {
+        return;
+    };
+
+    let Some(first_unconfirmed) = anniversaries
+        .iter()
+        .filter(|anniversary| !anniversary.is_confirmed && anniversary.global_date < schedule_floor)
+        .min_by_key(|anniversary| (anniversary.global_date, anniversary.index))
+    else {
+        return;
+    };
+
+    let first_unconfirmed_index = first_unconfirmed.index;
+    let shift = schedule_floor - first_unconfirmed.global_date;
+    if shift <= Duration::zero() {
+        return;
+    }
+
+    let adjustment_days = shift.num_days();
+    for anniversary in anniversaries.iter_mut().filter(|anniversary| {
+        !anniversary.is_confirmed && anniversary.index >= first_unconfirmed_index
+    }) {
+        anniversary.global_date += shift;
+        anniversary.schedule_adjustment_days =
+            Some(anniversary.schedule_adjustment_days.unwrap_or_default() + adjustment_days);
+    }
+}
+
+fn anniversary_label(index: u32) -> String {
+    if index % 2 == 0 {
+        format!("{} Year Anniversary", index / 2)
+    } else {
+        format!("{}.5 Year Anniversary", index / 2)
+    }
+}
+
+fn projected_jp_anniversary_date(index: u32) -> DateTime<Utc> {
+    add_calendar_months(jp_launch_date(), index * 6, 0)
+}
+
+fn projected_global_anniversary_date(index: u32) -> DateTime<Utc> {
+    add_calendar_months(global_timeline_start_date(), index * 6, 22)
+}
+
+fn add_calendar_months(date: DateTime<Utc>, months: u32, hour: u32) -> DateTime<Utc> {
+    let total_months = date.year() * 12 + date.month0() as i32 + months as i32;
+    let year = total_months.div_euclid(12);
+    let month = total_months.rem_euclid(12) as u32 + 1;
+    let day = date.day().min(days_in_month(year, month));
+
+    utc_date(year, month, day, hour)
+}
+
+fn days_in_month(year: i32, month: u32) -> u32 {
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
+    } else {
+        (year, month + 1)
+    };
+    let first_of_next_month = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .expect("next month from valid year/month should be valid");
+
+    (first_of_next_month - Duration::days(1)).day()
 }
 
 fn image_stem(image: &str) -> &str {
@@ -2784,6 +2939,15 @@ fn global_launch_date() -> DateTime<Utc> {
     )
 }
 
+fn global_timeline_start_date() -> DateTime<Utc> {
+    utc_date(
+        GLOBAL_LAUNCH_YEAR,
+        GLOBAL_LAUNCH_MONTH,
+        GLOBAL_LAUNCH_DAY,
+        22,
+    )
+}
+
 fn utc_date(year: i32, month: u32, day: u32, hour: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(year, month, day, hour, 0, 0)
         .single()
@@ -2807,10 +2971,10 @@ mod tests {
         load_bundled_support_card_names, load_timeline_campaigns, load_timeline_character_banners,
         load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
         load_timeline_support_banners, monotonic_schedule_anchors, parse_confirmed_banner_dates,
-        utc_date, BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel,
-        CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction,
-        FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo,
-        PredictionKind,
+        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
+        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
+        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
+        PredictionInfo, PredictionKind,
     };
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -2825,11 +2989,12 @@ mod tests {
             story,03_brand_new_friend_banner.png,2025-07-16
             champions,14,2026-06-21
             legend,legend_race_12,2026-06-07
+            anniversary,1,2025-10-26
             "#,
         )
         .expect("test confirmed date CSV should parse");
 
-        assert_eq!(dates.len(), 6);
+        assert_eq!(dates.len(), 7);
         assert_eq!(dates[0].kind, ConfirmedTimelineKind::Character);
         assert_eq!(dates[0].key, "30100");
         assert_eq!(dates[0].global_date, utc_date(2026, 6, 18, 22));
@@ -2843,6 +3008,8 @@ mod tests {
         assert_eq!(dates[4].key, "champions_meeting_14");
         assert_eq!(dates[5].kind, ConfirmedTimelineKind::Legend);
         assert_eq!(dates[5].key, "legend_race_12");
+        assert_eq!(dates[6].kind, ConfirmedTimelineKind::Anniversary);
+        assert_eq!(dates[6].key, "1");
     }
 
     #[test]
@@ -2875,6 +3042,42 @@ mod tests {
         for campaign in load_timeline_campaigns().expect("campaign timeline data should parse") {
             assert_webp_reference(&campaign.image);
         }
+    }
+
+    #[test]
+    fn timeline_anniversaries_include_confirmed_and_projected_markers() {
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
+        let anniversaries = timeline_anniversaries_through(utc_date(2026, 7, 1, 22), &lookup);
+
+        assert_eq!(anniversaries.len(), 2);
+        assert_eq!(anniversaries[0].index, 1);
+        assert_eq!(anniversaries[0].label, "0.5 Year Anniversary");
+        assert_eq!(anniversaries[0].global_date, utc_date(2025, 10, 26, 22));
+        assert_eq!(anniversaries[0].jp_date, utc_date(2021, 8, 24, 0));
+        assert!(anniversaries[0].is_confirmed);
+        assert_eq!(anniversaries[1].index, 2);
+        assert_eq!(anniversaries[1].label, "1 Year Anniversary");
+        assert_eq!(anniversaries[1].global_date, utc_date(2026, 6, 26, 22));
+        assert_eq!(anniversaries[1].jp_date, utc_date(2022, 2, 24, 0));
+        assert!(!anniversaries[1].is_confirmed);
+    }
+
+    #[test]
+    fn closed_schedule_month_shifts_unconfirmed_anniversary_markers() {
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
+        lookup.closed_global_months.insert((2026, 6));
+
+        let anniversaries = timeline_anniversaries_through(utc_date(2026, 7, 1, 22), &lookup);
+
+        assert_eq!(anniversaries.len(), 2);
+        assert_eq!(anniversaries[0].global_date, utc_date(2025, 10, 26, 22));
+        assert!(anniversaries[0].is_confirmed);
+        assert_eq!(anniversaries[0].schedule_adjustment_days, None);
+        assert_eq!(anniversaries[1].global_date, utc_date(2026, 7, 1, 22));
+        assert!(!anniversaries[1].is_confirmed);
+        assert_eq!(anniversaries[1].schedule_adjustment_days, Some(5));
     }
 
     #[test]
@@ -2954,6 +3157,7 @@ mod tests {
             champions: BTreeMap::new(),
             legend: BTreeMap::new(),
             campaign: BTreeMap::new(),
+            anniversary: BTreeMap::new(),
             closed_global_months,
         };
 
@@ -3173,6 +3377,20 @@ mod tests {
             global_release_date,
             is_confirmed,
         )
+    }
+
+    fn empty_confirmed_date_lookup() -> ConfirmedDateLookup {
+        ConfirmedDateLookup {
+            character: BTreeMap::new(),
+            support: BTreeMap::new(),
+            paid: BTreeMap::new(),
+            story: BTreeMap::new(),
+            champions: BTreeMap::new(),
+            legend: BTreeMap::new(),
+            campaign: BTreeMap::new(),
+            anniversary: BTreeMap::new(),
+            closed_global_months: BTreeSet::new(),
+        }
     }
 
     fn test_timeline_event_with_type(
