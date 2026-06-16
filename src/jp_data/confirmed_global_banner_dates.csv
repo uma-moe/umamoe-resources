@@ -3,10 +3,11 @@
 # Format:
 # type,key,date
 #
-# type: character, support, paid, story, champions, legend, or campaign
+# type: character, support, paid, story, champions, legend, campaign, or anniversary
 # key: for banners, a bare gacha id, image stem, .png, or .webp all work
 # key: for story/campaign, use the image stem, .png, or .webp
 # key: for champions/legend, use the 0-based index or full key like champions_meeting_0
+# key: for anniversary, use the marker index; 1 is the first half-anniversary
 # date: YYYY-MM-DD; generated timestamps use 22:00 UTC for that date
 #
 # Schedule months are closed automatically. If this file contains any timeline
@@ -19,7 +20,9 @@
 # support,30105,2026-07-02
 # story,07_uma_musume_summer_story_banner,2025-10-14
 # champions,14,2026-06-21
+# anniversary,1,2025-10-26
 
+anniversary,1,2025-10-26
 character,30004,2025-06-27
 character,30006,2025-07-02
 character,30008,2025-07-10
