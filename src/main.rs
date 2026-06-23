@@ -170,25 +170,36 @@ async fn serve(args: ServeArgs) -> Result<()> {
         std::env::set_var("CONFIRMED_BANNER_DATES_PATH", path);
     }
 
-    if let (Some(url), Some(path)) = (
+    let confirmed_dates_refreshed_before_serve = if let (Some(url), Some(path)) = (
         confirmed_banner_dates_url.as_deref(),
         confirmed_banner_dates_path.as_ref(),
     ) {
         match refresh_confirmed_banner_dates_from_url(url, path).await {
-            Ok(true) => info!(
-                path = %path.display(),
-                "loaded updated confirmed banner dates before serving"
-            ),
-            Ok(false) => info!(
-                path = %path.display(),
-                "confirmed banner dates already up to date before serving"
-            ),
-            Err(error) => warn!(
-                error = %error,
-                "failed to fetch confirmed banner dates before serving; using cached or bundled dates"
-            ),
+            Ok(true) => {
+                info!(
+                    path = %path.display(),
+                    "loaded updated confirmed banner dates before serving"
+                );
+                true
+            }
+            Ok(false) => {
+                info!(
+                    path = %path.display(),
+                    "confirmed banner dates already up to date before serving"
+                );
+                false
+            }
+            Err(error) => {
+                warn!(
+                    error = %error,
+                    "failed to fetch confirmed banner dates before serving; using cached or bundled dates"
+                );
+                false
+            }
         }
-    }
+    } else {
+        false
+    };
 
     let refresh_pool = match database_url(&args) {
         Some(database_url) => Some(
@@ -226,6 +237,11 @@ async fn serve(args: ServeArgs) -> Result<()> {
             artifacts = manifest.artifacts.len(),
             "generated resources before serving"
         );
+    }
+
+    if confirmed_dates_refreshed_before_serve {
+        let manifest = pipeline::read_manifest(&args.data_dir)?;
+        cache::purge_manifest_current_urls(&manifest).await?;
     }
 
     if let Some(pool) = refresh_pool {
@@ -334,13 +350,11 @@ fn spawn_confirmed_banner_dates_url_refresh_loop(args: ServeArgs, path: PathBuf,
     let master = args.master;
     let data_dir = args.data_dir;
     let write_json = args.write_json;
-    let purge_on_refresh = args.purge_on_refresh;
 
     info!(
         interval_seconds,
         url,
         path = %path.display(),
-        purge_on_refresh,
         "automatic confirmed banner dates refresh enabled"
     );
 
@@ -351,15 +365,9 @@ fn spawn_confirmed_banner_dates_url_refresh_loop(args: ServeArgs, path: PathBuf,
         loop {
             interval.tick().await;
 
-            if let Err(error) = refresh_from_confirmed_banner_dates_url(
-                &url,
-                &path,
-                &master,
-                &data_dir,
-                write_json,
-                purge_on_refresh,
-            )
-            .await
+            if let Err(error) =
+                refresh_from_confirmed_banner_dates_url(&url, &path, &master, &data_dir, write_json)
+                    .await
             {
                 warn!(error = %error, "confirmed banner dates refresh failed");
             }
@@ -372,12 +380,10 @@ fn spawn_confirmed_banner_dates_file_refresh_loop(args: ServeArgs, path: PathBuf
     let master = args.master;
     let data_dir = args.data_dir;
     let write_json = args.write_json;
-    let purge_on_refresh = args.purge_on_refresh;
 
     info!(
         interval_seconds,
         path = %path.display(),
-        purge_on_refresh,
         "automatic mounted confirmed banner dates refresh enabled"
     );
 
@@ -407,10 +413,7 @@ fn spawn_confirmed_banner_dates_file_refresh_loop(args: ServeArgs, path: PathBuf
                     }
 
                     if let Err(error) = regenerate_after_confirmed_banner_dates_change(
-                        &master,
-                        &data_dir,
-                        write_json,
-                        purge_on_refresh,
+                        &master, &data_dir, write_json,
                     )
                     .await
                     {
@@ -432,13 +435,12 @@ async fn refresh_from_confirmed_banner_dates_url(
     master: &PathBuf,
     out: &PathBuf,
     write_json: bool,
-    purge: bool,
 ) -> Result<bool> {
     if !refresh_confirmed_banner_dates_from_url(url, path).await? {
         return Ok(false);
     }
 
-    regenerate_after_confirmed_banner_dates_change(master, out, write_json, purge).await?;
+    regenerate_after_confirmed_banner_dates_change(master, out, write_json).await?;
     Ok(true)
 }
 
@@ -446,7 +448,6 @@ async fn regenerate_after_confirmed_banner_dates_change(
     master: &PathBuf,
     out: &PathBuf,
     write_json: bool,
-    purge: bool,
 ) -> Result<()> {
     let manifest = pipeline::generate_resources(master, out, write_json)?;
     info!(
@@ -455,11 +456,7 @@ async fn regenerate_after_confirmed_banner_dates_change(
         "regenerated resources after confirmed banner date update"
     );
 
-    if purge {
-        cache::purge_manifest_current_urls(&manifest).await?;
-    } else {
-        warn!("confirmed banner dates changed; run `purge --data-dir {}` or set PURGE_ON_REFRESH=true to clear current CDN URLs", out.display());
-    }
+    cache::purge_manifest_current_urls(&manifest).await?;
 
     Ok(())
 }
