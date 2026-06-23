@@ -41,7 +41,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 9;
+const TIMELINE_ALGORITHM_VERSION: u8 = 11;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BannerTimeline {
@@ -467,8 +467,14 @@ pub fn generate(
     let timeline_campaigns = load_timeline_campaigns()?;
     let character_names = common::load_character_name_map(connection)?;
     let support_names = load_support_card_names(connection, &character_names)?;
-    let confirmed_dates =
-        build_confirmed_date_lookup(character_banners, support_banners, paid_banners)?;
+    let confirmed_dates = build_confirmed_date_lookup(
+        character_banners,
+        support_banners,
+        paid_banners,
+        &timeline_character_banners,
+        &timeline_support_banners,
+        &timeline_paid_banners,
+    )?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
         &timeline_support_banners,
@@ -476,6 +482,8 @@ pub fn generate(
     );
     let unique_anchors = monotonic_schedule_anchors(&anchors);
     let observed_rate = calculate_recent_acceleration_rate(&unique_anchors);
+    let anniversary_anchors = build_anniversary_schedule_anchors(&unique_anchors, &confirmed_dates);
+    let anniversary_rate = calculate_recent_acceleration_rate(&anniversary_anchors);
     let family_adjustments = build_family_adjustment_models(
         &timeline_paid_banners,
         &timeline_story_events,
@@ -564,7 +572,12 @@ pub fn generate(
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
-    let anniversaries = timeline_anniversaries(&events, &confirmed_dates);
+    let anniversaries = timeline_anniversaries(
+        &events,
+        &confirmed_dates,
+        &anniversary_anchors,
+        anniversary_rate,
+    );
 
     events.sort_by(|a, b| {
         a.global_release_date
@@ -1964,10 +1977,29 @@ fn build_banner_confirmed_anchors(
     anchors
 }
 
+fn build_anniversary_schedule_anchors(
+    base_anchors: &[CalibrationAnchor],
+    confirmed_dates: &ConfirmedDateLookup,
+) -> Vec<CalibrationAnchor> {
+    let mut anchors = base_anchors.to_vec();
+
+    for (&index, &global) in &confirmed_dates.anniversary {
+        anchors.push(CalibrationAnchor {
+            jp: projected_jp_anniversary_date(index),
+            global,
+        });
+    }
+
+    monotonic_schedule_anchors(&anchors)
+}
+
 fn build_confirmed_date_lookup(
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
+    timeline_character_banners: &[TimelineCharacterBanner],
+    timeline_support_banners: &[TimelineSupportBanner],
+    timeline_paid_banners: &[TimelinePaidBanner],
 ) -> Result<ConfirmedDateLookup> {
     let mut lookup = ConfirmedDateLookup {
         character: BTreeMap::new(),
@@ -1982,13 +2014,28 @@ fn build_confirmed_date_lookup(
     };
 
     for banner in character_banners {
-        lookup.character.insert(banner.gacha_id, banner.start_at);
+        if timeline_character_banners
+            .iter()
+            .any(|timeline_banner| character_banner_matches_timeline(banner, timeline_banner))
+        {
+            lookup.character.insert(banner.gacha_id, banner.start_at);
+        }
     }
     for banner in support_banners {
-        lookup.support.insert(banner.gacha_id, banner.start_at);
+        if timeline_support_banners
+            .iter()
+            .any(|timeline_banner| support_banner_matches_timeline(banner, timeline_banner))
+        {
+            lookup.support.insert(banner.gacha_id, banner.start_at);
+        }
     }
     for banner in paid_banners {
-        lookup.paid.insert(banner.gacha_id, banner.start_at);
+        if timeline_paid_banners
+            .iter()
+            .any(|timeline_banner| paid_banner_matches_timeline(banner, timeline_banner))
+        {
+            lookup.paid.insert(banner.gacha_id, banner.start_at);
+        }
     }
 
     for confirmed_dates_csv in confirmed_banner_dates_csv_sources()? {
@@ -2047,6 +2094,41 @@ fn build_confirmed_date_lookup(
     }
 
     Ok(lookup)
+}
+
+fn character_banner_matches_timeline(
+    banner: &CharacterBanner,
+    timeline_banner: &TimelineCharacterBanner,
+) -> bool {
+    banner.gacha_id == timeline_banner.gacha_id
+        && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+}
+
+fn support_banner_matches_timeline(
+    banner: &SupportBanner,
+    timeline_banner: &TimelineSupportBanner,
+) -> bool {
+    banner.gacha_id == timeline_banner.gacha_id
+        && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+}
+
+fn paid_banner_matches_timeline(banner: &PaidBanner, timeline_banner: &TimelinePaidBanner) -> bool {
+    banner.gacha_id == timeline_banner.gacha_id
+        && banner.gacha_type == timeline_banner.gacha_type
+        && banner.card_type == timeline_banner.card_type
+        && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+}
+
+fn same_pickup_card_ids(left: &[i64], right: &[i64]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+
+    let mut left = left.to_vec();
+    left.sort_unstable();
+    let mut right = right.to_vec();
+    right.sort_unstable();
+    left == right
 }
 
 pub(crate) fn confirmed_dates_version_hash() -> Result<String> {
@@ -2426,6 +2508,8 @@ fn monotonic_schedule_anchors(anchors: &[CalibrationAnchor]) -> Vec<CalibrationA
 fn timeline_anniversaries(
     events: &[BannerTimelineEvent],
     confirmed_dates: &ConfirmedDateLookup,
+    anchors: &[CalibrationAnchor],
+    observed_rate: f64,
 ) -> Vec<TimelineAnniversary> {
     let end_date = events
         .iter()
@@ -2433,23 +2517,37 @@ fn timeline_anniversaries(
         .max()
         .map(|latest| latest + Duration::days(14))
         .unwrap_or_else(global_timeline_start_date);
+    let latest_confirmed_jp = events
+        .iter()
+        .filter(|event| event.is_confirmed)
+        .map(|event| normalize_to_midnight_utc(event.jp_release_date))
+        .max();
 
-    timeline_anniversaries_through(end_date, confirmed_dates)
+    timeline_anniversaries_through(
+        end_date,
+        confirmed_dates,
+        anchors,
+        observed_rate,
+        latest_confirmed_jp,
+    )
 }
 
 fn timeline_anniversaries_through(
     end_date: DateTime<Utc>,
     confirmed_dates: &ConfirmedDateLookup,
+    anchors: &[CalibrationAnchor],
+    observed_rate: f64,
+    latest_confirmed_jp: Option<DateTime<Utc>>,
 ) -> Vec<TimelineAnniversary> {
     let mut anniversaries = Vec::new();
     let mut index = 1;
 
     loop {
-        let global_date = confirmed_dates
-            .anniversary
-            .get(&index)
-            .copied()
-            .unwrap_or_else(|| projected_global_anniversary_date(index));
+        let jp_date = projected_jp_anniversary_date(index);
+        let confirmed_global_date = confirmed_dates.anniversary.get(&index).copied();
+        let prediction =
+            calculate_global_date(jp_date, confirmed_global_date, anchors, observed_rate);
+        let global_date = prediction.global_date;
 
         if global_date > end_date {
             break;
@@ -2458,22 +2556,23 @@ fn timeline_anniversaries_through(
         anniversaries.push(TimelineAnniversary {
             index,
             label: anniversary_label(index),
-            jp_date: projected_jp_anniversary_date(index),
+            jp_date,
             global_date,
-            is_confirmed: confirmed_dates.anniversary.contains_key(&index),
+            is_confirmed: confirmed_global_date.is_some(),
             schedule_adjustment_days: None,
         });
 
         index += 1;
     }
 
-    apply_closed_anniversary_adjustment(&mut anniversaries, confirmed_dates);
+    apply_closed_anniversary_adjustment(&mut anniversaries, confirmed_dates, latest_confirmed_jp);
     anniversaries
 }
 
 fn apply_closed_anniversary_adjustment(
     anniversaries: &mut [TimelineAnniversary],
     confirmed_dates: &ConfirmedDateLookup,
+    latest_confirmed_jp: Option<DateTime<Utc>>,
 ) {
     let Some(schedule_floor) = latest_closed_global_month(confirmed_dates)
         .map(|(year, month)| first_release_after_global_month(year, month))
@@ -2483,7 +2582,13 @@ fn apply_closed_anniversary_adjustment(
 
     let Some(first_unconfirmed) = anniversaries
         .iter()
-        .filter(|anniversary| !anniversary.is_confirmed && anniversary.global_date < schedule_floor)
+        .filter(|anniversary| {
+            !anniversary.is_confirmed
+                && latest_confirmed_jp.map_or(true, |latest_jp| {
+                    normalize_to_midnight_utc(anniversary.jp_date) >= latest_jp
+                })
+                && anniversary.global_date < schedule_floor
+        })
         .min_by_key(|anniversary| (anniversary.global_date, anniversary.index))
     else {
         return;
@@ -2515,10 +2620,6 @@ fn anniversary_label(index: u32) -> String {
 
 fn projected_jp_anniversary_date(index: u32) -> DateTime<Utc> {
     add_calendar_months(jp_launch_date(), index * 6, 0)
-}
-
-fn projected_global_anniversary_date(index: u32) -> DateTime<Utc> {
-    add_calendar_months(global_timeline_start_date(), index * 6, 22)
 }
 
 fn add_calendar_months(date: DateTime<Utc>, months: u32, hour: u32) -> DateTime<Utc> {
@@ -2966,16 +3067,18 @@ fn round_rate(rate: f64) -> f64 {
 mod tests {
     use super::{
         annotate_calendar_likelihoods, apply_closed_schedule_adjustment, apply_family_adjustment,
-        calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, latest_closed_global_month,
-        load_bundled_support_card_names, load_timeline_campaigns, load_timeline_character_banners,
-        load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
-        load_timeline_support_banners, monotonic_schedule_anchors, parse_confirmed_banner_dates,
-        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
-        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
-        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
-        PredictionInfo, PredictionKind,
+        build_anniversary_schedule_anchors, build_confirmed_date_lookup, calculate_global_date,
+        calculate_recent_acceleration_rate, first_release_after_global_month,
+        latest_closed_global_month, load_bundled_support_card_names, load_timeline_campaigns,
+        load_timeline_character_banners, load_timeline_legend_races, load_timeline_paid_banners,
+        load_timeline_story_events, load_timeline_support_banners, monotonic_schedule_anchors,
+        parse_confirmed_banner_dates, timeline_anniversaries_through, utc_date,
+        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
+        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
+        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
+        TimelineCharacterBanner, TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
+    use crate::generators::banners::{CharacterBanner, SupportBanner};
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
@@ -3010,6 +3113,45 @@ mod tests {
         assert_eq!(dates[5].key, "legend_race_12");
         assert_eq!(dates[6].kind, ConfirmedTimelineKind::Anniversary);
         assert_eq!(dates[6].key, "1");
+    }
+
+    #[test]
+    fn db_banner_confirmations_require_matching_pickup_ids() {
+        let matching_character_date = utc_date(2025, 6, 26, 0);
+        let matching_support_date = utc_date(2025, 6, 27, 0);
+
+        let lookup = build_confirmed_date_lookup(
+            &[
+                test_character_banner(90002, matching_character_date, vec![10, 20]),
+                test_character_banner(90130, utc_date(2025, 7, 13, 22), vec![100101, 100201]),
+            ],
+            &[
+                test_support_banner(90003, matching_support_date, vec![30, 40]),
+                test_support_banner(90131, utc_date(2025, 7, 13, 22), vec![30001, 30002]),
+            ],
+            &[],
+            &[
+                test_timeline_character_banner(90002, vec![20, 10]),
+                test_timeline_character_banner(90130, vec![104201]),
+            ],
+            &[
+                test_timeline_support_banner(90003, vec![40, 30]),
+                test_timeline_support_banner(90131, vec![30119, 30121]),
+            ],
+            &[],
+        )
+        .expect("test confirmation lookup should build");
+
+        assert_eq!(
+            lookup.character.get(&90002).copied(),
+            Some(matching_character_date)
+        );
+        assert_eq!(
+            lookup.support.get(&90003).copied(),
+            Some(matching_support_date)
+        );
+        assert!(!lookup.character.contains_key(&90130));
+        assert!(!lookup.support.contains_key(&90131));
     }
 
     #[test]
@@ -3048,7 +3190,10 @@ mod tests {
     fn timeline_anniversaries_include_confirmed_and_projected_markers() {
         let mut lookup = empty_confirmed_date_lookup();
         lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
-        let anniversaries = timeline_anniversaries_through(utc_date(2026, 7, 1, 22), &lookup);
+        let anchors = anniversary_schedule_anchors(&lookup);
+        let rate = calculate_recent_acceleration_rate(&anchors);
+        let anniversaries =
+            timeline_anniversaries_through(utc_date(2026, 7, 1, 22), &lookup, &anchors, rate, None);
 
         assert_eq!(anniversaries.len(), 2);
         assert_eq!(anniversaries[0].index, 1);
@@ -3058,18 +3203,28 @@ mod tests {
         assert!(anniversaries[0].is_confirmed);
         assert_eq!(anniversaries[1].index, 2);
         assert_eq!(anniversaries[1].label, "1 Year Anniversary");
-        assert_eq!(anniversaries[1].global_date, utc_date(2026, 6, 26, 22));
+        assert_eq!(anniversaries[1].global_date, utc_date(2026, 3, 12, 22));
         assert_eq!(anniversaries[1].jp_date, utc_date(2022, 2, 24, 0));
         assert!(!anniversaries[1].is_confirmed);
     }
 
     #[test]
-    fn closed_schedule_month_shifts_unconfirmed_anniversary_markers() {
+    fn closed_schedule_month_shifts_future_unconfirmed_anniversary_markers() {
         let mut lookup = empty_confirmed_date_lookup();
         lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
         lookup.closed_global_months.insert((2026, 6));
+        let anchors = vec![CalibrationAnchor {
+            jp: utc_date(2022, 2, 24, 0),
+            global: utc_date(2026, 6, 26, 22),
+        }];
 
-        let anniversaries = timeline_anniversaries_through(utc_date(2026, 7, 1, 22), &lookup);
+        let anniversaries = timeline_anniversaries_through(
+            utc_date(2026, 7, 1, 22),
+            &lookup,
+            &anchors,
+            FALLBACK_ACCELERATION_RATE,
+            Some(utc_date(2022, 1, 1, 0)),
+        );
 
         assert_eq!(anniversaries.len(), 2);
         assert_eq!(anniversaries[0].global_date, utc_date(2025, 10, 26, 22));
@@ -3078,6 +3233,27 @@ mod tests {
         assert_eq!(anniversaries[1].global_date, utc_date(2026, 7, 1, 22));
         assert!(!anniversaries[1].is_confirmed);
         assert_eq!(anniversaries[1].schedule_adjustment_days, Some(5));
+    }
+
+    #[test]
+    fn closed_schedule_month_does_not_drag_past_anniversary_markers_forward() {
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
+        lookup.closed_global_months.insert((2026, 6));
+        let anchors = anniversary_schedule_anchors(&lookup);
+        let rate = calculate_recent_acceleration_rate(&anchors);
+
+        let anniversaries = timeline_anniversaries_through(
+            utc_date(2026, 7, 1, 22),
+            &lookup,
+            &anchors,
+            rate,
+            Some(utc_date(2022, 7, 20, 0)),
+        );
+
+        assert_eq!(anniversaries.len(), 2);
+        assert_eq!(anniversaries[1].global_date, utc_date(2026, 3, 12, 22));
+        assert_eq!(anniversaries[1].schedule_adjustment_days, None);
     }
 
     #[test]
@@ -3391,6 +3567,89 @@ mod tests {
             anniversary: BTreeMap::new(),
             closed_global_months: BTreeSet::new(),
         }
+    }
+
+    fn test_character_banner(
+        gacha_id: i64,
+        start_at: chrono::DateTime<chrono::Utc>,
+        pickup_card_ids: Vec<i64>,
+    ) -> CharacterBanner {
+        CharacterBanner {
+            gacha_id,
+            year: 2025,
+            image: format!("2025_{gacha_id}.webp"),
+            start_date: String::new(),
+            end_date: String::new(),
+            pickup_card_ids,
+            image_path: String::new(),
+            start_date_string: String::new(),
+            end_date_string: String::new(),
+            start_at,
+        }
+    }
+
+    fn test_support_banner(
+        gacha_id: i64,
+        start_at: chrono::DateTime<chrono::Utc>,
+        pickup_card_ids: Vec<i64>,
+    ) -> SupportBanner {
+        SupportBanner {
+            gacha_id,
+            year: 2025,
+            image: format!("2025_{gacha_id}.webp"),
+            start_date: String::new(),
+            end_date: String::new(),
+            pickup_card_ids,
+            start_at,
+        }
+    }
+
+    fn test_timeline_character_banner(
+        gacha_id: i64,
+        pickup_card_ids: Vec<i64>,
+    ) -> TimelineCharacterBanner {
+        TimelineCharacterBanner {
+            gacha_id,
+            year: 2022,
+            image: format!("2022_{gacha_id}.webp"),
+            image_path: format!("assets/images/character/banner/2022_{gacha_id}.webp"),
+            start_at: utc_date(2022, 10, 17, 3),
+            end_at: utc_date(2022, 10, 24, 2),
+            pickup_card_ids,
+        }
+    }
+
+    fn test_timeline_support_banner(
+        gacha_id: i64,
+        pickup_card_ids: Vec<i64>,
+    ) -> TimelineSupportBanner {
+        TimelineSupportBanner {
+            gacha_id,
+            year: 2022,
+            image: format!("2022_{gacha_id}.webp"),
+            start_at: utc_date(2022, 10, 17, 3),
+            end_at: utc_date(2022, 10, 24, 2),
+            pickup_card_ids,
+        }
+    }
+
+    fn anniversary_schedule_anchors(lookup: &ConfirmedDateLookup) -> Vec<CalibrationAnchor> {
+        let banner_anchors = vec![
+            CalibrationAnchor {
+                jp: utc_date(2022, 2, 16, 0),
+                global: utc_date(2026, 3, 5, 22),
+            },
+            CalibrationAnchor {
+                jp: utc_date(2022, 2, 24, 0),
+                global: utc_date(2026, 3, 12, 22),
+            },
+            CalibrationAnchor {
+                jp: utc_date(2022, 3, 7, 0),
+                global: utc_date(2026, 3, 22, 22),
+            },
+        ];
+
+        build_anniversary_schedule_anchors(&banner_anchors, lookup)
     }
 
     fn test_timeline_event_with_type(

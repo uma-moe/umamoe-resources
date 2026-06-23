@@ -173,10 +173,9 @@ The deploy workflow mounts that directory into the production container at `/con
 ```text
 CONFIRMED_BANNER_DATES_PATH=/config/confirmed_global_banner_dates.csv
 CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
-PURGE_ON_REFRESH=true
 ```
 
-The container polls the mounted file, validates the CSV, regenerates resources when it changes, and purges mutable Cloudflare resource URLs when `PURGE_ON_REFRESH=true`.
+The container polls the mounted file, validates the CSV, regenerates resources when it changes, and purges mutable Cloudflare resource URLs after confirmed-date edits when Cloudflare purge credentials are configured.
 The mounted file is layered on top of the bundled CSV, so it can contain only new or corrected lines instead of the full history.
 
 If you prefer editing a raw GitHub/Gist URL instead of the server file, configure:
@@ -184,10 +183,10 @@ If you prefer editing a raw GitHub/Gist URL instead of the server file, configur
 ```text
 CONFIRMED_BANNER_DATES_URL=https://raw.githubusercontent.com/<owner>/umamoe-resources/master/src/jp_data/confirmed_global_banner_dates.csv
 CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
-PURGE_ON_REFRESH=true
 ```
 
 The confirmation CSV hash is part of the generated resource version, so clients that read `/resources/manifest.json` will see a new versioned `banner_timeline.json.gz` path after an edit.
+`PURGE_ON_REFRESH` only controls cache purging for automatic `master.mdb` refreshes; confirmed-date refreshes always purge the mutable manifest/current URLs.
 
 For debugging, also write plain JSON beside the gzip files:
 
