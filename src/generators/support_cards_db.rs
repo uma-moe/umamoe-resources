@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const SUPPORT_CARD_FULL_NAME_CATEGORY: i64 = 75;
 const SUPPORT_CARD_TITLE_CATEGORY: i64 = 76;
+const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SupportCardDbEntry {
@@ -19,6 +20,8 @@ pub struct SupportCardDbEntry {
     card_name: Option<String>,
     #[serde(rename = "card_title", skip_serializing_if = "Option::is_none")]
     card_title: Option<String>,
+    #[serde(rename = "card_full_name", skip_serializing_if = "Option::is_none")]
+    card_full_name: Option<String>,
     rarity: i64,
     #[serde(rename = "type")]
     card_type: String,
@@ -33,6 +36,12 @@ pub struct SupportCardDbEntry {
     is_released_jp: bool,
 }
 
+struct SupportCardTextData {
+    card_names: BTreeMap<i64, String>,
+    card_titles: BTreeMap<i64, String>,
+    card_full_names: BTreeMap<i64, String>,
+}
+
 struct DbSupportCard {
     card_id: i64,
     chara_id: i64,
@@ -43,8 +52,11 @@ struct DbSupportCard {
 
 pub fn generate(connection: &Connection) -> Result<Value> {
     let names = common::load_character_name_map(connection)?;
-    let card_names = load_text_data_by_category(connection, SUPPORT_CARD_FULL_NAME_CATEGORY)?;
-    let card_titles = load_text_data_by_category(connection, SUPPORT_CARD_TITLE_CATEGORY)?;
+    let card_text = SupportCardTextData {
+        card_names: load_text_data_by_category(connection, SUPPORT_CARD_NAME_CATEGORY)?,
+        card_titles: load_text_data_by_category(connection, SUPPORT_CARD_TITLE_CATEGORY)?,
+        card_full_names: load_text_data_by_category(connection, SUPPORT_CARD_FULL_NAME_CATEGORY)?,
+    };
     let mut entries = Vec::new();
 
     for card in load_support_cards(connection)? {
@@ -53,8 +65,9 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             .get(&card.chara_id)
             .cloned()
             .unwrap_or_else(|| format!("Unknown_{}", card.chara_id));
-        let card_name = card_names.get(&card.card_id).cloned();
-        let card_title = card_titles.get(&card.card_id).cloned();
+        let card_name = card_text.card_names.get(&card.card_id).cloned();
+        let card_title = card_text.card_titles.get(&card.card_id).cloned();
+        let card_full_name = card_text.card_full_names.get(&card.card_id).cloned();
 
         entries.push(SupportCardDbEntry {
             id,
@@ -62,6 +75,7 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             character_name,
             card_name,
             card_title,
+            card_full_name,
             rarity: card.rarity,
             card_type: card.card_type,
             release_date: common::release_date(Some(card.release_timestamp)),
@@ -78,10 +92,13 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             .then_with(|| common::numeric_id(&b.id).cmp(&common::numeric_id(&a.id)))
     });
 
-    merge_with_jp_support_cards_db(entries)
+    merge_with_jp_support_cards_db(entries, &card_text)
 }
 
-fn merge_with_jp_support_cards_db(generated_entries: Vec<SupportCardDbEntry>) -> Result<Value> {
+fn merge_with_jp_support_cards_db(
+    generated_entries: Vec<SupportCardDbEntry>,
+    card_text: &SupportCardTextData,
+) -> Result<Value> {
     let jp_entries: Value = serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
         .context("failed to parse bundled src/jp_data/support-cards-db.json")?;
     let jp_entries = jp_entries
@@ -105,6 +122,16 @@ fn merge_with_jp_support_cards_db(generated_entries: Vec<SupportCardDbEntry>) ->
                     Value::String(name.to_string()),
                 );
             }
+        }
+        if let Ok(card_id) = id.parse::<i64>() {
+            insert_text_field(&mut object, "card_name", &card_text.card_names, card_id);
+            insert_text_field(&mut object, "card_title", &card_text.card_titles, card_id);
+            insert_text_field(
+                &mut object,
+                "card_full_name",
+                &card_text.card_full_names,
+                card_id,
+            );
         }
         object.insert("isReleased_en".to_string(), Value::Bool(false));
         object.insert("isReleased_tw".to_string(), Value::Null);
@@ -164,6 +191,17 @@ fn load_text_data_by_category(
 
     rows.collect::<rusqlite::Result<BTreeMap<_, _>>>()
         .map_err(Into::into)
+}
+
+fn insert_text_field(
+    object: &mut Map<String, Value>,
+    field: &str,
+    values: &BTreeMap<i64, String>,
+    card_id: i64,
+) {
+    if let Some(value) = values.get(&card_id) {
+        object.insert(field.to_string(), Value::String(value.clone()));
+    }
 }
 
 fn string_field<'a>(entry: &'a Map<String, Value>, field: &str) -> &'a str {
