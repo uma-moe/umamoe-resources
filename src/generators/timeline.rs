@@ -27,7 +27,7 @@ const BUNDLED_TIMELINE_CAMPAIGNS_JSON: &[u8] = include_bytes!("../jp_data/timeli
 const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
-const SUPPORT_CARD_TITLE_CATEGORY: i64 = 76;
+const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
 
 const JP_LAUNCH_YEAR: i32 = 2021;
 const JP_LAUNCH_MONTH: u32 = 2;
@@ -109,7 +109,7 @@ pub struct BannerTimelineEvent {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub related_support_cards: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub related_support_card_titles: Vec<String>,
+    pub related_support_card_names: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gametora_url: Option<String>,
     pub prediction: PredictionInfo,
@@ -409,7 +409,7 @@ struct RawSupportCardName {
     #[serde(default)]
     card_name: Option<String>,
     #[serde(default)]
-    card_title: Option<String>,
+    support_card_name: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -474,7 +474,7 @@ pub fn generate(
     let timeline_campaigns = load_timeline_campaigns()?;
     let character_names = common::load_character_name_map(connection)?;
     let support_names = load_support_card_names(connection, &character_names)?;
-    let support_card_titles = load_support_card_titles(connection)?;
+    let support_card_names = load_support_card_specific_names(connection)?;
     let confirmed_dates = build_confirmed_date_lookup(
         character_banners,
         support_banners,
@@ -524,7 +524,7 @@ pub fn generate(
         support_event(
             banner,
             &support_names,
-            &support_card_titles,
+            &support_card_names,
             &confirmed_dates,
             &unique_anchors,
             observed_rate,
@@ -534,7 +534,7 @@ pub fn generate(
         &timeline_paid_banners,
         &character_names,
         &support_names,
-        &support_card_titles,
+        &support_card_names,
         &confirmed_dates,
         &unique_anchors,
         &family_adjustments,
@@ -679,7 +679,7 @@ fn character_event(
         pickup_card_ids: banner.pickup_card_ids.clone(),
         related_characters: names,
         related_support_cards: Vec::new(),
-        related_support_card_titles: Vec::new(),
+        related_support_card_names: Vec::new(),
         gametora_url: Some(format!(
             "https://gametora.com/umamusume/gacha/history?server=ja&year={}&type=char#{}",
             banner.year, banner_id
@@ -691,7 +691,7 @@ fn character_event(
 fn support_event(
     banner: &TimelineSupportBanner,
     support_names: &BTreeMap<i64, String>,
-    support_card_titles: &BTreeMap<i64, String>,
+    support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
@@ -701,10 +701,10 @@ fn support_event(
         .iter()
         .map(|card_id| support_name_for_card(*card_id, support_names))
         .collect::<Vec<_>>();
-    let card_titles = banner
+    let card_names = banner
         .pickup_card_ids
         .iter()
-        .filter_map(|card_id| support_card_title_for_card(*card_id, support_card_titles))
+        .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
         .collect::<Vec<_>>();
     let confirmed_global_date = confirmed_dates.support.get(&banner.gacha_id).copied();
     let prediction = calculate_global_date(
@@ -743,7 +743,7 @@ fn support_event(
         pickup_card_ids: banner.pickup_card_ids.clone(),
         related_characters: Vec::new(),
         related_support_cards: names,
-        related_support_card_titles: card_titles,
+        related_support_card_names: card_names,
         gametora_url: Some(format!(
             "https://gametora.com/umamusume/gacha/history?server=ja&year={}&type=sup#{}",
             banner.year, banner_id
@@ -756,7 +756,7 @@ fn paid_events(
     banners: &[TimelinePaidBanner],
     character_names: &BTreeMap<i64, String>,
     support_names: &BTreeMap<i64, String>,
-    support_card_titles: &BTreeMap<i64, String>,
+    support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
     family_adjustments: &FamilyAdjustmentModels,
@@ -771,7 +771,7 @@ fn paid_events(
                 banner,
                 character_names,
                 support_names,
-                support_card_titles,
+                support_card_names,
                 confirmed_dates,
                 anchors,
                 family_adjustments,
@@ -825,7 +825,7 @@ fn paid_events(
                 pickup_card_ids: Vec::new(),
                 related_characters: Vec::new(),
                 related_support_cards: Vec::new(),
-                related_support_card_titles: Vec::new(),
+                related_support_card_names: Vec::new(),
                 gametora_url: None,
                 prediction: prediction.into_info(),
             });
@@ -839,7 +839,7 @@ fn paid_event(
     banner: &TimelinePaidBanner,
     character_names: &BTreeMap<i64, String>,
     support_names: &BTreeMap<i64, String>,
-    support_card_titles: &BTreeMap<i64, String>,
+    support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
     family_adjustments: &FamilyAdjustmentModels,
@@ -856,11 +856,11 @@ fn paid_event(
             }
         })
         .collect::<Vec<_>>();
-    let support_card_titles = if banner.card_type == "support" {
+    let support_card_names = if banner.card_type == "support" {
         banner
             .pickup_card_ids
             .iter()
-            .filter_map(|card_id| support_card_title_for_card(*card_id, support_card_titles))
+            .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
             .collect::<Vec<_>>()
     } else {
         Vec::new()
@@ -918,7 +918,7 @@ fn paid_event(
         } else {
             Vec::new()
         },
-        related_support_card_titles: support_card_titles,
+        related_support_card_names: support_card_names,
         gametora_url: None,
         prediction: prediction.into_info(),
     }
@@ -968,7 +968,7 @@ fn story_event(
         pickup_card_ids: Vec::new(),
         related_characters: Vec::new(),
         related_support_cards: Vec::new(),
-        related_support_card_titles: Vec::new(),
+        related_support_card_names: Vec::new(),
         gametora_url: None,
         prediction: prediction.into_info(),
     }
@@ -1026,7 +1026,7 @@ fn champions_meeting_event(
         pickup_card_ids: Vec::new(),
         related_characters: Vec::new(),
         related_support_cards: Vec::new(),
-        related_support_card_titles: Vec::new(),
+        related_support_card_names: Vec::new(),
         gametora_url: None,
         prediction: prediction.into_info(),
     }
@@ -1090,7 +1090,7 @@ fn legend_race_event(
         pickup_card_ids: Vec::new(),
         related_characters: boss_images,
         related_support_cards: Vec::new(),
-        related_support_card_titles: Vec::new(),
+        related_support_card_names: Vec::new(),
         gametora_url: None,
         prediction: prediction.into_info(),
     }
@@ -1149,7 +1149,7 @@ fn campaign_event(
         pickup_card_ids: Vec::new(),
         related_characters: Vec::new(),
         related_support_cards: Vec::new(),
-        related_support_card_titles: Vec::new(),
+        related_support_card_names: Vec::new(),
         gametora_url: None,
         prediction: prediction.into_info(),
     }
@@ -2981,13 +2981,13 @@ fn load_support_card_names(
     Ok(names)
 }
 
-fn load_support_card_titles(connection: &Connection) -> Result<BTreeMap<i64, String>> {
-    let mut titles = load_bundled_support_card_titles()?;
-    titles.extend(load_text_data_by_category(
+fn load_support_card_specific_names(connection: &Connection) -> Result<BTreeMap<i64, String>> {
+    let mut names = load_bundled_support_card_specific_names()?;
+    names.extend(load_text_data_by_category(
         connection,
-        SUPPORT_CARD_TITLE_CATEGORY,
+        SUPPORT_CARD_NAME_CATEGORY,
     )?);
-    Ok(titles)
+    Ok(names)
 }
 
 fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
@@ -3007,16 +3007,17 @@ fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
         .collect::<BTreeMap<_, _>>())
 }
 
-fn load_bundled_support_card_titles() -> Result<BTreeMap<i64, String>> {
-    let raw_entries: Vec<RawSupportCardName> =
-        serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
-            .context("failed to parse bundled support-cards-db.json for timeline support titles")?;
+fn load_bundled_support_card_specific_names() -> Result<BTreeMap<i64, String>> {
+    let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(
+        BUNDLED_JP_SUPPORT_CARDS_DB_JSON,
+    )
+    .context("failed to parse bundled support-cards-db.json for timeline support card names")?;
 
     Ok(raw_entries
         .into_iter()
         .filter_map(|entry| {
-            let title = entry.card_title.or(entry.card_name)?;
-            entry.id.parse::<i64>().ok().map(|card_id| (card_id, title))
+            let name = entry.support_card_name.or(entry.card_name)?;
+            entry.id.parse::<i64>().ok().map(|card_id| (card_id, name))
         })
         .collect::<BTreeMap<_, _>>())
 }
@@ -3056,11 +3057,11 @@ fn support_name_for_card(card_id: i64, support_names: &BTreeMap<i64, String>) ->
         .unwrap_or_else(|| format!("Unknown_{}", card_id))
 }
 
-fn support_card_title_for_card(
+fn support_card_specific_name_for_card(
     card_id: i64,
-    support_card_titles: &BTreeMap<i64, String>,
+    support_card_names: &BTreeMap<i64, String>,
 ) -> Option<String> {
-    support_card_titles.get(&card_id).cloned()
+    support_card_names.get(&card_id).cloned()
 }
 
 fn title_from_names(names: &[String], fallback: &str) -> String {
@@ -3447,23 +3448,23 @@ mod tests {
     }
 
     #[test]
-    fn support_event_includes_card_titles_separately() {
+    fn support_event_includes_card_names_separately() {
         let banner = test_timeline_support_banner(30067, vec![30067]);
         let support_names = BTreeMap::from([(30067, "Symboli Rudolf".to_string())]);
-        let support_card_titles = BTreeMap::from([(30067, "Heirs to the Throne".to_string())]);
+        let support_card_names = BTreeMap::from([(30067, "Heirs to the Throne".to_string())]);
         let lookup = empty_confirmed_date_lookup();
 
         let event = super::support_event(
             &banner,
             &support_names,
-            &support_card_titles,
+            &support_card_names,
             &lookup,
             &[],
             FALLBACK_ACCELERATION_RATE,
         );
 
         assert_eq!(event.related_support_cards, ["Symboli Rudolf"]);
-        assert_eq!(event.related_support_card_titles, ["Heirs to the Throne"]);
+        assert_eq!(event.related_support_card_names, ["Heirs to the Throne"]);
     }
 
     #[test]
@@ -3787,7 +3788,7 @@ mod tests {
             pickup_card_ids: Vec::new(),
             related_characters: Vec::new(),
             related_support_cards: Vec::new(),
-            related_support_card_titles: Vec::new(),
+            related_support_card_names: Vec::new(),
             gametora_url: None,
             prediction: PredictionInfo {
                 kind: if is_confirmed {
