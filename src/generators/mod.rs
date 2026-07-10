@@ -9,6 +9,7 @@ pub mod character_names;
 pub mod common;
 pub mod factors;
 pub mod race_program;
+pub mod room_match_races;
 pub mod skills;
 pub mod support_cards_db;
 pub mod supports;
@@ -27,6 +28,10 @@ pub fn generate_all(connection: &Connection) -> Result<Vec<ResourceOutput>> {
     let mut outputs = vec![
         output("factors.json", factors::generate(connection)?)?,
         output("race_program.json", race_program::generate(connection)?)?,
+        output(
+            "room_match_races.json",
+            room_match_races::generate(connection)?,
+        )?,
         output("character_banners.json", &character_banners)?,
         output("supports_banners.json", &support_banners)?,
         output("paid_gacha_banners.json", &paid_banners)?,
