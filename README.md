@@ -8,6 +8,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `race_program.json` generation from `single_mode_program`
 - `character_banners.json`, `supports_banners.json`, and `paid_gacha_banners.json` generation from `gacha_data` + `gacha_available`
 - `banner_timeline.json` generation from bundled JP banner/event history plus confirmed global anchors from `master.mdb` and `src/jp_data/confirmed_global_banner_dates.csv`
+- `jp_news_events.json` from an incremental umapyoi.net archive of every JP news post and detailed gacha record, including event-family tags and discovered image/banner URLs
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
 - `character_names.json` overlay generation from the bundled mapping, with names refreshed from global `text_data` category `6`
 - `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` DB-first generation from `master.mdb`
@@ -100,6 +101,7 @@ Useful routes:
 - `/resources/{version}/supports_banners.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/paid_gacha_banners.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/banner_timeline.json.gz` - one-year immutable CDN cache
+- `/resources/{version}/jp_news_events.json.gz` - one-year immutable JP news/gacha archive
 - `/resources/{version}/affinity.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/character_names.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/character.json.gz` - one-year immutable CDN cache
@@ -137,6 +139,28 @@ Leave the variable unset in normal production if you only want Redis-backed brow
 ```powershell
 cargo run -- generate --master master.mdb --out generated-data
 ```
+
+## Synchronize JP News And Gacha Metadata
+
+The umapyoi API exposes gachas separately, but most other JP event families only exist as news posts. This command fetches the complete news index, downloads posts not already present in the local archive, refreshes detailed gacha records, classifies known event families, and retains the raw response so newly discovered fields are not lost:
+
+```powershell
+cargo run -- sync-umapyoi
+```
+
+The result is stored in `src/jp_data/umapyoi_archive.json` and emitted as `jp_news_events.json` during normal resource generation. Each news item contains its source page, normalized title/date fields when present, event tags such as `story_event`, `champions_meeting`, `league_of_heroes`, `legend_race`, `campaign`, and `gacha`, plus every image URL with its original JSON field path and a `likely_banner` hint. URLs named `gacha_banner_<id>` are emitted as structured `gacha_banners`, allowing news-only JP pickup banners to expand automatically. Detailed gacha entries embed normalized support-card pickup metadata.
+
+The top-level `analysis` object is regenerated from the saved raw payloads. It reports classification counts, date coverage, image/banner coverage, discovered gacha-banner IDs, detailed API gacha count, and merged support-card count. Run `cargo run -- sync-umapyoi --offline` to rebuild normalized fields and analysis without accessing umapyoi.net.
+
+The importer defaults to one request every 550 ms (about 1.8 requests/second). This stays below umapyoi's tightest sustained limits of 7,200 requests/hour and 172,800/day, as well as the 10/second and 500/minute burst limits. The scheduled job uses a gentler one request/second because sustained faster crawls have made the upstream service unstable. HTTP 429 and 5xx responses are retried with exponential backoff. Use `--request-interval-ms` to go slower; values below 500 ms are rejected.
+
+Existing news posts are not fetched again, so routine refreshes are incremental. Use `--full` only when upstream corrected old posts or the extraction logic needs to reprocess the original payloads:
+
+```powershell
+cargo run -- sync-umapyoi --full
+```
+
+`.github/workflows/sync-umapyoi.yml` runs the incremental sync every six hours and commits the archive only when extracted content changed. It can also be started manually with the full-refresh option.
 
 Generation emits `character_names.json` from the bundled `src/character_names.json` mapping, preserving the existing JP/mapping and skin entries while overwriting known character `name` fields with global names from `master.mdb`.
 

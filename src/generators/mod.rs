@@ -8,6 +8,7 @@ pub mod character;
 pub mod character_names;
 pub mod common;
 pub mod factors;
+pub mod jp_events;
 pub mod race_program;
 pub mod room_match_races;
 pub mod skills;
@@ -32,6 +33,7 @@ pub fn generate_all(connection: &Connection) -> Result<Vec<ResourceOutput>> {
             "room_match_races.json",
             room_match_races::generate(connection)?,
         )?,
+        output("jp_news_events.json", jp_events::generate()?)?,
         output("character_banners.json", &character_banners)?,
         output("supports_banners.json", &support_banners)?,
         output("paid_gacha_banners.json", &paid_banners)?,
