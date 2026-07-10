@@ -203,6 +203,7 @@ generated-data/
 		manifest.json
 		factors.json.gz
 		race_program.json.gz
+		room_match_races.json.gz
 		character_banners.json.gz
 		supports_banners.json.gz
 		paid_gacha_banners.json.gz
