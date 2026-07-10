@@ -148,11 +148,11 @@ The umapyoi API exposes gachas separately, but most other JP event families only
 cargo run -- sync-umapyoi
 ```
 
-The result is stored in `src/jp_data/umapyoi_archive.json` and emitted as `jp_news_events.json` during normal resource generation. Each news item contains its source page, normalized title/date fields when present, event tags such as `story_event`, `champions_meeting`, `league_of_heroes`, `legend_race`, `campaign`, and `gacha`, plus every image URL with its original JSON field path and a `likely_banner` hint. URLs named `gacha_banner_<id>` are emitted as structured `gacha_banners`, allowing news-only JP pickup banners to expand automatically. Detailed gacha entries embed normalized support-card pickup metadata.
+The result is stored in `src/jp_data/umapyoi_archive.json` and emitted as `jp_news_events.json` during normal resource generation. Each news item contains its source page, normalized title/date fields when present, event tags such as `story_event`, `champions_meeting`, `training_scenario`, `league_of_heroes`, `legend_race`, `campaign`, and `gacha`, plus every image URL with its original JSON field path and a `likely_banner` hint. URLs named `gacha_banner_<id>` are emitted as structured `gacha_banners`, allowing news-only JP pickup banners to expand automatically. Select Pickup support banners are marked as master gacha type `12`, tagged as reruns, and enriched with every support-card candidate named by the news post. Detailed gacha entries embed normalized support-card pickup metadata.
 
 The top-level `analysis` object is regenerated from the saved raw payloads. It reports classification counts, date coverage, image/banner coverage, discovered gacha-banner IDs, detailed API gacha count, and merged support-card count. Run `cargo run -- sync-umapyoi --offline` to rebuild normalized fields and analysis without accessing umapyoi.net.
 
-The importer defaults to one request every 550 ms (about 1.8 requests/second). This stays below umapyoi's tightest sustained limits of 7,200 requests/hour and 172,800/day, as well as the 10/second and 500/minute burst limits. The scheduled job uses a gentler one request/second because sustained faster crawls have made the upstream service unstable. HTTP 429 and 5xx responses are retried with exponential backoff. Use `--request-interval-ms` to go slower; values below 500 ms are rejected.
+The importer defaults to one request every 550 ms (about 1.8 requests/second). This stays below umapyoi's tightest sustained limits of 7,200 requests/hour and 172,800/day, as well as the 10/second and 500/minute burst limits. The scheduled job uses a gentler one request/second because sustained faster crawls have made the upstream service unstable. HTTP 429 and 5xx responses are retried with exponential backoff. Use `--request-interval-ms` to go slower; values below 500 ms are rejected. Routine runs only request the three index endpoints plus details for IDs that are not already archived. Image binaries are never downloaded from umapyoi.net; the importer only preserves image URLs embedded in news/API JSON.
 
 Existing news posts are not fetched again, so routine refreshes are incremental. Use `--full` only when upstream corrected old posts or the extraction logic needs to reprocess the original payloads:
 
@@ -160,7 +160,9 @@ Existing news posts are not fetched again, so routine refreshes are incremental.
 cargo run -- sync-umapyoi --full
 ```
 
-`.github/workflows/sync-umapyoi.yml` runs the incremental sync every six hours and commits the archive only when extracted content changed. It can also be started manually with the full-refresh option.
+`.github/workflows/sync-umapyoi.yml` runs the incremental sync once daily at 13:00 JST (04:00 UTC) and commits the archive only when extracted content changed. It can also be started manually with the full-refresh option.
+
+Timeline images are stored in the frontend rather than hotlinked at runtime. Generate a plain `banner_timeline.json`, then run `scripts/sync_umapyoi_timeline_images.py --timeline-json <path> --frontend-root <umamoe-frontend>`. The script requests only missing destination files from the original game CDN, converts them to WebP, and permanently skips existing assets. The frontend `sync-timeline-images.yml` workflow runs at 13:15 JST, after the metadata sync, and commits only newly created WebP files.
 
 Generation emits `character_names.json` from the bundled `src/character_names.json` mapping, preserving the existing JP/mapping and skin entries while overwriting known character `name` fields with global names from `master.mdb`.
 
@@ -175,6 +177,13 @@ paid,50009,2026-07-08
 story,07_uma_musume_summer_story_banner,2025-10-14
 champions,14,2026-06-21
 legend,12,2026-06-07
+league_of_heroes,2023-05-12,2026-08-15
+masters_challenge,2023-12-28,2026-09-01
+trainer_skills_test,2024-02-24,2026-10-10
+factor_research,2024-03-21,2026-11-08
+strongest_team,2024-04-22,2026-12-01
+racing_carnival,2024-10-11,2026-12-15
+training_scenario,2022-08-24,2026-12-20
 anniversary,1,2025-10-26
 ```
 
@@ -182,7 +191,9 @@ Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and ca
 
 Months are inferred as complete schedules. If the CSV contains any confirmed timeline entry in a global month, `banner_timeline.json` treats that whole month as closed and shifts unknown future predictions and unconfirmed anniversary markers out of that month. This matches the monthly schedule release pattern: once July is entered, there should be no more unconfirmed July entries predicted by the site.
 
-`banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, and campaign entries, plus anniversary marker metadata in the top-level `anniversaries` array. Character and support banners define the baseline acceleration curve. Paid/story/champions/legend/campaign confirmations then apply isolated same-family residual corrections on top of that baseline, and non-banner events can still snap to nearby banner groups when confirmed history shows that JP/global grouping pattern.
+`banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, campaign, League of Heroes, Masters Challenge, Trainer Skills Test, Factor Research, Aim! The Strongest Team, Racing Carnival, and Training Scenario releases, plus anniversary marker metadata in the top-level `anniversaries` array. Champions Meetings after the bundled April 2024 dataset are extended from their start news posts; matching older posts provide local banner images without duplicating the bundled rows. News-discovered Select Pickup reruns, Twinkle Collection, scenario, and guaranteed/paid gachas are merged into the existing banner families. Every gacha row exposes the numeric `gacha_type` and a stable `gacha_type_name` such as `standard_pickup`, `select_pickup_rerun`, or `twinkle_collection`. Character and support banners define the baseline acceleration curve; news-derived special banners do not become confirmed calibration anchors. Other family confirmations apply isolated same-family residual corrections on top of that baseline.
+
+Monthly Match is intentionally excluded because the JP history contains only one beta run. Generic campaigns, login bonuses, updates, maintenance, media announcements, and one-off challenges remain in `jp_news_events.json` instead of becoming timeline sections because their schedules overlap heavily or do not represent a repeatable content family.
 
 The resource also includes prediction likelihood metadata. The calculation block reports observed character-banner monthly count, adjacent character-banner gap, weekday, and day-of-month frequencies; unconfirmed events include a compact `prediction.calendar_likelihood` score showing how common that predicted month shape, spacing, and release date are compared with confirmed schedules.
 

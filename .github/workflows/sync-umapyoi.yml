@@ -2,7 +2,8 @@ name: Sync Umapyoi JP Events
 
 on:
   schedule:
-    - cron: '17 */6 * * *'
+    # 13:00 JST (04:00 UTC), once per day.
+    - cron: '0 4 * * *'
   workflow_dispatch:
     inputs:
       full:
