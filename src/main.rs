@@ -15,6 +15,7 @@ mod generators;
 mod master_fetch;
 mod pipeline;
 mod static_api;
+mod umapyoi;
 
 #[derive(Parser)]
 #[command(author, version, about = "Serve Umamusume resource JSON streams")]
@@ -55,6 +56,22 @@ enum Command {
     Purge {
         #[arg(long, default_value = "generated-data")]
         data_dir: PathBuf,
+    },
+    /// Incrementally archive JP news events and gacha details from umapyoi.net.
+    SyncUmapyoi {
+        #[arg(long, default_value = "https://umapyoi.net/api/v1")]
+        base_url: String,
+        #[arg(long, default_value = "src/jp_data/umapyoi_archive.json")]
+        out: PathBuf,
+        /// Minimum delay between requests. The default stays below the 7,200/hour limit.
+        #[arg(long, default_value_t = 550, value_parser = clap::value_parser!(u64).range(500..))]
+        request_interval_ms: u64,
+        /// Re-fetch news posts already present in the archive.
+        #[arg(long)]
+        full: bool,
+        /// Re-normalize the saved raw responses without making network requests.
+        #[arg(long)]
+        offline: bool,
     },
 }
 
@@ -157,6 +174,27 @@ async fn main() -> Result<()> {
         Command::Purge { data_dir } => {
             let manifest = pipeline::read_manifest(&data_dir)?;
             cache::purge_manifest_current_urls(&manifest).await?;
+        }
+        Command::SyncUmapyoi {
+            base_url,
+            out,
+            request_interval_ms,
+            full,
+            offline,
+        } => {
+            let summary =
+                umapyoi::sync(&base_url, &out, request_interval_ms, full, offline).await?;
+            info!(
+                news_posts = summary.news_posts,
+                gacha_banners = summary.gacha_banners,
+                support_cards = summary.support_cards,
+                new_news_posts = summary.new_news_posts,
+                changed = summary.changed,
+                "umapyoi JP archive synchronized"
+            );
+            for error in summary.source_errors {
+                warn!(error, "umapyoi source could not be fully synchronized");
+            }
         }
     }
 

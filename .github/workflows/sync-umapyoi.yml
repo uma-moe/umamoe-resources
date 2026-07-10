@@ -1,0 +1,52 @@
+name: Sync Umapyoi JP Events
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Re-fetch every archived news post
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-umapyoi-jp-events
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Synchronize news and gacha metadata
+        shell: bash
+        run: |
+          args=(--locked -- sync-umapyoi --request-interval-ms 1000)
+          if [[ "${{ inputs.full || false }}" == "true" ]]; then
+            args+=(--full)
+          fi
+          cargo run "${args[@]}"
+
+      - name: Commit updated archive
+        shell: bash
+        run: |
+          if git diff --quiet -- src/jp_data/umapyoi_archive.json; then
+            echo "Umapyoi archive is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/jp_data/umapyoi_archive.json
+          git commit -m "chore: sync umapyoi JP events"
+          git push

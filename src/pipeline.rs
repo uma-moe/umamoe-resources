@@ -52,10 +52,12 @@ pub fn generate_resources(
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
     let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
+    let jp_events_hash = generators::jp_events::version_hash();
     let version = sanitize_version(&format!(
-        "{}-timeline-{}",
+        "{}-timeline-{}-jp-{}",
         marker,
-        &confirmed_dates_hash[..12]
+        &confirmed_dates_hash[..12],
+        &jp_events_hash[..12]
     ));
     let version_dir = out_dir.join(&version);
     fs::create_dir_all(&version_dir)
