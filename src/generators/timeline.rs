@@ -1,5 +1,8 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
 use crate::generators::common;
+use crate::generators::jp_events::{
+    AdditionalGachaBanner, AdditionalGachaKind, NewsTimelineEvent, NewsTimelineKind,
+};
 use anyhow::{Context, Result};
 use chrono::{
     DateTime, Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc,
@@ -42,7 +45,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 11;
+const TIMELINE_ALGORITHM_VERSION: u8 = 13;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BannerTimeline {
@@ -87,6 +90,8 @@ pub struct BannerTimelineEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gacha_type: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub gacha_type_name: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub card_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub year: Option<i32>,
@@ -125,9 +130,16 @@ pub enum BannerTimelineEventType {
     ChampionsMeeting,
     LegendRace,
     Campaign,
+    LeagueOfHeroes,
+    MastersChallenge,
+    TrainerSkillsTest,
+    FactorResearch,
+    StrongestTeam,
+    RacingCarnival,
+    ScenarioRelease,
 }
 
-fn timeline_event_types() -> [BannerTimelineEventType; 7] {
+fn timeline_event_types() -> [BannerTimelineEventType; 14] {
     [
         BannerTimelineEventType::CharacterBanner,
         BannerTimelineEventType::SupportCardBanner,
@@ -136,6 +148,13 @@ fn timeline_event_types() -> [BannerTimelineEventType; 7] {
         BannerTimelineEventType::ChampionsMeeting,
         BannerTimelineEventType::LegendRace,
         BannerTimelineEventType::Campaign,
+        BannerTimelineEventType::LeagueOfHeroes,
+        BannerTimelineEventType::MastersChallenge,
+        BannerTimelineEventType::TrainerSkillsTest,
+        BannerTimelineEventType::FactorResearch,
+        BannerTimelineEventType::StrongestTeam,
+        BannerTimelineEventType::RacingCarnival,
+        BannerTimelineEventType::ScenarioRelease,
     ]
 }
 
@@ -231,6 +250,7 @@ struct ConfirmedDateLookup {
     champions: BTreeMap<String, DateTime<Utc>>,
     legend: BTreeMap<String, DateTime<Utc>>,
     campaign: BTreeMap<String, DateTime<Utc>>,
+    news_events: BTreeMap<String, DateTime<Utc>>,
     anniversary: BTreeMap<u32, DateTime<Utc>>,
     closed_global_months: BTreeSet<(i32, u32)>,
 }
@@ -244,6 +264,13 @@ enum ConfirmedTimelineKind {
     Champions,
     Legend,
     Campaign,
+    LeagueOfHeroes,
+    MastersChallenge,
+    TrainerSkillsTest,
+    FactorResearch,
+    StrongestTeam,
+    RacingCarnival,
+    TrainingScenario,
     Anniversary,
 }
 
@@ -304,6 +331,8 @@ struct TimelineChampionsMeeting {
     track: Option<String>,
     distance: Option<String>,
     conditions: Option<String>,
+    image_url: Option<String>,
+    image_path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -469,9 +498,12 @@ pub fn generate(
     let timeline_support_banners = load_timeline_support_banners()?;
     let timeline_paid_banners = load_timeline_paid_banners()?;
     let timeline_story_events = load_timeline_story_events()?;
-    let timeline_champions_meetings = load_timeline_champions_meetings()?;
+    let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let timeline_legend_races = load_timeline_legend_races()?;
     let timeline_campaigns = load_timeline_campaigns()?;
+    let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
+    merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
+    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
     let character_names = common::load_character_name_map(connection)?;
     let support_names = load_support_card_names(connection, &character_names)?;
     let support_card_names = load_support_card_specific_names(connection)?;
@@ -482,6 +514,7 @@ pub fn generate(
         &timeline_character_banners,
         &timeline_support_banners,
         &timeline_paid_banners,
+        &additional_gacha_banners,
     )?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
@@ -498,6 +531,7 @@ pub fn generate(
         &timeline_champions_meetings,
         &timeline_legend_races,
         &timeline_campaigns,
+        &news_timeline_events,
         &confirmed_dates,
         &unique_anchors,
         observed_rate,
@@ -522,6 +556,16 @@ pub fn generate(
     }));
     events.extend(timeline_support_banners.iter().map(|banner| {
         support_event(
+            banner,
+            &support_names,
+            &support_card_names,
+            &confirmed_dates,
+            &unique_anchors,
+            observed_rate,
+        )
+    }));
+    events.extend(additional_gacha_banners.iter().filter_map(|banner| {
+        additional_gacha_event(
             banner,
             &support_names,
             &support_card_names,
@@ -569,6 +613,15 @@ pub fn generate(
     }));
     events.extend(timeline_campaigns.iter().map(|event| {
         campaign_event(
+            event,
+            &confirmed_dates,
+            &unique_anchors,
+            &family_adjustments,
+            observed_rate,
+        )
+    }));
+    events.extend(news_timeline_events.iter().map(|event| {
+        news_timeline_event(
             event,
             &confirmed_dates,
             &unique_anchors,
@@ -663,7 +716,8 @@ fn character_event(
         source: "character",
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
-        gacha_type: None,
+        gacha_type: Some(3),
+        gacha_type_name: Some(gacha_type_name(3)),
         card_type: Some("character".to_string()),
         year: Some(banner.year),
         image: banner.image.clone(),
@@ -727,7 +781,8 @@ fn support_event(
         source: "support",
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
-        gacha_type: None,
+        gacha_type: Some(3),
+        gacha_type_name: Some(gacha_type_name(3)),
         card_type: Some("support".to_string()),
         year: Some(banner.year),
         image: banner.image.clone(),
@@ -748,6 +803,239 @@ fn support_event(
             "https://gametora.com/umamusume/gacha/history?server=ja&year={}&type=sup#{}",
             banner.year, banner_id
         )),
+        prediction: prediction.into_info(),
+    }
+}
+
+fn additional_gacha_event(
+    banner: &AdditionalGachaBanner,
+    support_names: &BTreeMap<i64, String>,
+    support_card_names: &BTreeMap<i64, String>,
+    confirmed_dates: &ConfirmedDateLookup,
+    anchors: &[CalibrationAnchor],
+    observed_rate: f64,
+) -> Option<BannerTimelineEvent> {
+    let (event_type, card_type, source, tag, confirmed_global_date) = match banner.kind {
+        AdditionalGachaKind::Character => (
+            BannerTimelineEventType::CharacterBanner,
+            "character",
+            "umapyoi_news_character",
+            "character-banner",
+            confirmed_dates.character.get(&banner.gacha_id).copied(),
+        ),
+        AdditionalGachaKind::Support => (
+            BannerTimelineEventType::SupportCardBanner,
+            "support",
+            "umapyoi_news_support",
+            "support-banner",
+            confirmed_dates.support.get(&banner.gacha_id).copied(),
+        ),
+        AdditionalGachaKind::Paid => (
+            BannerTimelineEventType::PaidBanner,
+            "paid",
+            "umapyoi_news_paid",
+            "paid-banner",
+            confirmed_dates.paid.get(&banner.gacha_id).copied(),
+        ),
+        AdditionalGachaKind::Unknown => return None,
+    };
+    let prediction = calculate_global_date(
+        banner.start_at,
+        confirmed_global_date,
+        anchors,
+        observed_rate,
+    );
+    let duration = 10;
+    let gacha_type = banner.gacha_type.or_else(|| {
+        matches!(
+            banner.kind,
+            AdditionalGachaKind::Character | AdditionalGachaKind::Support
+        )
+        .then_some(3)
+    });
+    let related_support_cards = banner
+        .pickup_card_ids
+        .iter()
+        .map(|card_id| support_name_for_card(*card_id, support_names))
+        .collect::<Vec<_>>();
+    let related_support_card_names = banner
+        .pickup_card_ids
+        .iter()
+        .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
+        .collect::<Vec<_>>();
+    let mut tags = vec![tag, "umapyoi-news"];
+    if banner.is_rerun {
+        tags.push("rerun-banner");
+    }
+    if banner.is_scenario {
+        tags.push("scenario-banner");
+    }
+    Some(BannerTimelineEvent {
+        id: format!("umapyoi-gacha-{}", banner.gacha_id),
+        event_type,
+        source,
+        gacha_id: Some(banner.gacha_id),
+        gacha_ids: Vec::new(),
+        gacha_type,
+        gacha_type_name: gacha_type.map(gacha_type_name),
+        card_type: Some(card_type.to_string()),
+        year: Some(banner.start_at.year()),
+        image: banner.image_url.clone(),
+        image_path: (!banner.image_url.is_empty()).then(|| additional_gacha_asset_path(banner)),
+        title: banner.title.clone(),
+        description: Some(format!(
+            "Discovered from umapyoi news post {}",
+            banner.source_post_id
+        )),
+        jp_release_date: banner.start_at,
+        global_release_date: prediction.global_date,
+        estimated_end_date: calculate_end_date(prediction.global_date, duration),
+        is_confirmed: confirmed_global_date.is_some(),
+        banner_duration_days: duration,
+        tags,
+        pickup_card_ids: banner.pickup_card_ids.clone(),
+        related_characters: Vec::new(),
+        related_support_cards,
+        related_support_card_names,
+        gametora_url: None,
+        prediction: prediction.into_info(),
+    })
+}
+
+fn gacha_type_name(gacha_type: i64) -> &'static str {
+    match gacha_type {
+        3 => "standard_pickup",
+        5 => "guaranteed",
+        10 => "group_select",
+        11 => "twinkle_collection",
+        12 => "select_pickup_rerun",
+        14 => "select_step_up",
+        15 => "select_pickup_stamp_sheet",
+        _ => "unknown",
+    }
+}
+
+fn additional_gacha_asset_path(banner: &AdditionalGachaBanner) -> String {
+    let family = match banner.kind {
+        AdditionalGachaKind::Character => "character",
+        AdditionalGachaKind::Support => "support",
+        AdditionalGachaKind::Paid => "paid",
+        AdditionalGachaKind::Unknown => "unknown",
+    };
+    format!(
+        "assets/timeline-images/gacha/{family}/{}.webp",
+        banner.gacha_id
+    )
+}
+
+fn news_event_asset_path(event: &NewsTimelineEvent) -> String {
+    let family = match event.kind {
+        NewsTimelineKind::ChampionsMeeting => "champions-meeting",
+        NewsTimelineKind::TrainingScenario => "training-scenario",
+        NewsTimelineKind::LeagueOfHeroes => "league-of-heroes",
+        NewsTimelineKind::MastersChallenge => "masters-challenge",
+        NewsTimelineKind::TrainerSkillsTest => "trainer-skills-test",
+        NewsTimelineKind::FactorResearch => "factor-research",
+        NewsTimelineKind::StrongestTeam => "strongest-team",
+        NewsTimelineKind::RacingCarnival => "racing-carnival",
+    };
+    format!(
+        "assets/timeline-images/events/{family}/{}.webp",
+        event.source_post_id
+    )
+}
+
+fn news_timeline_event(
+    event: &NewsTimelineEvent,
+    confirmed_dates: &ConfirmedDateLookup,
+    anchors: &[CalibrationAnchor],
+    family_adjustments: &FamilyAdjustmentModels,
+    observed_rate: f64,
+) -> BannerTimelineEvent {
+    let (event_type, source, tag) = match event.kind {
+        NewsTimelineKind::ChampionsMeeting => (
+            BannerTimelineEventType::ChampionsMeeting,
+            "champions_meeting_news",
+            "champions-meeting",
+        ),
+        NewsTimelineKind::TrainingScenario => (
+            BannerTimelineEventType::ScenarioRelease,
+            "training_scenario",
+            "training-scenario",
+        ),
+        NewsTimelineKind::LeagueOfHeroes => (
+            BannerTimelineEventType::LeagueOfHeroes,
+            "league_of_heroes",
+            "league-of-heroes",
+        ),
+        NewsTimelineKind::MastersChallenge => (
+            BannerTimelineEventType::MastersChallenge,
+            "masters_challenge",
+            "masters-challenge",
+        ),
+        NewsTimelineKind::TrainerSkillsTest => (
+            BannerTimelineEventType::TrainerSkillsTest,
+            "trainer_skills_test",
+            "trainer-skills-test",
+        ),
+        NewsTimelineKind::FactorResearch => (
+            BannerTimelineEventType::FactorResearch,
+            "factor_research",
+            "factor-research",
+        ),
+        NewsTimelineKind::StrongestTeam => (
+            BannerTimelineEventType::StrongestTeam,
+            "strongest_team",
+            "strongest-team",
+        ),
+        NewsTimelineKind::RacingCarnival => (
+            BannerTimelineEventType::RacingCarnival,
+            "racing_carnival",
+            "racing-carnival",
+        ),
+    };
+    let confirmed_global_date = confirmed_dates.news_events.get(&event.key).copied();
+    let prediction = apply_family_adjustment(
+        calculate_global_date(
+            event.start_at,
+            confirmed_global_date,
+            anchors,
+            observed_rate,
+        ),
+        event_type,
+        event.start_at,
+        family_adjustments,
+    );
+    let duration = banner_duration_days(event.start_at, event.end_at).max(1);
+    let image = event.image_url.clone().unwrap_or_default();
+    BannerTimelineEvent {
+        id: format!("news-event-{}", event.key),
+        event_type,
+        source,
+        gacha_id: None,
+        gacha_ids: Vec::new(),
+        gacha_type: None,
+        gacha_type_name: None,
+        card_type: None,
+        year: None,
+        image: image.clone(),
+        image_path: (!image.is_empty()).then(|| news_event_asset_path(event)),
+        title: event.title.clone(),
+        description: Some(format!(
+            "Schedule extracted from umapyoi news post {}",
+            event.source_post_id
+        )),
+        jp_release_date: event.start_at,
+        global_release_date: prediction.global_date,
+        estimated_end_date: calculate_end_date(prediction.global_date, duration),
+        is_confirmed: confirmed_global_date.is_some(),
+        banner_duration_days: duration,
+        tags: vec!["event", tag, "umapyoi-news"],
+        pickup_card_ids: Vec::new(),
+        related_characters: Vec::new(),
+        related_support_cards: Vec::new(),
+        related_support_card_names: Vec::new(),
+        gametora_url: None,
         prediction: prediction.into_info(),
     }
 }
@@ -806,6 +1094,7 @@ fn paid_events(
                 gacha_id: None,
                 gacha_ids: group.iter().map(|banner| banner.gacha_id).collect(),
                 gacha_type: Some(representative.gacha_type),
+                gacha_type_name: Some(gacha_type_name(representative.gacha_type)),
                 card_type: Some(representative.card_type.to_string()),
                 year: Some(representative.year),
                 image: String::new(),
@@ -895,6 +1184,7 @@ fn paid_event(
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
         gacha_type: Some(banner.gacha_type),
+        gacha_type_name: Some(gacha_type_name(banner.gacha_type)),
         card_type: Some(banner.card_type.to_string()),
         year: Some(banner.year),
         image: banner.image.clone(),
@@ -953,6 +1243,7 @@ fn story_event(
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
+        gacha_type_name: None,
         card_type: None,
         year: None,
         image: event.image.clone(),
@@ -1008,10 +1299,11 @@ fn champions_meeting_event(
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
+        gacha_type_name: None,
         card_type: None,
         year: None,
-        image: String::new(),
-        image_path: None,
+        image: event.image_url.clone().unwrap_or_default(),
+        image_path: event.image_path.clone(),
         title: format!("Champions Meeting: {}", event.name),
         description: champions_description(event),
         jp_release_date: event.start_at,
@@ -1071,6 +1363,7 @@ fn legend_race_event(
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
+        gacha_type_name: None,
         card_type: None,
         year: None,
         image: event
@@ -1134,6 +1427,7 @@ fn campaign_event(
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
+        gacha_type_name: None,
         card_type: None,
         year: None,
         image: event.image.clone(),
@@ -1188,6 +1482,7 @@ fn build_family_adjustment_models(
     champions_meetings: &[TimelineChampionsMeeting],
     legend_races: &[TimelineLegendRace],
     campaigns: &[TimelineCampaign],
+    news_events: &[NewsTimelineEvent],
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
@@ -1264,6 +1559,29 @@ fn build_family_adjustment_models(
             push_family_adjustment_sample(
                 &mut samples,
                 BannerTimelineEventType::Campaign,
+                event.start_at,
+                global,
+                anchors,
+                observed_rate,
+            );
+        }
+    }
+
+    for event in news_events {
+        if let Some(global) = confirmed_dates.news_events.get(&event.key).copied() {
+            let event_type = match event.kind {
+                NewsTimelineKind::LeagueOfHeroes => BannerTimelineEventType::LeagueOfHeroes,
+                NewsTimelineKind::ChampionsMeeting => BannerTimelineEventType::ChampionsMeeting,
+                NewsTimelineKind::TrainingScenario => BannerTimelineEventType::ScenarioRelease,
+                NewsTimelineKind::MastersChallenge => BannerTimelineEventType::MastersChallenge,
+                NewsTimelineKind::TrainerSkillsTest => BannerTimelineEventType::TrainerSkillsTest,
+                NewsTimelineKind::FactorResearch => BannerTimelineEventType::FactorResearch,
+                NewsTimelineKind::StrongestTeam => BannerTimelineEventType::StrongestTeam,
+                NewsTimelineKind::RacingCarnival => BannerTimelineEventType::RacingCarnival,
+            };
+            push_family_adjustment_sample(
+                &mut samples,
+                event_type,
                 event.start_at,
                 global,
                 anchors,
@@ -1581,6 +1899,7 @@ fn is_groupable_event_type(event_type: BannerTimelineEventType) -> bool {
             | BannerTimelineEventType::ChampionsMeeting
             | BannerTimelineEventType::LegendRace
             | BannerTimelineEventType::Campaign
+            | BannerTimelineEventType::ScenarioRelease
     )
 }
 
@@ -2036,6 +2355,7 @@ fn build_confirmed_date_lookup(
     timeline_character_banners: &[TimelineCharacterBanner],
     timeline_support_banners: &[TimelineSupportBanner],
     timeline_paid_banners: &[TimelinePaidBanner],
+    additional_gacha_banners: &[AdditionalGachaBanner],
 ) -> Result<ConfirmedDateLookup> {
     let mut lookup = ConfirmedDateLookup {
         character: BTreeMap::new(),
@@ -2045,6 +2365,7 @@ fn build_confirmed_date_lookup(
         champions: BTreeMap::new(),
         legend: BTreeMap::new(),
         campaign: BTreeMap::new(),
+        news_events: BTreeMap::new(),
         anniversary: BTreeMap::new(),
         closed_global_months: BTreeSet::new(),
     };
@@ -2053,6 +2374,14 @@ fn build_confirmed_date_lookup(
         if timeline_character_banners
             .iter()
             .any(|timeline_banner| character_banner_matches_timeline(banner, timeline_banner))
+            || additional_gacha_banners.iter().any(|additional| {
+                additional.kind == AdditionalGachaKind::Character
+                    && additional.gacha_id == banner.gacha_id
+                    && matching_pickup_candidates(
+                        &banner.pickup_card_ids,
+                        &additional.pickup_card_ids,
+                    )
+            })
         {
             lookup.character.insert(banner.gacha_id, banner.start_at);
         }
@@ -2061,6 +2390,14 @@ fn build_confirmed_date_lookup(
         if timeline_support_banners
             .iter()
             .any(|timeline_banner| support_banner_matches_timeline(banner, timeline_banner))
+            || additional_gacha_banners.iter().any(|additional| {
+                additional.kind == AdditionalGachaKind::Support
+                    && additional.gacha_id == banner.gacha_id
+                    && matching_pickup_candidates(
+                        &banner.pickup_card_ids,
+                        &additional.pickup_card_ids,
+                    )
+            })
         {
             lookup.support.insert(banner.gacha_id, banner.start_at);
         }
@@ -2120,6 +2457,17 @@ fn build_confirmed_date_lookup(
                         .campaign
                         .insert(image_key(&confirmed_date.key), confirmed_date.global_date);
                 }
+                ConfirmedTimelineKind::LeagueOfHeroes
+                | ConfirmedTimelineKind::MastersChallenge
+                | ConfirmedTimelineKind::TrainerSkillsTest
+                | ConfirmedTimelineKind::FactorResearch
+                | ConfirmedTimelineKind::StrongestTeam
+                | ConfirmedTimelineKind::RacingCarnival
+                | ConfirmedTimelineKind::TrainingScenario => {
+                    lookup
+                        .news_events
+                        .insert(confirmed_date.key, confirmed_date.global_date);
+                }
                 ConfirmedTimelineKind::Anniversary => {
                     if let Some(index) = parse_confirmed_anniversary_index(&confirmed_date.key) {
                         lookup.anniversary.insert(index, confirmed_date.global_date);
@@ -2130,6 +2478,12 @@ fn build_confirmed_date_lookup(
     }
 
     Ok(lookup)
+}
+
+fn matching_pickup_candidates(actual: &[i64], candidates: &[i64]) -> bool {
+    !actual.is_empty()
+        && !candidates.is_empty()
+        && actual.iter().all(|card_id| candidates.contains(card_id))
 }
 
 fn character_banner_matches_timeline(
@@ -2255,6 +2609,23 @@ fn parse_confirmed_timeline_kind(value: &str) -> Option<ConfirmedTimelineKind> {
         "campaign" | "mission_campaign" | "mission-campaign" => {
             Some(ConfirmedTimelineKind::Campaign)
         }
+        "league_of_heroes" | "league-of-heroes" | "loh" => {
+            Some(ConfirmedTimelineKind::LeagueOfHeroes)
+        }
+        "masters_challenge" | "masters-challenge" | "masters" => {
+            Some(ConfirmedTimelineKind::MastersChallenge)
+        }
+        "trainer_skills_test" | "trainer-skills-test" | "skills_test" | "skills-test" => {
+            Some(ConfirmedTimelineKind::TrainerSkillsTest)
+        }
+        "factor_research" | "factor-research" | "tachyon" => {
+            Some(ConfirmedTimelineKind::FactorResearch)
+        }
+        "strongest_team" | "strongest-team" => Some(ConfirmedTimelineKind::StrongestTeam),
+        "racing_carnival" | "racing-carnival" => Some(ConfirmedTimelineKind::RacingCarnival),
+        "training_scenario" | "training-scenario" | "scenario" => {
+            Some(ConfirmedTimelineKind::TrainingScenario)
+        }
         "anniversary" | "anniv" | "half_anniversary" | "half-anniversary" => {
             Some(ConfirmedTimelineKind::Anniversary)
         }
@@ -2270,9 +2641,39 @@ fn parse_confirmed_timeline_key(kind: ConfirmedTimelineKind, value: &str) -> Opt
         ConfirmedTimelineKind::Story | ConfirmedTimelineKind::Campaign => Some(image_key(value)),
         ConfirmedTimelineKind::Champions => Some(indexed_event_key("champions_meeting", value)),
         ConfirmedTimelineKind::Legend => Some(indexed_event_key("legend_race", value)),
+        ConfirmedTimelineKind::LeagueOfHeroes => {
+            Some(news_event_confirmation_key("league-of-heroes", value))
+        }
+        ConfirmedTimelineKind::MastersChallenge => {
+            Some(news_event_confirmation_key("masters-challenge", value))
+        }
+        ConfirmedTimelineKind::TrainerSkillsTest => {
+            Some(news_event_confirmation_key("trainer-skills-test", value))
+        }
+        ConfirmedTimelineKind::FactorResearch => {
+            Some(news_event_confirmation_key("factor-research", value))
+        }
+        ConfirmedTimelineKind::StrongestTeam => {
+            Some(news_event_confirmation_key("strongest-team", value))
+        }
+        ConfirmedTimelineKind::RacingCarnival => {
+            Some(news_event_confirmation_key("racing-carnival", value))
+        }
+        ConfirmedTimelineKind::TrainingScenario => {
+            Some(news_event_confirmation_key("training-scenario", value))
+        }
         ConfirmedTimelineKind::Anniversary => {
             parse_confirmed_anniversary_index(value).map(|index| index.to_string())
         }
+    }
+}
+
+fn news_event_confirmation_key(prefix: &str, value: &str) -> String {
+    let value = value.trim().to_ascii_lowercase().replace('_', "-");
+    if value.starts_with(prefix) {
+        value
+    } else {
+        format!("{prefix}-{value}")
     }
 }
 
@@ -2807,6 +3208,8 @@ fn load_timeline_champions_meetings() -> Result<Vec<TimelineChampionsMeeting>> {
                 track: event.track,
                 distance: event.distance,
                 conditions: event.conditions,
+                image_url: None,
+                image_path: None,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -2817,6 +3220,31 @@ fn load_timeline_champions_meetings() -> Result<Vec<TimelineChampionsMeeting>> {
     }
 
     Ok(events)
+}
+
+fn merge_champions_meeting_news(
+    bundled: &mut [TimelineChampionsMeeting],
+    news_events: &mut Vec<NewsTimelineEvent>,
+) {
+    news_events.retain(|news| {
+        if news.kind != NewsTimelineKind::ChampionsMeeting {
+            return true;
+        }
+        let Some(existing) = bundled
+            .iter_mut()
+            .min_by_key(|event| (event.start_at - news.start_at).num_seconds().abs())
+        else {
+            return true;
+        };
+        if (existing.start_at - news.start_at).num_days().abs() > 2 {
+            return true;
+        }
+        if existing.image_url.is_none() {
+            existing.image_url = news.image_url.clone();
+            existing.image_path = news.image_url.as_ref().map(|_| news_event_asset_path(news));
+        }
+        false
+    });
 }
 
 fn load_timeline_legend_races() -> Result<Vec<TimelineLegendRace>> {
@@ -3179,12 +3607,13 @@ mod tests {
             story,03_brand_new_friend_banner.png,2025-07-16
             champions,14,2026-06-21
             legend,legend_race_12,2026-06-07
+            league_of_heroes,2023-05-12,2026-08-15
             anniversary,1,2025-10-26
             "#,
         )
         .expect("test confirmed date CSV should parse");
 
-        assert_eq!(dates.len(), 7);
+        assert_eq!(dates.len(), 8);
         assert_eq!(dates[0].kind, ConfirmedTimelineKind::Character);
         assert_eq!(dates[0].key, "30100");
         assert_eq!(dates[0].global_date, utc_date(2026, 6, 18, 22));
@@ -3198,8 +3627,10 @@ mod tests {
         assert_eq!(dates[4].key, "champions_meeting_14");
         assert_eq!(dates[5].kind, ConfirmedTimelineKind::Legend);
         assert_eq!(dates[5].key, "legend_race_12");
-        assert_eq!(dates[6].kind, ConfirmedTimelineKind::Anniversary);
-        assert_eq!(dates[6].key, "1");
+        assert_eq!(dates[6].kind, ConfirmedTimelineKind::LeagueOfHeroes);
+        assert_eq!(dates[6].key, "league-of-heroes-2023-05-12");
+        assert_eq!(dates[7].kind, ConfirmedTimelineKind::Anniversary);
+        assert_eq!(dates[7].key, "1");
     }
 
     #[test]
@@ -3225,6 +3656,7 @@ mod tests {
                 test_timeline_support_banner(90003, vec![40, 30]),
                 test_timeline_support_banner(90131, vec![30119, 30121]),
             ],
+            &[],
             &[],
         )
         .expect("test confirmation lookup should build");
@@ -3420,6 +3852,7 @@ mod tests {
             champions: BTreeMap::new(),
             legend: BTreeMap::new(),
             campaign: BTreeMap::new(),
+            news_events: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months,
         };
@@ -3671,6 +4104,7 @@ mod tests {
             champions: BTreeMap::new(),
             legend: BTreeMap::new(),
             campaign: BTreeMap::new(),
+            news_events: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months: BTreeSet::new(),
         }
@@ -3683,6 +4117,7 @@ mod tests {
     ) -> CharacterBanner {
         CharacterBanner {
             gacha_id,
+            gacha_type: None,
             year: 2025,
             image: format!("2025_{gacha_id}.webp"),
             start_date: String::new(),
@@ -3702,6 +4137,7 @@ mod tests {
     ) -> SupportBanner {
         SupportBanner {
             gacha_id,
+            gacha_type: None,
             year: 2025,
             image: format!("2025_{gacha_id}.webp"),
             start_date: String::new(),
@@ -3773,6 +4209,7 @@ mod tests {
             gacha_id: None,
             gacha_ids: Vec::new(),
             gacha_type: None,
+            gacha_type_name: None,
             card_type: None,
             year: None,
             image: String::new(),
