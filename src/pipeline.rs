@@ -63,7 +63,7 @@ pub fn generate_resources(
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("failed to create {}", version_dir.display()))?;
 
-    let generated_outputs = generators::generate_all(&connection)?;
+    let generated_outputs = generators::generate_all(&connection, &marker)?;
     let mut artifacts = Vec::with_capacity(generated_outputs.len());
 
     for generated_output in generated_outputs {
