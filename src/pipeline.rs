@@ -75,21 +75,23 @@ pub fn generate_resources(
             .with_context(|| format!("failed to write {}", gzip_path.display()))?;
 
         if write_json {
-            let json_path = version_dir.join(generated_output.file_name);
+            let json_path = version_dir.join(&generated_output.file_name);
             fs::write(&json_path, &json_bytes)
                 .with_context(|| format!("failed to write {}", json_path.display()))?;
         }
 
+        let path = format!("/resources/{}/{}.gz", version, generated_output.file_name);
+        let current_path = format!("/resources/current/{}.gz", generated_output.file_name);
         artifacts.push(ResourceArtifact {
-            name: generated_output.file_name.to_string(),
-            path: format!("/resources/{}/{}.gz", version, generated_output.file_name),
-            current_path: format!("/resources/current/{}.gz", generated_output.file_name),
+            path,
+            current_path,
             content_type: "application/json; charset=utf-8".to_string(),
             content_encoding: "gzip".to_string(),
             etag: format!("\"sha256-{}\"", json_sha256),
             sha256: json_sha256,
             json_bytes: json_bytes.len() as u64,
             gzip_bytes: gzip_bytes.len() as u64,
+            name: generated_output.file_name,
         });
     }
 
