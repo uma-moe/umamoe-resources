@@ -12,6 +12,7 @@ pub mod jp_events;
 pub mod race_program;
 pub mod race_to_saddle;
 pub mod room_match_races;
+pub mod simulator_course_geometry;
 pub mod simulator_courses;
 pub mod simulator_skills;
 pub mod skills;
@@ -19,8 +20,9 @@ pub mod support_cards_db;
 pub mod supports;
 pub mod timeline;
 
+#[derive(Debug)]
 pub struct ResourceOutput {
-    pub file_name: &'static str,
+    pub file_name: String,
     pub value: serde_json::Value,
 }
 
@@ -29,6 +31,7 @@ pub fn generate_all(connection: &Connection, master_version: &str) -> Result<Vec
     let support_banners = banners::generate_support_banners(connection)?;
     let paid_banners = banners::generate_paid_banners(connection)?;
 
+    let simulator_courses = simulator_courses::generate(connection, master_version)?;
     let mut outputs = vec![
         output("factors.json", factors::generate(connection)?)?,
         output("race_program.json", race_program::generate(connection)?)?,
@@ -45,10 +48,7 @@ pub fn generate_all(connection: &Connection, master_version: &str) -> Result<Vec
             "simulator_skills.json",
             simulator_skills::generate(connection, master_version)?,
         )?,
-        output(
-            "simulator_courses.json",
-            simulator_courses::generate(connection, master_version)?,
-        )?,
+        output("simulator_courses.json", &simulator_courses)?,
         output("character_banners.json", &character_banners)?,
         output("supports_banners.json", &support_banners)?,
         output("paid_gacha_banners.json", &paid_banners)?,
@@ -75,16 +75,17 @@ pub fn generate_all(connection: &Connection, master_version: &str) -> Result<Vec
         support_cards_db::generate(connection)?,
     )?);
     outputs.push(output("skills.json", skills::generate(connection)?)?);
+    outputs.extend(simulator_course_geometry::generate(&simulator_courses)?);
 
     Ok(outputs)
 }
 
-fn output<T>(file_name: &'static str, value: T) -> Result<ResourceOutput>
+fn output<T>(file_name: impl Into<String>, value: T) -> Result<ResourceOutput>
 where
     T: Serialize,
 {
     Ok(ResourceOutput {
-        file_name,
+        file_name: file_name.into(),
         value: serde_json::to_value(value)?,
     })
 }
