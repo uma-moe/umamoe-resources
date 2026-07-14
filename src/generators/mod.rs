@@ -10,6 +10,7 @@ pub mod common;
 pub mod factors;
 pub mod jp_events;
 pub mod race_program;
+pub mod race_to_saddle;
 pub mod room_match_races;
 pub mod simulator_courses;
 pub mod simulator_skills;
@@ -31,6 +32,10 @@ pub fn generate_all(connection: &Connection, master_version: &str) -> Result<Vec
     let mut outputs = vec![
         output("factors.json", factors::generate(connection)?)?,
         output("race_program.json", race_program::generate(connection)?)?,
+        output(
+            "race_to_saddle_mapping.json",
+            race_to_saddle::generate(connection)?,
+        )?,
         output(
             "room_match_races.json",
             room_match_races::generate(connection)?,
