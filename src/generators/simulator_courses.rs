@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 1;
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
@@ -572,9 +573,13 @@ pub fn generate<'a>(
             continue;
         }
 
-        let geometry = event_params
-            .get(&course_id)
-            .with_context(|| format!("missing course event params for course {course_id}"))?;
+        let Some(geometry) = event_params.get(&course_id) else {
+            warn!(
+                course_id,
+                "skipping simulator course without bundled event params"
+            );
+            continue;
+        };
 
         courses.push(SimulatorCourse {
             course_id: as_u32(course_id, "id")?,
@@ -786,6 +791,44 @@ fn as_u32(value: i64, field: &str) -> Result<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skips_courses_without_bundled_event_params() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE race_course_set_status (
+                    course_set_status_id INTEGER,
+                    target_status_1 INTEGER,
+                    target_status_2 INTEGER
+                );
+                CREATE TABLE race_course_set (
+                    id INTEGER,
+                    race_track_id INTEGER,
+                    distance INTEGER,
+                    ground INTEGER,
+                    inout INTEGER,
+                    turn INTEGER,
+                    float_lane_max INTEGER,
+                    course_set_status_id INTEGER,
+                    finish_time_min INTEGER,
+                    finish_time_max INTEGER
+                );
+
+                INSERT INTO race_course_set_status VALUES (1, 101, 0);
+                INSERT INTO race_course_set VALUES
+                    (10504, 105, 2000, 1, 1, 2, 12000, 1, 1100000, 1200000),
+                    (11301, 113, 2000, 1, 1, 2, 12000, 1, 1100000, 1200000);
+                "#,
+            )
+            .unwrap();
+
+        let generated = generate(&connection, "test-version").unwrap();
+
+        assert_eq!(generated.courses.len(), 1);
+        assert_eq!(generated.courses[0].course_id, 10504);
+    }
 
     #[test]
     fn extracts_lane_max_changes_from_authoritative_course_events() {
