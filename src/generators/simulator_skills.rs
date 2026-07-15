@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use rusqlite::{Connection, Row};
 use serde::Serialize;
+use std::collections::BTreeSet;
 
 const SCHEMA_VERSION: u32 = 1;
 const EFFECTS_PER_ALTERNATIVE: usize = 3;
@@ -13,6 +14,30 @@ const SECOND_ALTERNATIVE_DURATION_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION
 const SECOND_ALTERNATIVE_DURATION_USAGE_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 3;
 const SECOND_ALTERNATIVE_COOLDOWN_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 4;
 const SECOND_ALTERNATIVE_EFFECT_START: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 5;
+const ADDITIONAL_ACTIVATE_TYPE_COLUMNS: [&str; 6] = [
+    "additional_activate_type_1_1",
+    "additional_activate_type_1_2",
+    "additional_activate_type_1_3",
+    "additional_activate_type_2_1",
+    "additional_activate_type_2_2",
+    "additional_activate_type_2_3",
+];
+const SKILL_DATA_SELECT: &str = r#"
+        SELECT id, rarity,
+               precondition_1, condition_1,
+               float_ability_time_1, ability_time_usage_1, float_cooldown_time_1,
+               ability_type_1_1, ability_value_usage_1_1, additional_activate_type_1_1, ability_value_level_usage_1_1, float_ability_value_1_1, target_type_1_1, target_value_1_1,
+               ability_type_1_2, ability_value_usage_1_2, additional_activate_type_1_2, ability_value_level_usage_1_2, float_ability_value_1_2, target_type_1_2, target_value_1_2,
+               ability_type_1_3, ability_value_usage_1_3, additional_activate_type_1_3, ability_value_level_usage_1_3, float_ability_value_1_3, target_type_1_3, target_value_1_3,
+               precondition_2, condition_2,
+               float_ability_time_2, ability_time_usage_2, float_cooldown_time_2,
+               ability_type_2_1, ability_value_usage_2_1, additional_activate_type_2_1, ability_value_level_usage_2_1, float_ability_value_2_1, target_type_2_1, target_value_2_1,
+               ability_type_2_2, ability_value_usage_2_2, additional_activate_type_2_2, ability_value_level_usage_2_2, float_ability_value_2_2, target_type_2_2, target_value_2_2,
+               ability_type_2_3, ability_value_usage_2_3, additional_activate_type_2_3, ability_value_level_usage_2_3, float_ability_value_2_3, target_type_2_3, target_value_2_3
+          FROM skill_data
+         WHERE is_general_skill = 1 OR rarity >= 3
+         ORDER BY id
+        "#;
 
 #[derive(Debug, Serialize)]
 pub struct SimulatorSkillSet<'a> {
@@ -59,24 +84,8 @@ pub fn generate<'a>(
     connection: &Connection,
     master_version: &'a str,
 ) -> Result<SimulatorSkillSet<'a>> {
-    let mut statement = connection.prepare(
-        r#"
-        SELECT id, rarity,
-               precondition_1, condition_1,
-               float_ability_time_1, ability_time_usage_1, float_cooldown_time_1,
-               ability_type_1_1, ability_value_usage_1_1, additional_activate_type_1_1, ability_value_level_usage_1_1, float_ability_value_1_1, target_type_1_1, target_value_1_1,
-               ability_type_1_2, ability_value_usage_1_2, additional_activate_type_1_2, ability_value_level_usage_1_2, float_ability_value_1_2, target_type_1_2, target_value_1_2,
-               ability_type_1_3, ability_value_usage_1_3, additional_activate_type_1_3, ability_value_level_usage_1_3, float_ability_value_1_3, target_type_1_3, target_value_1_3,
-               precondition_2, condition_2,
-               float_ability_time_2, ability_time_usage_2, float_cooldown_time_2,
-               ability_type_2_1, ability_value_usage_2_1, additional_activate_type_2_1, ability_value_level_usage_2_1, float_ability_value_2_1, target_type_2_1, target_value_2_1,
-               ability_type_2_2, ability_value_usage_2_2, additional_activate_type_2_2, ability_value_level_usage_2_2, float_ability_value_2_2, target_type_2_2, target_value_2_2,
-               ability_type_2_3, ability_value_usage_2_3, additional_activate_type_2_3, ability_value_level_usage_2_3, float_ability_value_2_3, target_type_2_3, target_value_2_3
-          FROM skill_data
-         WHERE is_general_skill = 1 OR rarity >= 3
-         ORDER BY id
-        "#,
-    )?;
+    let query = skill_data_select_query(connection)?;
+    let mut statement = connection.prepare(&query)?;
 
     let rows = statement.query_map([], skill_from_row)?;
     let mut skills = Vec::new();
@@ -89,6 +98,22 @@ pub fn generate<'a>(
         master_version,
         skills,
     })
+}
+
+fn skill_data_select_query(connection: &Connection) -> Result<String> {
+    let mut statement = connection.prepare("PRAGMA table_info(skill_data)")?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<BTreeSet<_>>>()?;
+    let mut query = SKILL_DATA_SELECT.to_owned();
+
+    for column in ADDITIONAL_ACTIVATE_TYPE_COLUMNS {
+        if !columns.contains(column) {
+            query = query.replace(column, &format!("0 AS {column}"));
+        }
+    }
+
+    Ok(query)
 }
 
 fn skill_from_row(row: &Row<'_>) -> rusqlite::Result<SimulatorSkill> {
@@ -225,7 +250,7 @@ fn conversion_error(
 
 #[cfg(test)]
 mod tests {
-    use super::generate;
+    use super::{generate, skill_data_select_query, ADDITIONAL_ACTIVATE_TYPE_COLUMNS};
     use rusqlite::Connection;
 
     #[test]
@@ -316,5 +341,18 @@ mod tests {
         assert_eq!(second.effects[0].target_value, None);
         assert_eq!(second.effects[0].value_scaling, None);
         assert_eq!(second.effects[0].value_level_scaling, Some(2));
+    }
+
+    #[test]
+    fn projects_missing_legacy_additional_activate_columns_as_zero() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch("CREATE TABLE skill_data (id INTEGER, rarity INTEGER)")
+            .unwrap();
+
+        let query = skill_data_select_query(&connection).unwrap();
+        for column in ADDITIONAL_ACTIVATE_TYPE_COLUMNS {
+            assert!(query.contains(&format!("0 AS {column}")));
+        }
     }
 }
