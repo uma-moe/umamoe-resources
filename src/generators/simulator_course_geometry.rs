@@ -144,17 +144,6 @@ fn generate_from_source(
         });
     }
 
-    if !source_by_course.is_empty() {
-        let course_ids = source_by_course
-            .keys()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(", ");
-        bail!(
-            "simulator course geometry source contains courses missing from current master: {course_ids}"
-        );
-    }
-
     Ok(outputs)
 }
 
@@ -311,6 +300,24 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("rotation_w"));
+    }
+
+    #[test]
+    fn ignores_source_geometry_for_future_courses() {
+        let mut future_course = source_course();
+        future_course.course_id = 11_203;
+        future_course.race_track_id = 10_001;
+
+        let source = SourceGeometrySet {
+            schema_version: SCHEMA_VERSION,
+            source_master_version: "newer-source-master".to_string(),
+            courses: vec![source_course(), future_course],
+        };
+
+        let outputs = generate_from_source(&course_set(), &source).unwrap();
+
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].file_name, "simulator_course_geometry_10104.json");
     }
 
     #[test]
