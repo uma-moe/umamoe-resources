@@ -7,6 +7,7 @@ pub struct RoomMatchRace {
     pub race_instance_id: i64,
     pub name: String,
     pub short_name: Option<String>,
+    pub course_set_id: i64,
     pub race_track_id: i64,
     pub distance: i64,
     pub course_ground: i64,
@@ -31,6 +32,7 @@ pub fn generate(connection: &Connection) -> Result<RoomMatchRaces> {
             race_instance.id,
             COALESCE(full_name.text, short_name.text, CAST(race_instance.id AS TEXT)),
             short_name.text,
+            race.course_set,
             course.race_track_id,
             course.distance,
             course.ground
@@ -50,9 +52,10 @@ pub fn generate(connection: &Connection) -> Result<RoomMatchRaces> {
             race_instance_id: row.get(0)?,
             name: row.get(1)?,
             short_name: row.get(2)?,
-            race_track_id: row.get(3)?,
-            distance: row.get(4)?,
-            course_ground: row.get(5)?,
+            course_set_id: row.get(3)?,
+            race_track_id: row.get(4)?,
+            distance: row.get(5)?,
+            course_ground: row.get(6)?,
         })
     })?;
     let races = rows
@@ -92,6 +95,7 @@ mod tests {
         let generated = generate(&connection).unwrap();
         assert_eq!(generated.races.len(), 1);
         assert_eq!(generated.races[0].race_instance_id, 800013);
+        assert_eq!(generated.races[0].course_set_id, 10501);
         assert_eq!(generated.races[0].name, "Sprinters Stakes");
         assert_eq!(generated.races[0].distance, 1200);
     }
