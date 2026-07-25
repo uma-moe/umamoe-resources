@@ -67,34 +67,62 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
 }
 
 fn resource_router(mut state: AppState, protected: bool) -> Router {
-    state.protected = protected;
-
-    let app = Router::new()
+    let mut public_state = state.clone();
+    public_state.protected = false;
+    let public = Router::new()
         .route("/health", get(healthz))
         .route("/healthz", get(healthz))
         .route("/resources", get(get_manifest))
         .route("/resources/", get(get_manifest))
         .route("/resources/healthz", get(healthz))
         .route("/resources/manifest.json", get(get_manifest))
-        .route("/resources/current/sql", get(get_current_sql))
         .route("/resources/current/:file_name", get(get_current_resource))
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
-        );
+        )
+        .with_state(public_state);
 
-    let app = if protected {
-        app.layer(axum::middleware::from_fn_with_state(
+    state.protected = protected;
+    let sql = Router::new().route("/resources/current/sql", get(get_current_sql));
+    let sql = if protected {
+        sql.layer(axum::middleware::from_fn_with_state(
             state.clone(),
             crate::browser_proof::api_protection_middleware,
         ))
     } else {
-        app
+        sql
     };
+    let sql = sql.with_state(state.clone());
 
-    app.layer(cors_layer())
+    let planner = Router::new()
+        .route(
+            "/resources/planner/manifest.json",
+            get(get_planner_manifest),
+        )
+        .route(
+            "/resources/planner/current/:file_name",
+            get(get_current_planner_resource),
+        )
+        .route(
+            "/resources/planner/:version/:file_name",
+            get(get_versioned_planner_resource),
+        );
+    let planner = if protected {
+        planner.layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            crate::browser_proof::planner_protection_middleware,
+        ))
+    } else {
+        planner
+    };
+    let planner = planner.with_state(state);
+
+    public
+        .merge(sql)
+        .merge(planner)
+        .layer(cors_layer())
         .layer(TraceLayer::new_for_http())
-        .with_state(state)
 }
 
 fn internal_resources_port() -> Option<u16> {
@@ -167,12 +195,9 @@ async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiErro
     );
     headers.insert(
         CACHE_CONTROL,
-        HeaderValue::from_static(manifest_cache_control(state.protected)),
+        HeaderValue::from_static(manifest_cache_control(false)),
     );
-    headers.insert(
-        VARY,
-        HeaderValue::from_static(protected_vary_header(state.protected)),
-    );
+    headers.insert(VARY, HeaderValue::from_static(protected_vary_header(false)));
     headers.insert(CONTENT_LENGTH, header_value(manifest_bytes.len())?);
     Ok((headers, manifest_bytes).into_response())
 }
@@ -188,7 +213,51 @@ async fn get_current_resource(
         &manifest.version,
         &file_name,
         false,
+        false,
+        true,
+    )
+    .await
+}
+
+async fn get_planner_manifest(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let manifest_path = state.data_dir.join("planner").join("manifest.json");
+    let manifest_bytes = fs::read(&manifest_path).await.map_err(|error| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("failed to read {}: {}", manifest_path.display(), error),
+        )
+    })?;
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(manifest_cache_control(state.protected)),
+    );
+    headers.insert(
+        VARY,
+        HeaderValue::from_static(protected_vary_header(state.protected)),
+    );
+    headers.insert(CONTENT_LENGTH, header_value(manifest_bytes.len())?);
+    Ok((headers, manifest_bytes).into_response())
+}
+
+async fn get_current_planner_resource(
+    State(state): State<AppState>,
+    Path(file_name): Path<String>,
+) -> Result<Response, ApiError> {
+    let planner_dir = state.data_dir.join("planner");
+    let manifest = read_manifest(&planner_dir).map_err(internal_error)?;
+    resource_response(
+        &planner_dir,
+        &manifest,
+        &manifest.version,
+        &file_name,
+        false,
         state.protected,
+        false,
     )
     .await
 }
@@ -252,7 +321,31 @@ async fn get_versioned_resource(
         &version,
         &file_name,
         true,
+        false,
+        true,
+    )
+    .await
+}
+
+async fn get_versioned_planner_resource(
+    State(state): State<AppState>,
+    Path((version, file_name)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let planner_dir = state.data_dir.join("planner");
+    let current_manifest = read_manifest(&planner_dir).map_err(internal_error)?;
+    let manifest = if version == current_manifest.version {
+        current_manifest
+    } else {
+        read_version_manifest(&planner_dir, &version).map_err(internal_error)?
+    };
+    resource_response(
+        &planner_dir,
+        &manifest,
+        &version,
+        &file_name,
+        true,
         state.protected,
+        false,
     )
     .await
 }
@@ -264,8 +357,12 @@ async fn resource_response(
     file_name: &str,
     immutable: bool,
     protected: bool,
+    public_only: bool,
 ) -> Result<Response, ApiError> {
     let logical_file_name = normalize_file_name(file_name)?;
+    if public_only && !is_public_resource(logical_file_name) {
+        return Err(ApiError::new(StatusCode::NOT_FOUND, "unknown resource"));
+    }
     let artifact = manifest
         .artifacts
         .iter()
@@ -303,6 +400,10 @@ async fn resource_response(
     Ok((headers, gzip_bytes).into_response())
 }
 
+fn is_public_resource(file_name: &str) -> bool {
+    file_name != "jp_news_events.json" && !file_name.starts_with("planner_")
+}
+
 fn manifest_cache_control(protected: bool) -> &'static str {
     if protected {
         "private, max-age=60, stale-while-revalidate=86400"
@@ -322,7 +423,7 @@ fn resource_cache_control(protected: bool, immutable: bool) -> &'static str {
 
 fn protected_vary_header(protected: bool) -> &'static str {
     if protected {
-        "Cookie, X-Browser-Proof"
+        "Origin, Referer, Cookie, X-Browser-Proof"
     } else {
         "Accept-Encoding"
     }
@@ -330,7 +431,7 @@ fn protected_vary_header(protected: bool) -> &'static str {
 
 fn resource_vary_header(protected: bool) -> &'static str {
     if protected {
-        "Accept-Encoding, Cookie, X-Browser-Proof"
+        "Accept-Encoding, Origin, Referer, Cookie, X-Browser-Proof"
     } else {
         "Accept-Encoding"
     }
@@ -480,7 +581,7 @@ impl IntoResponse for ApiError {
 #[cfg(test)]
 mod tests {
     use super::{
-        manifest_cache_control, resource_cache_control, resource_vary_header,
+        is_public_resource, manifest_cache_control, resource_cache_control, resource_vary_header,
         validate_read_only_sql,
     };
 
@@ -513,7 +614,7 @@ mod tests {
         );
         assert_eq!(
             resource_vary_header(true),
-            "Accept-Encoding, Cookie, X-Browser-Proof"
+            "Accept-Encoding, Origin, Referer, Cookie, X-Browser-Proof"
         );
     }
 
@@ -527,5 +628,12 @@ mod tests {
             resource_cache_control(false, true),
             "public, max-age=31536000, immutable"
         );
+    }
+
+    #[test]
+    fn raw_news_and_planner_artifacts_are_never_public_resources() {
+        assert!(!is_public_resource("jp_news_events.json"));
+        assert!(!is_public_resource("planner_rewards.json"));
+        assert!(is_public_resource("banner_timeline.json"));
     }
 }

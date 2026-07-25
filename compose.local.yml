@@ -22,12 +22,14 @@ services:
     container_name: umamoe-local-resources
     environment:
       DATABASE_URL: ${DATABASE_URL:-}
+      DEBUG_MODE: ${DEBUG_MODE:-true}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:4200,http://127.0.0.1:4200,http://localhost:3001,http://localhost:3002,http://localhost:3004}
-      API_PROTECTION_BYPASS: ${API_PROTECTION_BYPASS:-false}
+      API_PROTECTION_BYPASS: ${RESOURCE_API_PROTECTION_BYPASS:-true}
       AUTH_INTERNAL_BASE_URL: ${AUTH_INTERNAL_BASE_URL:-http://umamoe-backend:3201}
       RESOURCES_INTERNAL_HOST: 0.0.0.0
       RESOURCES_INTERNAL_PORT: 3204
       MASTER_REFRESH_INTERVAL_SECONDS: ${MASTER_REFRESH_INTERVAL_SECONDS:-300}
+      JP_MASTER_PATH: /data/jp-master.mdb
       RUST_LOG: ${RUST_LOG:-umamoe_resources=info,info}
     entrypoint:
       - /bin/sh
@@ -43,6 +45,7 @@ services:
       - "127.0.0.1:${LOCAL_RESOURCES_PORT:-3004}:3000"
     volumes:
       - ./master.mdb:/data/master.mdb
+      - ./jp-master.mdb:/data/jp-master.mdb:ro
       - ./generated-data:/data/generated-data
     depends_on:
       backend:

@@ -8,7 +8,7 @@ const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json")
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
-const ALGORITHM_VERSION: u8 = 3;
+const ALGORITHM_VERSION: u8 = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -30,6 +30,23 @@ pub struct NewsTimelineEvent {
     pub start_at: DateTime<Utc>,
     pub end_at: DateTime<Utc>,
     pub image_url: Option<String>,
+    pub description: Option<String>,
+    pub source_post_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct CampaignTimelineMetadata {
+    pub start_at: DateTime<Utc>,
+    pub title: String,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub source_post_id: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct LegendRaceTimelineMetadata {
+    pub start_at: DateTime<Utc>,
+    pub image_url: String,
     pub source_post_id: i64,
 }
 
@@ -47,10 +64,13 @@ pub struct AdditionalGachaBanner {
     pub kind: AdditionalGachaKind,
     pub start_at: DateTime<Utc>,
     pub image_url: String,
-    pub source_post_id: i64,
     pub title: String,
+    pub description: Option<String>,
+    pub card_type: Option<String>,
     pub gacha_type: Option<i64>,
     pub pickup_card_ids: Vec<i64>,
+    pub related_character_names: Vec<String>,
+    pub related_support_names: Vec<String>,
     pub is_rerun: bool,
     pub is_scenario: bool,
 }
@@ -121,12 +141,59 @@ pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
                 start_at: start.posted_at,
                 end_at,
                 image_url: start.image_url.clone(),
+                description: start.description.clone(),
                 source_post_id: start.post_id,
             });
         }
     }
     events.sort_by_key(|event| (event.start_at, event.key.clone()));
     Ok(events)
+}
+
+pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
+    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+        .context("failed to parse bundled umapyoi archive")?;
+    let mut campaigns = archive
+        .get("news")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|post| has_event_type(post, "campaign"))
+        .filter_map(news_post)
+        .filter(|post| is_campaign_post(&post.title))
+        .map(|post| CampaignTimelineMetadata {
+            start_at: post.posted_at,
+            title: standardized_campaign_title(&post.display_title),
+            description: post.description,
+            image_url: post.image_url,
+            source_post_id: post.post_id,
+        })
+        .collect::<Vec<_>>();
+    campaigns.sort_by_key(|campaign| (campaign.start_at, campaign.source_post_id));
+    Ok(campaigns)
+}
+
+pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>> {
+    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+        .context("failed to parse bundled umapyoi archive")?;
+    let mut races = archive
+        .get("news")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|post| has_event_type(post, "legend_race"))
+        .filter_map(news_post)
+        .filter(|post| is_legend_race_live_post(&post.title))
+        .filter_map(|post| {
+            Some(LegendRaceTimelineMetadata {
+                start_at: post.posted_at,
+                image_url: post.image_url?,
+                source_post_id: post.post_id,
+            })
+        })
+        .collect::<Vec<_>>();
+    races.sort_by_key(|race| (race.start_at, race.source_post_id));
+    Ok(races)
 }
 
 pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
@@ -153,12 +220,19 @@ pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
                 },
                 start_at,
                 image_url: candidate.get("image_url")?.as_str()?.to_string(),
-                source_post_id: candidate.get("source_post_id")?.as_i64()?,
                 title: candidate
                     .get("title")
                     .and_then(Value::as_str)
                     .unwrap_or("Additional JP Gacha")
                     .to_string(),
+                description: candidate
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                card_type: candidate
+                    .get("card_type")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 gacha_type: candidate.get("gacha_type").and_then(Value::as_i64),
                 pickup_card_ids: candidate
                     .get("pickup_card_ids")
@@ -167,6 +241,8 @@ pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
                     .flatten()
                     .filter_map(Value::as_i64)
                     .collect(),
+                related_character_names: string_array(candidate.get("related_character_names")),
+                related_support_names: string_array(candidate.get("related_support_names")),
                 is_rerun: candidate
                     .get("is_rerun")
                     .and_then(Value::as_bool)
@@ -194,6 +270,7 @@ struct NewsPost {
     title: String,
     display_title: String,
     image_url: Option<String>,
+    description: Option<String>,
 }
 
 fn news_post(value: &Value) -> Option<NewsPost> {
@@ -201,19 +278,43 @@ fn news_post(value: &Value) -> Option<NewsPost> {
         .ok()?
         .with_timezone(&Utc);
     let image_url = value
-        .get("images")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|image| {
-            image
-                .get("likely_banner")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
+        .pointer("/raw/image")
+        .and_then(Value::as_str)
+        .filter(|url| !url.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("images")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|image| image.get("field_path").and_then(Value::as_str) == Some("$.image"))
+                .filter_map(|image| image.get("url").and_then(Value::as_str))
+                .find(|url| !url.contains("gacha_banner_"))
+                .map(str::to_string)
         })
-        .filter_map(|image| image.get("url").and_then(Value::as_str))
-        .find(|url| !url.contains("gacha_banner_"))
-        .map(str::to_string);
+        .or_else(|| {
+            value
+                .get("images")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|image| {
+                    image
+                        .get("likely_banner")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                })
+                .filter_map(|image| image.get("url").and_then(Value::as_str))
+                .find(|url| !url.contains("gacha_banner_"))
+                .map(str::to_string)
+        });
+    let description = value
+        .pointer("/raw/message_english")
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .or_else(|| value.pointer("/raw/message").and_then(Value::as_str))
+        .and_then(summarize_html);
     let display_title = value.get("title")?.as_str()?.to_string();
     Some(NewsPost {
         post_id: value.get("post_id")?.as_i64()?,
@@ -221,6 +322,7 @@ fn news_post(value: &Value) -> Option<NewsPost> {
         title: display_title.to_lowercase(),
         display_title,
         image_url,
+        description,
     })
 }
 
@@ -243,6 +345,52 @@ fn title_matches_kind(kind: NewsTimelineKind, title: &str) -> bool {
         NewsTimelineKind::StrongestTeam => title.contains("strongest team"),
         NewsTimelineKind::RacingCarnival => title.contains("racing carnival"),
     }
+}
+
+fn has_event_type(value: &Value, expected: &str) -> bool {
+    value
+        .get("event_types")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .any(|event_type| event_type.as_str() == Some(expected))
+}
+
+fn is_legend_race_live_post(title: &str) -> bool {
+    let names_race = title.contains("legend race")
+        || title.contains("legendary race")
+        || title.contains("legends race");
+    let is_preview = title.contains("soon")
+        || title.contains("starting")
+        || title.contains("will be held")
+        || title.contains("to be held");
+    let is_live =
+        title.contains("held") || title.contains("has begun") || title.contains("is here");
+    names_race && is_live && !is_preview
+}
+
+fn is_campaign_post(title: &str) -> bool {
+    title.contains("campaign")
+        && !title.contains("gacha")
+        && !title.contains("bug")
+        && !title.contains("issue")
+        && !title.contains("product")
+        && !title.contains("sale")
+        && !title.contains("store")
+        && !is_campaign_end_notice(title)
+        && !is_promotional_campaign_post(title)
+}
+
+fn is_campaign_end_notice(title: &str) -> bool {
+    title.contains("end notice") || title.contains("notice of the end")
+}
+
+fn is_promotional_campaign_post(title: &str) -> bool {
+    title.contains("twitter")
+        || title.contains("x-follow")
+        || title.contains("amazon")
+        || title.contains("gift certificate")
+        || title.contains("autographed")
 }
 
 fn is_start_post(kind: NewsTimelineKind, title: &str) -> bool {
@@ -354,10 +502,135 @@ fn kind_title(kind: NewsTimelineKind) -> &'static str {
 
 fn timeline_event_title(kind: NewsTimelineKind, source_title: &str) -> String {
     match kind {
-        NewsTimelineKind::ChampionsMeeting | NewsTimelineKind::TrainingScenario => {
-            source_title.trim().trim_matches('!').to_string()
-        }
+        NewsTimelineKind::ChampionsMeeting => quoted_event_name(source_title)
+            .map(|name| {
+                strip_case_insensitive_prefix(&name, "Champions Meeting")
+                    .or_else(|| strip_case_insensitive_prefix(&name, "Meeting of Champions"))
+                    .unwrap_or(name.as_str())
+                    .trim_matches(|character: char| {
+                        character.is_whitespace() || character == ':' || character == '-'
+                    })
+                    .to_string()
+            })
+            .filter(|title| !title.is_empty())
+            .unwrap_or_else(|| "Champions Meeting".to_string()),
+        NewsTimelineKind::TrainingScenario => quoted_event_name(source_title)
+            .filter(|title| !title.to_lowercase().contains("training scenario"))
+            .unwrap_or_else(|| {
+                source_title
+                    .trim()
+                    .trim_matches('!')
+                    .trim_start_matches("The ")
+                    .to_string()
+            }),
         _ => kind_title(kind).to_string(),
+    }
+}
+
+fn quoted_event_name(value: &str) -> Option<String> {
+    for (open, close) in [('"', '"'), ('“', '”')] {
+        let Some(start) = value.find(open).map(|index| index + open.len_utf8()) else {
+            continue;
+        };
+        let Some(end) = value[start..].find(close).map(|index| index + start) else {
+            continue;
+        };
+        let name = value[start..end].trim();
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    None
+}
+
+fn strip_case_insensitive_prefix<'a>(value: &'a str, prefix: &str) -> Option<&'a str> {
+    value
+        .get(..prefix.len())
+        .filter(|candidate| candidate.eq_ignore_ascii_case(prefix))
+        .map(|_| &value[prefix.len()..])
+}
+
+fn standardized_campaign_title(value: &str) -> String {
+    let mut title = value
+        .trim()
+        .trim_matches(|character: char| character == '"' || character == '“' || character == '”')
+        .trim_end_matches('!')
+        .trim()
+        .to_string();
+    for suffix in [" is now underway", " is underway", " now underway", " held"] {
+        if title.to_lowercase().ends_with(suffix) {
+            title.truncate(title.len() - suffix.len());
+            title = title
+                .trim()
+                .trim_matches(|character: char| {
+                    character == '"' || character == '“' || character == '”'
+                })
+                .trim_end_matches('!')
+                .trim()
+                .to_string();
+            break;
+        }
+    }
+    title
+}
+
+fn summarize_html(value: &str) -> Option<String> {
+    let end = ["<h2", "<h3", "<figure"]
+        .into_iter()
+        .filter_map(|marker| value.find(marker))
+        .min()
+        .unwrap_or(value.len());
+    let plain = html_to_text(&value[..end], " ");
+    let mut summary = plain.trim().to_string();
+    if summary.chars().count() > 360 {
+        summary = summary.chars().take(357).collect::<String>();
+        summary.push_str("...");
+    }
+    (!summary.is_empty()).then_some(summary)
+}
+
+fn html_to_text(value: &str, break_replacement: &str) -> String {
+    let mut output = String::new();
+    let mut in_tag = false;
+    let mut index = 0;
+    while index < value.len() {
+        let rest = &value[index..];
+        if rest.starts_with("<br>") || rest.starts_with("<br/>") || rest.starts_with("<br />") {
+            output.push_str(break_replacement);
+            index += if rest.starts_with("<br />") {
+                6
+            } else if rest.starts_with("<br/>") {
+                5
+            } else {
+                4
+            };
+            continue;
+        }
+        let character = rest.chars().next().expect("non-empty remainder");
+        match character {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => output.push(character),
+            _ => {}
+        }
+        index += character.len_utf8();
+    }
+    let decoded = output
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
+    if break_replacement.contains('\n') {
+        decoded
+            .lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        decoded.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 }
 
@@ -421,6 +694,12 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
         let post_id = post.get("post_id").and_then(Value::as_i64);
         let title = post.get("title").and_then(Value::as_str);
         let title_lower = title.unwrap_or_default().to_lowercase();
+        let description = post
+            .pointer("/raw/message_english")
+            .and_then(Value::as_str)
+            .filter(|message| !message.trim().is_empty())
+            .or_else(|| post.pointer("/raw/message").and_then(Value::as_str))
+            .and_then(summarize_html);
         for banner in post
             .get("gacha_banners")
             .and_then(Value::as_array)
@@ -437,10 +716,26 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
                 .get("image_url")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            let kind = inferred_gacha_kind(gacha_id, &title_lower);
+            let section = gacha_section(post, gacha_id);
+            let kind = inferred_gacha_kind(gacha_id, &title_lower, section.as_ref());
+            let card_type = inferred_card_type(kind, section.as_ref());
             let gacha_type = inferred_gacha_type(&title_lower);
             let pickup_card_ids = if kind == "support_card_banner" {
                 support_card_ids_in_post(post, supports)
+            } else {
+                Vec::new()
+            };
+            let section_names = section
+                .as_ref()
+                .map(|section| names_from_gacha_section(&section.body, &section.card_type))
+                .unwrap_or_default();
+            let related_character_names = if card_type == Some("character") {
+                section_names.clone()
+            } else {
+                Vec::new()
+            };
+            let related_support_names = if card_type == Some("support") {
+                section_names
             } else {
                 Vec::new()
             };
@@ -455,7 +750,11 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
                 "image_url": image_url,
                 "source_post_id": post_id,
                 "title": title,
+                "description": description,
+                "card_type": card_type,
                 "pickup_card_ids": pickup_card_ids,
+                "related_character_names": related_character_names,
+                "related_support_names": related_support_names,
                 "is_rerun": gacha_type == Some(12),
                 "is_scenario": is_scenario,
                 "source": "umapyoi_news"
@@ -473,19 +772,121 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
     Value::Array(candidates.into_values().collect())
 }
 
-fn inferred_gacha_kind(gacha_id: i64, title: &str) -> &'static str {
-    if title.contains("support card") {
-        return "support_card_banner";
+#[derive(Debug)]
+struct GachaSection {
+    card_type: String,
+    body: String,
+}
+
+fn gacha_section(post: &Value, gacha_id: i64) -> Option<GachaSection> {
+    let message = post
+        .pointer("/raw/message_english")
+        .and_then(Value::as_str)
+        .filter(|message| !message.trim().is_empty())
+        .or_else(|| post.pointer("/raw/message").and_then(Value::as_str))?;
+    let marker = format!("gacha_banner_{gacha_id}");
+    let image_index = message.find(&marker)?;
+    let heading_start = message[..image_index].rfind("<h2")?;
+    let heading_open_end = message[heading_start..].find('>')? + heading_start + 1;
+    let heading_end = message[heading_open_end..].find("</h2>")? + heading_open_end;
+    let card_type =
+        card_type_from_heading(&html_to_text(&message[heading_open_end..heading_end], " "))?;
+    let body_start = message[image_index..]
+        .find("</figure>")
+        .map(|offset| image_index + offset + "</figure>".len())
+        .unwrap_or(image_index + marker.len());
+    let body_end = message[body_start..]
+        .find("<h2")
+        .map(|offset| body_start + offset)
+        .unwrap_or(message.len());
+    Some(GachaSection {
+        card_type: card_type.to_string(),
+        body: message[body_start..body_end].to_string(),
+    })
+}
+
+fn card_type_from_heading(heading: &str) -> Option<&'static str> {
+    let heading = heading.to_lowercase();
+    if heading.contains("support") {
+        Some("support")
+    } else if heading.contains("umamusume")
+        || heading.contains("cultivat")
+        || heading.contains("trainable")
+        || heading.contains("nurturing")
+    {
+        Some("character")
+    } else {
+        None
     }
-    if title.contains("twinkle collection") || title.contains("pretty derby gacha") {
-        return "character_banner";
+}
+
+fn inferred_gacha_kind(gacha_id: i64, title: &str, section: Option<&GachaSection>) -> &'static str {
+    if let Some(section) = section {
+        return match section.card_type.as_str() {
+            "character" if gacha_id < 50_000 => "character_banner",
+            "support" if gacha_id < 50_000 => "support_card_banner",
+            _ if gacha_id >= 50_000 => "paid_banner",
+            _ => "unknown",
+        };
     }
     match gacha_id {
+        _ if title.contains("twinkle collection") => "character_banner",
         30_000..=39_999 if gacha_id % 2 == 0 => "character_banner",
         30_000..=39_999 => "support_card_banner",
         50_000..=59_999 => "paid_banner",
+        _ if title.contains("support card") => "support_card_banner",
+        _ if title.contains("twinkle collection") || title.contains("pretty derby gacha") => {
+            "character_banner"
+        }
         _ => "unknown",
     }
+}
+
+fn inferred_card_type(kind: &str, section: Option<&GachaSection>) -> Option<&'static str> {
+    match kind {
+        "character_banner" => Some("character"),
+        "support_card_banner" => Some("support"),
+        "paid_banner" => section.and_then(|section| match section.card_type.as_str() {
+            "character" => Some("character"),
+            "support" => Some("support"),
+            _ => None,
+        }),
+        _ => None,
+    }
+}
+
+fn names_from_gacha_section(body: &str, card_type: &str) -> Vec<String> {
+    let text = html_to_text(body, "\n");
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let line = line.trim().trim_start_matches(['・', '■', '●', ' ']).trim();
+        let is_candidate = if card_type == "character" {
+            line.starts_with('★') || line.starts_with('☆')
+        } else {
+            ["SSR ", "SR ", "R "]
+                .into_iter()
+                .any(|rarity| line.starts_with(rarity))
+        };
+        if !is_candidate {
+            continue;
+        }
+        let without_rarity = line
+            .trim_start_matches(['★', '☆'])
+            .trim_start_matches("SSR")
+            .trim_start_matches("SR")
+            .trim_start_matches('R')
+            .trim();
+        let name = without_rarity
+            .rfind(']')
+            .map(|index| without_rarity[index + 1..].trim())
+            .filter(|name| !name.is_empty())
+            .unwrap_or(without_rarity)
+            .trim_matches(|character: char| character == '・' || character.is_whitespace());
+        if !name.is_empty() && !names.iter().any(|existing| existing == name) {
+            names.push(name.to_string());
+        }
+    }
+    names
 }
 
 fn inferred_gacha_type(title: &str) -> Option<i64> {
@@ -546,6 +947,16 @@ fn searchable_post_text(value: &Value) -> String {
     let mut text = String::new();
     collect(value, &mut text);
     text.to_lowercase()
+}
+
+fn string_array(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]
@@ -615,6 +1026,122 @@ mod tests {
     }
 
     #[test]
+    fn uses_primary_event_thumbnails_and_concise_titles() {
+        let events = super::timeline_events().expect("news timeline events should extract");
+        let champions = events
+            .iter()
+            .find(|event| event.key == "champions-meeting-2026-06-23")
+            .expect("latest CLASSIC champions meeting should be present");
+        assert_eq!(champions.title, "CLASSIC");
+        assert!(champions
+            .image_url
+            .as_deref()
+            .is_some_and(|url| url.contains("/Thumbnail/banner_30310626.png")));
+
+        let scenario = events
+            .iter()
+            .find(|event| event.key == "training-scenario-2026-06-29")
+            .expect("latest training scenario should be present");
+        assert_eq!(
+            scenario.title,
+            "Welcome to the Training Center! ~Paying It Forward Has Begun~"
+        );
+        assert!(scenario.description.is_some());
+    }
+
+    #[test]
+    fn splits_combined_character_and_support_gacha_content() {
+        let banners = super::additional_gacha_banner_events()
+            .expect("additional gacha candidates should extract");
+        let character = banners
+            .iter()
+            .find(|banner| banner.gacha_id == 30_448)
+            .expect("scenario character banner should be extracted");
+        assert_eq!(character.kind, AdditionalGachaKind::Character);
+        assert_eq!(character.related_character_names, ["Narita Top Road"]);
+
+        let support = banners
+            .iter()
+            .find(|banner| banner.gacha_id == 30_449)
+            .expect("scenario support banner should be extracted");
+        assert_eq!(support.kind, AdditionalGachaKind::Support);
+        assert_eq!(support.pickup_card_ids, [30_304, 30_305]);
+        assert_eq!(support.related_support_names.len(), 2);
+    }
+
+    #[test]
+    fn extracts_campaign_banner_content() {
+        let campaigns = super::campaign_timeline_metadata()
+            .expect("campaign metadata should extract from news");
+        let gi_campaign = campaigns
+            .iter()
+            .find(|campaign| campaign.source_post_id == 823)
+            .expect("2022 GI campaign should be present");
+        assert_eq!(gi_campaign.title, "GI Campaign");
+        assert!(gi_campaign
+            .image_url
+            .as_deref()
+            .is_some_and(|url| url.contains("/Thumbnail/banner_25000001.png")));
+        assert!(gi_campaign.description.is_some());
+
+        for promotional_post_id in [622, 1202, 1470] {
+            assert!(
+                campaigns
+                    .iter()
+                    .all(|campaign| campaign.source_post_id != promotional_post_id),
+                "promotional news post {promotional_post_id} must stay out of mission metadata"
+            );
+        }
+        assert!(campaigns
+            .iter()
+            .any(|campaign| campaign.source_post_id == 1194));
+        assert!(campaigns
+            .iter()
+            .any(|campaign| campaign.source_post_id == 1474));
+        for in_game_reward_post_id in [1018, 1133, 1378, 1692, 1712] {
+            assert!(
+                campaigns
+                    .iter()
+                    .any(|campaign| campaign.source_post_id == in_game_reward_post_id),
+                "in-game reward post {in_game_reward_post_id} should remain mission metadata"
+            );
+        }
+    }
+
+    #[test]
+    fn legend_race_titles_distinguish_live_posts_from_previews() {
+        for title in [
+            "Legend Race held!",
+            "The Legendary Race has begun!",
+            "The Legends Race is here!",
+        ] {
+            assert!(super::is_legend_race_live_post(&title.to_lowercase()));
+        }
+        for title in [
+            "Legend Race coming soon!",
+            "Legend Race starting tomorrow",
+            "Legend Race will be held!",
+            "Legend Race to be held next week",
+            "PakaLive information on the next Legend Race",
+        ] {
+            assert!(!super::is_legend_race_live_post(&title.to_lowercase()));
+        }
+    }
+
+    #[test]
+    fn extracts_only_event_specific_legend_race_banners() {
+        let races = super::legend_race_timeline_metadata()
+            .expect("legend race metadata should extract from live news posts");
+        assert!(races.len() >= 43);
+        assert!(races
+            .iter()
+            .all(|race| race.image_url.contains("/Thumbnail/")));
+        assert!(races
+            .windows(2)
+            .all(|pair| pair[0].start_at.date_naive() != pair[1].start_at.date_naive()));
+    }
+
+    #[test]
     fn extracts_type_12_select_pickup_rerun_metadata() {
         let banners = super::additional_gacha_banner_events()
             .expect("additional gacha candidates should extract");
@@ -625,14 +1152,13 @@ mod tests {
         assert_eq!(banner.kind, AdditionalGachaKind::Support);
         assert_eq!(banner.gacha_type, Some(12));
         assert!(banner.is_rerun);
-        assert_eq!(banner.source_post_id, 1559);
         assert_eq!(banner.pickup_card_ids.len(), 10);
     }
 
     #[test]
     fn classifies_twinkle_collection_as_character_gacha() {
         assert_eq!(
-            super::inferred_gacha_kind(50_049, "twinkle collection pretty derby gacha"),
+            super::inferred_gacha_kind(50_049, "twinkle collection pretty derby gacha", None),
             "character_banner"
         );
     }

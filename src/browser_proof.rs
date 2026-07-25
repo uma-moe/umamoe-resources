@@ -123,6 +123,81 @@ pub async fn api_protection_middleware(
     json_error(StatusCode::FORBIDDEN, "browser_proof_required")
 }
 
+pub async fn planner_protection_middleware(
+    State(_state): State<AppState>,
+    headers: HeaderMap,
+    method: Method,
+    request: Request<Body>,
+    next: Next,
+) -> Response {
+    let path = request.uri().path().to_string();
+    if !planner_source_allowed(&headers) {
+        warn!(method = %method, path, "Rejected planner resource request from non-uma source");
+        return json_error(StatusCode::FORBIDDEN, "planner_source_required");
+    }
+    if api_protection_bypassed() {
+        return next.run(request).await;
+    }
+
+    let context = request_context(&headers, &method, &path);
+    if let Some(proof) = extract_browser_proof(&headers) {
+        return match verify_with_backend(Credential::BrowserProof(proof), &context).await {
+            Ok(_) => next.run(request).await,
+            Err(error) => auth_error_response(error, &path),
+        };
+    }
+
+    if can_bootstrap_planner_manifest(&method, &path) {
+        return match request_browser_proof(&context).await {
+            Ok(proof_headers) => {
+                let mut response = next.run(request).await;
+                forward_browser_proof_headers(&proof_headers, response.headers_mut());
+                response
+            }
+            Err(error) => auth_error_response(error, &path),
+        };
+    }
+
+    json_error(StatusCode::FORBIDDEN, "planner_browser_proof_required")
+}
+
+fn can_bootstrap_planner_manifest(method: &Method, path: &str) -> bool {
+    (*method == Method::GET || *method == Method::HEAD)
+        && path == "/resources/planner/manifest.json"
+}
+
+fn planner_source_allowed(headers: &HeaderMap) -> bool {
+    ["Origin", "Referer"]
+        .iter()
+        .filter_map(|name| auth_common::header_str(headers, name))
+        .any(planner_source_url_allowed)
+}
+
+fn planner_source_url_allowed(value: &str) -> bool {
+    let value = value.trim().trim_end_matches('/');
+    for origin in [
+        "https://uma.moe",
+        "https://www.uma.moe",
+        "https://beta.uma.moe",
+    ] {
+        if value == origin || value.starts_with(&format!("{origin}/")) {
+            return true;
+        }
+    }
+    if !env_bool("DEBUG_MODE") {
+        return false;
+    }
+    let Some(rest) = value
+        .strip_prefix("http://")
+        .or_else(|| value.strip_prefix("https://"))
+    else {
+        return false;
+    };
+    let authority = rest.split('/').next().unwrap_or_default();
+    let host = authority.split(':').next().unwrap_or_default();
+    matches!(host, "localhost" | "127.0.0.1")
+}
+
 fn can_bootstrap_browser_read(method: &Method, path: &str) -> bool {
     (*method == Method::GET || *method == Method::HEAD) && path == "/resources/manifest.json"
 }
@@ -551,6 +626,12 @@ fn error_message(error: &'static str) -> Option<&'static str> {
         "browser_proof_required" => Some(
             "This endpoint requires a browser proof. Browser clients should wait for the Turnstile/browser-proof exchange and retry. Bots, scripts, and integrations should use an API key instead; API keys can be generated from your Uma account at any time.",
         ),
+        "planner_source_required" => Some(
+            "Planner resources are available only to requests originating from the uma.moe frontend.",
+        ),
+        "planner_browser_proof_required" => Some(
+            "Planner resources require a valid browser proof from the uma.moe frontend.",
+        ),
         _ => None,
     }
 }
@@ -558,9 +639,9 @@ fn error_message(error: &'static str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::{
-        browser_context_host, can_bootstrap_browser_read, extract_api_credential,
-        extract_browser_proof, forward_browser_proof_headers, request_context,
-        should_skip_api_protection, Credential,
+        browser_context_host, can_bootstrap_browser_read, can_bootstrap_planner_manifest,
+        extract_api_credential, extract_browser_proof, forward_browser_proof_headers,
+        planner_source_url_allowed, request_context, should_skip_api_protection, Credential,
     };
     use axum::http::{HeaderMap, HeaderValue, Method};
 
@@ -760,6 +841,27 @@ mod tests {
         assert!(!can_bootstrap_browser_read(
             &Method::POST,
             "/resources/manifest.json"
+        ));
+    }
+
+    #[test]
+    fn planner_source_allows_only_uma_production_hosts() {
+        assert!(planner_source_url_allowed("https://uma.moe"));
+        assert!(planner_source_url_allowed("https://www.uma.moe/timeline"));
+        assert!(planner_source_url_allowed("https://beta.uma.moe/timeline"));
+        assert!(!planner_source_url_allowed("https://honse.moe/timeline"));
+        assert!(!planner_source_url_allowed("https://uma.moe.attacker.test"));
+    }
+
+    #[test]
+    fn planner_bootstrap_is_limited_to_its_manifest() {
+        assert!(can_bootstrap_planner_manifest(
+            &Method::GET,
+            "/resources/planner/manifest.json"
+        ));
+        assert!(!can_bootstrap_planner_manifest(
+            &Method::GET,
+            "/resources/planner/current/planner_core.json.gz"
         ));
     }
 }
