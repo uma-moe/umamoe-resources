@@ -108,8 +108,17 @@ Useful routes:
 - `/resources/{version}/supports.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/support-cards-db.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/skills.json.gz` - one-year immutable CDN cache
+- `/resources/{version}/simulator_course_geometry_<course-id>.json.gz` -
+  source-backed, independently fetchable 1,001-frame course world transforms
 
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
+
+Simulator course geometry is intentionally split into one artifact per course.
+Clients should request only the active course instead of loading all geometry at
+startup. The bundled source data is extracted from the client `CourseLaneAnim`
+assets and the generator validates every current `race_course_set` row has an
+exact matching course id, race track, distance, finite transform columns, and
+non-zero quaternion at each of its 1,001 samples.
 
 The SQL endpoint returns normal JSON, not gzip. It only accepts a single `SELECT` or `WITH` statement, executes it against `master.mdb` through a read-only SQLite connection, and responds as `{ "columns": [...], "rows": [[...]], "truncated": false }`.
 

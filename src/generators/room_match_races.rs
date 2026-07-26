@@ -32,7 +32,7 @@ pub fn generate(connection: &Connection) -> Result<RoomMatchRaces> {
             race_instance.id,
             COALESCE(full_name.text, short_name.text, CAST(race_instance.id AS TEXT)),
             short_name.text,
-            race.course_set,
+            course.id,
             course.race_track_id,
             course.distance,
             course.ground
@@ -95,8 +95,8 @@ mod tests {
         let generated = generate(&connection).unwrap();
         assert_eq!(generated.races.len(), 1);
         assert_eq!(generated.races[0].race_instance_id, 800013);
-        assert_eq!(generated.races[0].course_set_id, 10501);
         assert_eq!(generated.races[0].name, "Sprinters Stakes");
+        assert_eq!(generated.races[0].course_set_id, 10501);
         assert_eq!(generated.races[0].distance, 1200);
     }
 }

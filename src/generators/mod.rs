@@ -21,6 +21,7 @@ pub mod support_cards_db;
 pub mod supports;
 pub mod timeline;
 
+#[derive(Debug)]
 pub struct ResourceOutput {
     pub file_name: String,
     pub value: serde_json::Value,
@@ -54,6 +55,7 @@ pub fn generate_all(
         &timeline,
     )?;
     planner.annotate_timeline(&mut timeline);
+    let simulator_courses = simulator_courses::generate(connection, master_version)?;
 
     let mut public = vec![
         output("factors.json", factors::generate(connection)?)?,
@@ -70,10 +72,7 @@ pub fn generate_all(
             "simulator_skills.json",
             simulator_skills::generate(connection, master_version)?,
         )?,
-        output(
-            "simulator_courses.json",
-            simulator_courses::generate(connection, master_version)?,
-        )?,
+        output("simulator_courses.json", &simulator_courses)?,
         output("character_banners.json", &character_banners)?,
         output("supports_banners.json", &support_banners)?,
         output("paid_gacha_banners.json", &paid_banners)?,
@@ -81,9 +80,7 @@ pub fn generate_all(
         output("affinity.json", affinity::generate(connection)?)?,
     ];
 
-    for (file_name, geometry) in simulator_course_geometry::generate()? {
-        public.push(output(file_name, geometry)?);
-    }
+    public.extend(simulator_course_geometry::generate(&simulator_courses)?);
 
     public.push(output(
         "character_names.json",
