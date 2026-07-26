@@ -47,7 +47,11 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 25;
+const TIMELINE_ALGORITHM_VERSION: u8 = 26;
+const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
+    "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
+const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
+    "assets/timeline-images/events/legend-race/fallback.webp";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct BannerTimeline {
@@ -1424,8 +1428,11 @@ fn paid_events(
                 gacha_type_name: Some(gacha_type_name(representative.gacha_type)),
                 card_type: Some(representative.card_type.to_string()),
                 year: Some(representative.year),
-                image: String::new(),
-                image_path: None,
+                image: representative.image.clone(),
+                image_path: Some(format!(
+                    "assets/images/paid/banner/{}",
+                    representative.image
+                )),
                 title: format!(
                     "{} Other Paid Banner{}",
                     count,
@@ -3698,19 +3705,21 @@ fn merge_legend_race_news(
 ) {
     for race in races {
         let jp_day = normalize_to_midnight_utc(race.start_at);
-        let Some(news) = news_races
+        if let Some(news) = news_races
             .iter()
             .filter(|news| normalize_to_midnight_utc(news.start_at) == jp_day)
             .max_by_key(|news| news.source_post_id)
-        else {
-            continue;
-        };
-        race.image_url = Some(news.image_url.clone());
-        race.image_path = Some(format!(
-            "assets/timeline-images/events/legend-race/{}.webp",
-            news.source_post_id
-        ));
-        race.source_post_id = Some(news.source_post_id);
+        {
+            race.image_url = Some(news.image_url.clone());
+            race.image_path = Some(format!(
+                "assets/timeline-images/events/legend-race/{}.webp",
+                news.source_post_id
+            ));
+            race.source_post_id = Some(news.source_post_id);
+        } else {
+            race.image_url = Some(LEGEND_RACE_FALLBACK_IMAGE_URL.to_string());
+            race.image_path = Some(LEGEND_RACE_FALLBACK_IMAGE_PATH.to_string());
+        }
     }
 }
 
@@ -4578,7 +4587,10 @@ mod tests {
                 .collect::<Vec<_>>(),
             boss_images
         );
-        assert!(races.iter().skip(1).all(|race| race.image_path.is_none()));
+        assert!(races.iter().skip(1).all(|race| {
+            race.image_url.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_URL)
+                && race.image_path.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_PATH)
+        }));
     }
 
     #[test]
@@ -4588,10 +4600,11 @@ mod tests {
             .expect("legend news metadata should parse");
         merge_legend_race_news(&mut races, &news);
 
+        assert!(races.iter().all(|race| race.image_path.is_some()));
         assert_eq!(
             races
                 .iter()
-                .filter(|race| race.image_path.is_some())
+                .filter(|race| race.source_post_id.is_some())
                 .count(),
             17
         );
@@ -4602,7 +4615,10 @@ mod tests {
                 |path| path.starts_with("assets/timeline-images/events/legend-race/")
                     && path.ends_with(".webp")
             ));
-        assert!(races.iter().any(|race| race.image_path.is_none()));
+        assert!(races.iter().any(|race| {
+            race.image_url.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_URL)
+                && race.image_path.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_PATH)
+        }));
     }
 
     #[test]
