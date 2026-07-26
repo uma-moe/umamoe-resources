@@ -7,10 +7,13 @@ use std::collections::BTreeMap;
 
 const JP_LAUNCH_TIMESTAMP: i64 = 1_614_135_600;
 const GACHA_TYPE_STANDARD: i64 = 3;
+const GACHA_TYPE_RERUN: i64 = 12;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct CharacterBanner {
     pub gacha_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gacha_type: Option<i64>,
     pub year: i32,
     pub image: String,
     pub start_date: String,
@@ -26,6 +29,8 @@ pub struct CharacterBanner {
 #[derive(Debug, Clone, Serialize)]
 pub struct SupportBanner {
     pub gacha_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gacha_type: Option<i64>,
     pub year: i32,
     pub image: String,
     pub start_date: String,
@@ -52,6 +57,7 @@ pub struct PaidBanner {
 #[derive(Debug, Clone)]
 struct StandardGacha {
     id: i64,
+    gacha_type: i64,
     card_type: i64,
     start_date: i64,
     end_date: i64,
@@ -89,6 +95,7 @@ pub fn generate_character_banners(connection: &Connection) -> Result<Vec<Charact
 
         banners.push(CharacterBanner {
             gacha_id: gacha.id,
+            gacha_type: (gacha.gacha_type != GACHA_TYPE_STANDARD).then_some(gacha.gacha_type),
             year,
             image: image.clone(),
             start_date: format_date_iso(start_dt),
@@ -121,6 +128,7 @@ pub fn generate_support_banners(connection: &Connection) -> Result<Vec<SupportBa
 
         banners.push(SupportBanner {
             gacha_id: gacha.id,
+            gacha_type: (gacha.gacha_type != GACHA_TYPE_STANDARD).then_some(gacha.gacha_type),
             year,
             image,
             start_date: format_date_display(start_dt),
@@ -168,19 +176,20 @@ pub fn generate_paid_banners(connection: &Connection) -> Result<Vec<PaidBanner>>
 fn load_standard_gacha(connection: &Connection) -> Result<Vec<StandardGacha>> {
     let mut statement = connection.prepare(
         r#"
-        SELECT id, card_type, start_date, end_date
+        SELECT id, type, card_type, start_date, end_date
         FROM gacha_data
-        WHERE type = ?
+        WHERE type IN (?, ?)
         ORDER BY start_date ASC
         "#,
     )?;
 
-    let rows = statement.query_map([GACHA_TYPE_STANDARD], |row| {
+    let rows = statement.query_map([GACHA_TYPE_STANDARD, GACHA_TYPE_RERUN], |row| {
         Ok(StandardGacha {
             id: row.get(0)?,
-            card_type: row.get(1)?,
-            start_date: row.get(2)?,
-            end_date: row.get(3)?,
+            gacha_type: row.get(1)?,
+            card_type: row.get(2)?,
+            start_date: row.get(3)?,
+            end_date: row.get(4)?,
         })
     })?;
 

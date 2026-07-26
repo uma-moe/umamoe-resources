@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -57,6 +58,15 @@ struct PublishedCourseGeometry<'a> {
 pub fn generate(courses: &SimulatorCourseSet<'_>) -> Result<Vec<ResourceOutput>> {
     let source = decode_bundled_source()?;
     generate_from_source(courses, &source)
+}
+
+pub fn version_hash() -> Result<String> {
+    let mut decoder = GzDecoder::new(SOURCE_BYTES);
+    let mut bytes = Vec::new();
+    decoder
+        .read_to_end(&mut bytes)
+        .context("failed to decompress bundled simulator course geometry")?;
+    Ok(hex::encode(Sha256::digest(bytes)))
 }
 
 fn decode_bundled_source() -> Result<SourceGeometrySet> {
@@ -215,15 +225,20 @@ mod tests {
     use super::*;
     use crate::generators::simulator_courses::{
         CourseCorner, CourseLaneMaxEvent, CourseSlope, CourseStraight, SimulatorCourse,
+        SimulatorRaceParameters,
     };
 
     fn course_set() -> SimulatorCourseSet<'static> {
         SimulatorCourseSet {
             schema_version: 1,
             master_version: "current-master",
+            race_parameters: SimulatorRaceParameters::current(),
             courses: vec![SimulatorCourse {
                 course_id: 10_104,
                 race_track_id: 10_001,
+                initial_lane_type: 0,
+                enable_half_gate: false,
+                run_outside: false,
                 distance: 2_000,
                 distance_type: 3,
                 surface: 1,
@@ -231,8 +246,12 @@ mod tests {
                 course: 1,
                 lane_max: 12,
                 lane_max_events: Vec::<CourseLaneMaxEvent>::new(),
+                move_lane_point: 0.0,
+                first_move_lane_is_in: false,
                 finish_time_min: 1,
+                finish_time_min_random_range: 0,
                 finish_time_max: 2,
+                finish_time_max_random_range: 0,
                 course_set_status: Vec::new(),
                 corners: Vec::<CourseCorner>::new(),
                 straights: Vec::<CourseStraight>::new(),
