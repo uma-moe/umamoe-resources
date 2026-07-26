@@ -291,6 +291,9 @@ pub async fn sync(
                 source_errors.push("gacha index returned no recognizable IDs".to_string());
             }
             for gacha_id in gacha_ids {
+                if gachas.contains_key(&gacha_id) && !full {
+                    continue;
+                }
                 match get_json(
                     &client,
                     &mut limiter,
@@ -770,7 +773,7 @@ fn collect_strings<'a>(value: &'a Value, strings: &mut Vec<&'a str>) {
 }
 
 fn classify_event(text: &str) -> Vec<String> {
-    let families: [(&str, &[&str]); 12] = [
+    let families: [(&str, &[&str]); 19] = [
         ("gacha", &["gacha", "ガチャ"]),
         ("story_event", &["story event", "ストーリーイベント"]),
         (
@@ -792,6 +795,32 @@ fn classify_event(text: &str) -> Vec<String> {
         ("login_bonus", &["login bonus", "ログインボーナス"]),
         ("update", &["update", "アップデート"]),
         ("maintenance", &["maintenance", "メンテナンス"]),
+        (
+            "masters_challenge",
+            &["masters challenge", "マスターズチャレンジ"],
+        ),
+        (
+            "trainer_skills_test",
+            &[
+                "trainer skills test",
+                "trainer proficiency test",
+                "トレーナー技能試験",
+            ],
+        ),
+        (
+            "factor_research",
+            &["factor research", "factor study", "因子研究"],
+        ),
+        ("strongest_team", &["strongest team", "最強チーム"]),
+        (
+            "racing_carnival",
+            &["racing carnival", "レーシングカーニバル"],
+        ),
+        ("monthly_match", &["monthly match", "マンスリーマッチ"]),
+        (
+            "challenge_event",
+            &["masters challenge", "[challenge]", "チャレンジ"],
+        ),
     ];
     families
         .iter()

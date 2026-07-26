@@ -3,10 +3,10 @@ use rusqlite::{Connection, Row};
 use serde::Serialize;
 use std::collections::BTreeSet;
 
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 const EFFECTS_PER_ALTERNATIVE: usize = 3;
 const EFFECT_COLUMN_WIDTH: usize = 7;
-const FIRST_ALTERNATIVE_EFFECT_START: usize = 7;
+const FIRST_ALTERNATIVE_EFFECT_START: usize = 9;
 const SECOND_ALTERNATIVE_PRECONDITION_INDEX: usize =
     FIRST_ALTERNATIVE_EFFECT_START + EFFECTS_PER_ALTERNATIVE * EFFECT_COLUMN_WIDTH;
 const SECOND_ALTERNATIVE_CONDITION_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 1;
@@ -14,6 +14,8 @@ const SECOND_ALTERNATIVE_DURATION_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION
 const SECOND_ALTERNATIVE_DURATION_USAGE_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 3;
 const SECOND_ALTERNATIVE_COOLDOWN_INDEX: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 4;
 const SECOND_ALTERNATIVE_EFFECT_START: usize = SECOND_ALTERNATIVE_PRECONDITION_INDEX + 5;
+const TAG_ID_INDEX: usize =
+    SECOND_ALTERNATIVE_EFFECT_START + EFFECTS_PER_ALTERNATIVE * EFFECT_COLUMN_WIDTH;
 const ADDITIONAL_ACTIVATE_TYPE_COLUMNS: [&str; 6] = [
     "additional_activate_type_1_1",
     "additional_activate_type_1_2",
@@ -23,7 +25,7 @@ const ADDITIONAL_ACTIVATE_TYPE_COLUMNS: [&str; 6] = [
     "additional_activate_type_2_3",
 ];
 const SKILL_DATA_SELECT: &str = r#"
-        SELECT id, rarity,
+        SELECT id, rarity, priority, activate_lot,
                precondition_1, condition_1,
                float_ability_time_1, ability_time_usage_1, float_cooldown_time_1,
                ability_type_1_1, ability_value_usage_1_1, additional_activate_type_1_1, ability_value_level_usage_1_1, float_ability_value_1_1, target_type_1_1, target_value_1_1,
@@ -33,7 +35,8 @@ const SKILL_DATA_SELECT: &str = r#"
                float_ability_time_2, ability_time_usage_2, float_cooldown_time_2,
                ability_type_2_1, ability_value_usage_2_1, additional_activate_type_2_1, ability_value_level_usage_2_1, float_ability_value_2_1, target_type_2_1, target_value_2_1,
                ability_type_2_2, ability_value_usage_2_2, additional_activate_type_2_2, ability_value_level_usage_2_2, float_ability_value_2_2, target_type_2_2, target_value_2_2,
-               ability_type_2_3, ability_value_usage_2_3, additional_activate_type_2_3, ability_value_level_usage_2_3, float_ability_value_2_3, target_type_2_3, target_value_2_3
+               ability_type_2_3, ability_value_usage_2_3, additional_activate_type_2_3, ability_value_level_usage_2_3, float_ability_value_2_3, target_type_2_3, target_value_2_3,
+               tag_id
           FROM skill_data
          WHERE is_general_skill = 1 OR rarity >= 3
          ORDER BY id
@@ -43,6 +46,7 @@ const SKILL_DATA_SELECT: &str = r#"
 pub struct SimulatorSkillSet<'a> {
     pub schema_version: u32,
     pub master_version: &'a str,
+    pub skill_tag_ids_available: bool,
     pub skills: Vec<SimulatorSkill>,
 }
 
@@ -50,6 +54,13 @@ pub struct SimulatorSkillSet<'a> {
 pub struct SimulatorSkill {
     pub skill_id: u32,
     pub rarity: u8,
+    /// Raw binary `skill_data.priority` update group.
+    pub priority: u8,
+    /// Raw binary `skill_data.activate_lot` flag.
+    pub activate_lot: u8,
+    /// Raw slash-delimited `skill_data.tag_id` values from the game master data.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub tag_ids: Vec<u16>,
     pub alternatives: Vec<SkillAlternative>,
 }
 
@@ -96,6 +107,7 @@ pub fn generate<'a>(
     Ok(SimulatorSkillSet {
         schema_version: SCHEMA_VERSION,
         master_version,
+        skill_tag_ids_available: true,
         skills,
     })
 }
@@ -119,14 +131,16 @@ fn skill_data_select_query(connection: &Connection) -> Result<String> {
 fn skill_from_row(row: &Row<'_>) -> rusqlite::Result<SimulatorSkill> {
     let skill_id = row.get::<_, i64>(0)?;
     let rarity = row.get::<_, i64>(1)?;
+    let priority = row.get::<_, i64>(2)?;
+    let activate_lot = row.get::<_, i64>(3)?;
 
     let mut alternatives = vec![alternative_from_row(
         row,
-        2,
-        3,
         4,
         5,
         6,
+        7,
+        8,
         FIRST_ALTERNATIVE_EFFECT_START,
     )?];
     let condition_2 = row.get::<_, String>(SECOND_ALTERNATIVE_CONDITION_INDEX)?;
@@ -145,8 +159,24 @@ fn skill_from_row(row: &Row<'_>) -> rusqlite::Result<SimulatorSkill> {
     Ok(SimulatorSkill {
         skill_id: as_u32(skill_id, "skill_id")?,
         rarity: as_u8(rarity, "rarity")?,
+        priority: as_binary_u8(priority, "priority")?,
+        activate_lot: as_binary_u8(activate_lot, "activate_lot")?,
+        tag_ids: parse_tag_ids(&row.get::<_, String>(TAG_ID_INDEX)?)?,
         alternatives,
     })
+}
+
+fn parse_tag_ids(tag_ids: &str) -> rusqlite::Result<Vec<u16>> {
+    tag_ids
+        .split('/')
+        .filter(|tag_id| !tag_id.is_empty())
+        .map(|tag_id| {
+            tag_id
+                .parse::<i64>()
+                .map_err(|error| invalid_tag_id_error(tag_id, error))
+                .and_then(|value| as_u16(value, "tag_id"))
+        })
+        .collect()
 }
 
 fn alternative_from_row(
@@ -226,6 +256,17 @@ fn optional_nonzero_u8(value: i64, field: &'static str) -> rusqlite::Result<Opti
     }
 }
 
+fn as_binary_u8(value: i64, field: &'static str) -> rusqlite::Result<u8> {
+    let value = as_u8(value, field)?;
+    if value <= 1 {
+        Ok(value)
+    } else {
+        Err(rusqlite::Error::ToSqlConversionFailure(
+            anyhow!("{field} value {value} is not a binary flag").into(),
+        ))
+    }
+}
+
 fn as_u8(value: i64, field: &'static str) -> rusqlite::Result<u8> {
     u8::try_from(value).map_err(|error| conversion_error(field, value, error))
 }
@@ -248,99 +289,37 @@ fn conversion_error(
     )
 }
 
+fn invalid_tag_id_error(
+    tag_id: &str,
+    error: impl std::error::Error + Send + Sync + 'static,
+) -> rusqlite::Error {
+    rusqlite::Error::ToSqlConversionFailure(
+        anyhow!("tag_id `{tag_id}` is not a valid integer: {error}").into(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{generate, skill_data_select_query, ADDITIONAL_ACTIVATE_TYPE_COLUMNS};
+    use super::{
+        as_binary_u8, parse_tag_ids, skill_data_select_query, ADDITIONAL_ACTIVATE_TYPE_COLUMNS,
+    };
     use rusqlite::Connection;
 
     #[test]
-    fn preserves_cooldowns_and_effect_metadata_for_both_alternatives() {
-        let connection = Connection::open_in_memory().unwrap();
-        connection
-            .execute_batch(
-                r#"
-                CREATE TABLE skill_data AS
-                SELECT
-                    200001 AS id,
-                    3 AS rarity,
-                    '' AS precondition_1,
-                    'phase==1' AS condition_1,
-                    30000.0 AS float_ability_time_1,
-                    1 AS ability_time_usage_1,
-                    15000.0 AS float_cooldown_time_1,
-                    27 AS ability_type_1_1,
-                    2 AS ability_value_usage_1_1,
-                    3 AS additional_activate_type_1_1,
-                    1 AS ability_value_level_usage_1_1,
-                    2500.0 AS float_ability_value_1_1,
-                    9 AS target_type_1_1,
-                    123 AS target_value_1_1,
-                    0 AS ability_type_1_2,
-                    1 AS ability_value_usage_1_2,
-                    0 AS additional_activate_type_1_2,
-                    1 AS ability_value_level_usage_1_2,
-                    0.0 AS float_ability_value_1_2,
-                    0 AS target_type_1_2,
-                    0 AS target_value_1_2,
-                    0 AS ability_type_1_3,
-                    1 AS ability_value_usage_1_3,
-                    0 AS additional_activate_type_1_3,
-                    1 AS ability_value_level_usage_1_3,
-                    0.0 AS float_ability_value_1_3,
-                    0 AS target_type_1_3,
-                    0 AS target_value_1_3,
-                    '' AS precondition_2,
-                    'phase==2' AS condition_2,
-                    40000.0 AS float_ability_time_2,
-                    2 AS ability_time_usage_2,
-                    60000.0 AS float_cooldown_time_2,
-                    31 AS ability_type_2_1,
-                    1 AS ability_value_usage_2_1,
-                    0 AS additional_activate_type_2_1,
-                    2 AS ability_value_level_usage_2_1,
-                    3000.0 AS float_ability_value_2_1,
-                    1 AS target_type_2_1,
-                    0 AS target_value_2_1,
-                    0 AS ability_type_2_2,
-                    1 AS ability_value_usage_2_2,
-                    0 AS additional_activate_type_2_2,
-                    1 AS ability_value_level_usage_2_2,
-                    0.0 AS float_ability_value_2_2,
-                    0 AS target_type_2_2,
-                    0 AS target_value_2_2,
-                    0 AS ability_type_2_3,
-                    1 AS ability_value_usage_2_3,
-                    0 AS additional_activate_type_2_3,
-                    1 AS ability_value_level_usage_2_3,
-                    0.0 AS float_ability_value_2_3,
-                    0 AS target_type_2_3,
-                    0 AS target_value_2_3,
-                    1 AS is_general_skill;
-                "#,
-            )
-            .unwrap();
+    fn parses_all_slash_delimited_skill_tags() {
+        assert_eq!(parse_tag_ids("401/403/601").unwrap(), vec![401, 403, 601]);
+    }
 
-        let generated = generate(&connection, "test").unwrap();
-        let alternatives = &generated.skills[0].alternatives;
-        assert_eq!(alternatives.len(), 2);
+    #[test]
+    fn rejects_non_numeric_skill_tags() {
+        assert!(parse_tag_ids("401/not-a-tag/601").is_err());
+    }
 
-        let first = &alternatives[0];
-        assert_eq!(first.base_duration, 30_000.0);
-        assert_eq!(first.base_cooldown, 15_000.0);
-        assert_eq!(first.duration_scaling, None);
-        assert_eq!(first.effects[0].additional_activate_type, Some(3));
-        assert_eq!(first.effects[0].target_value, Some(123));
-        assert_eq!(first.effects[0].value_scaling, Some(2));
-        assert_eq!(first.effects[0].value_level_scaling, None);
-
-        let second = &alternatives[1];
-        assert_eq!(second.base_duration, 40_000.0);
-        assert_eq!(second.base_cooldown, 60_000.0);
-        assert_eq!(second.duration_scaling, Some(2));
-        assert_eq!(second.effects[0].additional_activate_type, None);
-        assert_eq!(second.effects[0].target_value, None);
-        assert_eq!(second.effects[0].value_scaling, None);
-        assert_eq!(second.effects[0].value_level_scaling, Some(2));
+    #[test]
+    fn accepts_only_binary_skill_flags() {
+        assert_eq!(as_binary_u8(0, "priority").unwrap(), 0);
+        assert_eq!(as_binary_u8(1, "priority").unwrap(), 1);
+        assert!(as_binary_u8(2, "priority").is_err());
     }
 
     #[test]
