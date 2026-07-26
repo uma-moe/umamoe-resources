@@ -2,6 +2,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
 const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 9;
@@ -716,7 +717,7 @@ pub struct SimulatorConservePowerParameters {
 }
 
 impl SimulatorRaceParameters<'static> {
-    fn current() -> Self {
+    pub(crate) fn current() -> Self {
         Self {
             schema_version: RACE_PARAMETERS_SCHEMA_VERSION,
             provenance: RACE_PARAMETERS_PROVENANCE,
@@ -1014,9 +1015,13 @@ pub fn generate<'a>(
             continue;
         }
 
-        let geometry = event_params
-            .get(&course_id)
-            .with_context(|| format!("missing course event params for course {course_id}"))?;
+        let Some(geometry) = event_params.get(&course_id) else {
+            warn!(
+                course_id,
+                "skipping simulator course without bundled event params"
+            );
+            continue;
+        };
 
         courses.push(SimulatorCourse {
             course_id: as_u32(course_id, "id")?,
