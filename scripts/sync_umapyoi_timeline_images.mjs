@@ -165,6 +165,11 @@ function titleSimilarity(left, right) {
   ).size;
 }
 
+function eventGachaIds(event) {
+  return [event.gacha_id, ...(Array.isArray(event.gacha_ids) ? event.gacha_ids : [])]
+    .filter((value, index, values) => Number.isInteger(value) && values.indexOf(value) === index);
+}
+
 function officialJapaneseJobs(timeline, archive) {
   const posts = Array.isArray(archive.news) ? archive.news : [];
   const jobs = new Map();
@@ -196,8 +201,9 @@ function officialJapaneseJobs(timeline, archive) {
   for (const event of timeline.events ?? []) {
     if (typeof event.image_path !== 'string' || !event.image_path.endsWith('.webp')) continue;
     const target = path.join(args.frontendRoot, 'src', event.image_path);
-    if (Number.isInteger(event.gacha_id) && gachaSources.has(event.gacha_id)) {
-      jobs.set(target, { source: gachaSources.get(event.gacha_id), eventType: event.type });
+    const sourcedGachaId = eventGachaIds(event).find(gachaId => gachaSources.has(gachaId));
+    if (sourcedGachaId !== undefined) {
+      jobs.set(target, { source: gachaSources.get(sourcedGachaId), eventType: event.type });
       continue;
     }
     if (typeof event.image === 'string' && /^https?:/.test(event.image)) {
@@ -341,7 +347,7 @@ function officialEnglishJobs(timeline, archive, posts, recovered) {
     const identities = [];
     const identity = typeof event.image === 'string' ? assetIdentity(event.image) : null;
     if (identity) identities.push(identity);
-    if (Number.isInteger(event.gacha_id)) identities.push(`gacha_banner_${event.gacha_id}`);
+    identities.push(...eventGachaIds(event).map(gachaId => `gacha_banner_${gachaId}`));
     if (storyIdentities.has(event.id)) identities.push(storyIdentities.get(event.id));
     let source = identities.map(key => assets.get(key)).find(Boolean);
     if (!source && event.type === 'champions_meeting' && event.source === 'champions') {
@@ -398,9 +404,10 @@ function fallbackEnglishJobs(timeline, archive) {
     if (!event.is_confirmed || typeof event.image_path !== 'string') continue;
     const release = dateValue(event.global_release_date);
     if (!release) continue;
-    if (['character_banner', 'support_card_banner', 'paid_banner'].includes(event.type) && Number.isInteger(event.gacha_id)) {
+    const gachaId = eventGachaIds(event)[0];
+    if (['character_banner', 'support_card_banner', 'paid_banner'].includes(event.type) && gachaId !== undefined) {
       jobs.set(path.join(args.frontendRoot, 'src', event.image_path), {
-        source: `${EN_ASSET_ROOT}/gacha_banner_${event.gacha_id}_L${Math.floor(release / 1000)}.png`,
+        source: `${EN_ASSET_ROOT}/gacha_banner_${gachaId}_L${Math.floor(release / 1000)}.png`,
         eventType: event.type
       });
     } else if (['campaign', 'champions_meeting', 'factor_research', 'league_of_heroes', 'legend_race', 'masters_challenge',
@@ -493,11 +500,17 @@ async function saveWebp(payload, target, options = {}) {
   }
   const temporary = `${target}.tmp`;
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await sharp(payload)
-    .resize(width, height, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
-    .webp({ quality: 88, lossless: Boolean(metadata.hasAlpha), effort: options.effort ?? 6 })
-    .toFile(temporary);
-  await replaceFile(temporary, target);
+  await fs.rm(temporary, { force: true });
+  try {
+    await sharp(payload)
+      .resize(width, height, { fit: 'fill', kernel: sharp.kernel.lanczos3 })
+      .webp({ quality: 88, lossless: Boolean(metadata.hasAlpha), effort: options.effort ?? 6 })
+      .toFile(temporary);
+    await replaceFile(temporary, target);
+  } catch (error) {
+    await fs.rm(temporary, { force: true });
+    throw error;
+  }
 }
 
 async function preferredEnglishSource(source, eventType) {
@@ -542,11 +555,14 @@ async function main() {
   const previousUnavailable = await readJson(unavailablePath);
   const previousJpManifest = await readJson(jpManifestPath);
   const previousEnManifest = await readJson(enManifestPath);
-  const jpState = {};
-  const enState = {};
-  const unavailable = {};
-  const jpManifest = {};
-  const enManifest = {};
+  // Keep valid historical mappings. The resource payload and frontend deploy can
+  // update independently, so pruning an older mapping here can temporarily turn
+  // a cached or rolling-deploy timeline event into a broken image.
+  const jpState = { ...previousJpState };
+  const enState = { ...previousEnState };
+  const unavailable = { ...previousUnavailable };
+  const jpManifest = { ...previousJpManifest };
+  const enManifest = { ...previousEnManifest };
   const changed = new Set();
   let jpCreated = 0, jpRefreshed = 0, jpCurrent = 0, enCreated = 0, enCurrent = 0, enMissing = 0, retired = 0;
   const failures = [];
@@ -648,6 +664,24 @@ async function main() {
   if (JSON.stringify(sortedEnManifest) !== JSON.stringify(sortedObject(previousEnManifest))) {
     await writeJson(enManifestPath, sortedEnManifest);
     changed.add(relativeToFrontend(enManifestPath));
+  }
+  const referencedAssets = [
+    ...(Array.isArray(timeline.events) ? timeline.events : []),
+    ...(Array.isArray(timeline.anniversaries) ? timeline.anniversaries : [])
+  ];
+  const missingReferencedAssets = [];
+  for (const item of referencedAssets) {
+    const source = item?.image_path;
+    if (typeof source !== 'string' || /^https?:/i.test(source)) continue;
+    const resolved = sortedEnManifest[source] ?? sortedJpManifest[source] ?? source;
+    const target = path.join(args.frontendRoot, 'src', resolved);
+    if (!await imageSize(target)) missingReferencedAssets.push(`${item.id ?? item.label ?? 'unknown'}: ${resolved}`);
+  }
+  if (missingReferencedAssets.length) {
+    failures.push(
+      `${missingReferencedAssets.length} timeline image reference(s) have no usable frontend asset: ` +
+      missingReferencedAssets.slice(0, 20).join(', ')
+    );
   }
   if (args.changedFilesOutput) {
     await fs.mkdir(path.dirname(path.resolve(args.changedFilesOutput)), { recursive: true });
