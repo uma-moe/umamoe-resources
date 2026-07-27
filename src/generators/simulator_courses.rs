@@ -5,17 +5,17 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 10;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 11;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
 const SKILL_INFRONT_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
 const SKILL_BEHIND_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
-const SKILL_INFRONT_HORSE_NEAR_LANE_DISTANCE: f64 = 0.055_599_998_682_737_35;
-const SKILL_BEHIND_HORSE_NEAR_LANE_DISTANCE: f64 = 0.055_599_998_682_737_35;
+const SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS: f64 = 0.055_599_998_682_737_35;
+const SKILL_BEHIND_HORSE_NEAR_LANE_COURSE_WIDTHS: f64 = 0.055_599_998_682_737_35;
 const SKILL_BEHIND_NEAR_PARAMETER_SETS: &[SimulatorNearLaneParameters] =
     &[SimulatorNearLaneParameters {
         distance_m: 5.0,
-        lane_distance: 0.150_000_005_960_464_48,
+        lane_course_widths: 0.150_000_005_960_464_48,
     }];
 const DECELERATION_BASE: f64 = 1.0;
 const DECELERATION_PHASE_RATES: [f64; 3] = [1.2, 0.8, 1.0];
@@ -597,15 +597,15 @@ pub struct SimulatorRaceParameters<'a> {
 pub struct SimulatorSkillProximityParameters<'a> {
     pub infront_horse_near_distance_m: f64,
     pub behind_horse_near_distance_m: f64,
-    pub infront_horse_near_lane_distance: f64,
-    pub behind_horse_near_lane_distance: f64,
+    pub infront_horse_near_lane_course_widths: f64,
+    pub behind_horse_near_lane_course_widths: f64,
     pub behind_near_parameter_sets: &'a [SimulatorNearLaneParameters],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct SimulatorNearLaneParameters {
     pub distance_m: f64,
-    pub lane_distance: f64,
+    pub lane_course_widths: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -751,8 +751,8 @@ impl SimulatorRaceParameters<'static> {
             skill: SimulatorSkillProximityParameters {
                 infront_horse_near_distance_m: SKILL_INFRONT_HORSE_NEAR_DISTANCE_M,
                 behind_horse_near_distance_m: SKILL_BEHIND_HORSE_NEAR_DISTANCE_M,
-                infront_horse_near_lane_distance: SKILL_INFRONT_HORSE_NEAR_LANE_DISTANCE,
-                behind_horse_near_lane_distance: SKILL_BEHIND_HORSE_NEAR_LANE_DISTANCE,
+                infront_horse_near_lane_course_widths: SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS,
+                behind_horse_near_lane_course_widths: SKILL_BEHIND_HORSE_NEAR_LANE_COURSE_WIDTHS,
                 behind_near_parameter_sets: SKILL_BEHIND_NEAR_PARAMETER_SETS,
             },
             deceleration: SimulatorDecelerationParameters {
@@ -1392,7 +1392,7 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 10);
+        assert_eq!(generated.race_parameters.schema_version, 11);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
         assert_eq!(
@@ -1406,14 +1406,14 @@ mod tests {
             generated
                 .race_parameters
                 .skill
-                .behind_horse_near_lane_distance,
+                .behind_horse_near_lane_course_widths,
             f64::from(0.0556_f32)
         );
         assert_eq!(
             generated.race_parameters.skill.behind_near_parameter_sets,
             &[SimulatorNearLaneParameters {
                 distance_m: 5.0,
-                lane_distance: f64::from(0.15_f32),
+                lane_course_widths: f64::from(0.15_f32),
             }]
         );
         assert_eq!(generated.race_parameters.deceleration.base, 1.0);
