@@ -5,9 +5,18 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 9;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 10;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
+const SKILL_INFRONT_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
+const SKILL_BEHIND_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
+const SKILL_INFRONT_HORSE_NEAR_LANE_DISTANCE: f64 = 0.055_599_998_682_737_35;
+const SKILL_BEHIND_HORSE_NEAR_LANE_DISTANCE: f64 = 0.055_599_998_682_737_35;
+const SKILL_BEHIND_NEAR_PARAMETER_SETS: &[SimulatorNearLaneParameters] =
+    &[SimulatorNearLaneParameters {
+        distance_m: 5.0,
+        lane_distance: 0.150_000_005_960_464_48,
+    }];
 const DECELERATION_BASE: f64 = 1.0;
 const DECELERATION_PHASE_RATES: [f64; 3] = [1.2, 0.8, 1.0];
 const DECELERATION_HP_ZERO_RATE: f64 = 1.2;
@@ -115,7 +124,7 @@ const CONSERVE_POWER_ACTIVITY_STATE_DELTAS: [f64; 4] = [6.7, 4.2, -0.95, -0.8];
 const CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS: [f64; 4] = [1.0, 1.0, 0.98, 0.8];
 const CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS: [f64; 4] = [0.45, 1.0, 0.875, 0.8];
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, and ConservePowerParam; Global 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, and ConservePowerParam; current Global ast_race_paramdefine Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, and Skill.BehindNearParamArray; Global HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -573,6 +582,7 @@ pub struct SimulatorRaceParameters<'a> {
     pub provenance: &'a str,
     pub start_delay_max_seconds: f64,
     pub target_speed_min: f64,
+    pub skill: SimulatorSkillProximityParameters<'a>,
     pub deceleration: SimulatorDecelerationParameters,
     pub minimum_speed: SimulatorMinimumSpeedParameters,
     pub hp: SimulatorHpParameters,
@@ -581,6 +591,21 @@ pub struct SimulatorRaceParameters<'a> {
     pub force_in: SimulatorForceInParameters,
     pub position_keep: SimulatorPositionKeepParameters,
     pub conserve_power: SimulatorConservePowerParameters,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillProximityParameters<'a> {
+    pub infront_horse_near_distance_m: f64,
+    pub behind_horse_near_distance_m: f64,
+    pub infront_horse_near_lane_distance: f64,
+    pub behind_horse_near_lane_distance: f64,
+    pub behind_near_parameter_sets: &'a [SimulatorNearLaneParameters],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct SimulatorNearLaneParameters {
+    pub distance_m: f64,
+    pub lane_distance: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -723,6 +748,13 @@ impl SimulatorRaceParameters<'static> {
             provenance: RACE_PARAMETERS_PROVENANCE,
             start_delay_max_seconds: START_DELAY_MAX_SECONDS,
             target_speed_min: TARGET_SPEED_MIN,
+            skill: SimulatorSkillProximityParameters {
+                infront_horse_near_distance_m: SKILL_INFRONT_HORSE_NEAR_DISTANCE_M,
+                behind_horse_near_distance_m: SKILL_BEHIND_HORSE_NEAR_DISTANCE_M,
+                infront_horse_near_lane_distance: SKILL_INFRONT_HORSE_NEAR_LANE_DISTANCE,
+                behind_horse_near_lane_distance: SKILL_BEHIND_HORSE_NEAR_LANE_DISTANCE,
+                behind_near_parameter_sets: SKILL_BEHIND_NEAR_PARAMETER_SETS,
+            },
             deceleration: SimulatorDecelerationParameters {
                 base: DECELERATION_BASE,
                 phase_rates: DECELERATION_PHASE_RATES,
@@ -1360,9 +1392,30 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 9);
+        assert_eq!(generated.race_parameters.schema_version, 10);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill
+                .infront_horse_near_distance_m,
+            2.5
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill
+                .behind_horse_near_lane_distance,
+            f64::from(0.0556_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.skill.behind_near_parameter_sets,
+            &[SimulatorNearLaneParameters {
+                distance_m: 5.0,
+                lane_distance: f64::from(0.15_f32),
+            }]
+        );
         assert_eq!(generated.race_parameters.deceleration.base, 1.0);
         assert_eq!(
             generated.race_parameters.deceleration.phase_rates,
