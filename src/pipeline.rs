@@ -72,6 +72,7 @@ pub fn generate_resources(
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
     let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
     let jp_events_hash = generators::jp_events::version_hash();
+    let course_hash = generators::simulator_courses::version_hash();
     let planner_hash = generators::planner::version_hash();
     let geometry_hash = generators::simulator_course_geometry::version_hash()?;
     let jp_master_version = jp_master_hash
@@ -79,10 +80,11 @@ pub fn generate_resources(
         .map(|hash| format!("-jp-master-{}", &hash[..12]))
         .unwrap_or_default();
     let version = sanitize_version(&format!(
-        "{}-timeline-{}-jp-{}-planner-{}-geometry-{}{}",
+        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}",
         marker,
         &confirmed_dates_hash[..12],
         &jp_events_hash[..12],
+        &course_hash[..12],
         &planner_hash[..12],
         &geometry_hash[..12],
         jp_master_version,

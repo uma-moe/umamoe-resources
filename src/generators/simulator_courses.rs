@@ -1,6 +1,7 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::warn;
 
@@ -744,6 +745,28 @@ const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
         include_str!("../jp_data/courseeventparams/11203.json"),
     ),
 ];
+
+// Global course-event bundles are authoritative for Global race replay. Keep
+// JP as the complete fallback set and replace rows only after extracting the
+// corresponding current Global client asset.
+const GLOBAL_COURSE_EVENT_PARAM_OVERRIDES: &[(&str, &str)] = &[(
+    "10501",
+    include_str!("../global_data/courseeventparams/10501.json"),
+)];
+
+pub fn version_hash() -> String {
+    let mut digest = Sha256::new();
+    digest.update(SCHEMA_VERSION.to_le_bytes());
+    for (course_id, json) in COURSE_EVENT_PARAMS
+        .iter()
+        .chain(GLOBAL_COURSE_EVENT_PARAM_OVERRIDES)
+    {
+        digest.update(course_id.as_bytes());
+        digest.update([0]);
+        digest.update(json.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
 
 #[derive(Debug, Serialize)]
 pub struct SimulatorCourseSet<'a> {
@@ -1620,6 +1643,12 @@ fn load_course_event_params() -> Result<BTreeMap<i64, CourseGeometry>> {
         }
         courses.insert(id, parse_course_event_params(id, json)?);
     }
+    for (course_id, json) in GLOBAL_COURSE_EVENT_PARAM_OVERRIDES {
+        let id = course_id
+            .parse::<i64>()
+            .with_context(|| format!("invalid bundled Global course event param id {course_id}"))?;
+        courses.insert(id, parse_course_event_params(id, json)?);
+    }
     Ok(courses)
 }
 
@@ -1834,6 +1863,21 @@ mod tests {
 
         assert_eq!(geometry.move_lane_point, 30.0);
         assert!(!geometry.first_move_lane_is_in);
+    }
+
+    #[test]
+    fn global_course_event_override_replaces_jp_geometry() {
+        let courses = load_course_event_params().unwrap();
+        let geometry = courses.get(&10501).unwrap();
+
+        assert_eq!(geometry.corners.len(), 2);
+        assert_eq!(geometry.corners[0].start, 300.0);
+        assert_eq!(geometry.corners[0].length, 350.0);
+        assert_eq!(geometry.corners[1].start, 650.0);
+        assert_eq!(geometry.corners[1].length, 240.0);
+        assert_eq!(geometry.straights.len(), 1);
+        assert_eq!(geometry.straights[0].start, 890.0);
+        assert_eq!(geometry.straights[0].end, 1200.0);
     }
 
     #[test]
