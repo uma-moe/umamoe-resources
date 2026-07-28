@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 14;
+const ALGORITHM_VERSION: u8 = 15;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -15,6 +15,9 @@ const JEWEL_ITEM_ID: i64 = 43;
 const GACHA_TICKET_CATEGORY: i64 = 40;
 const UMA_TICKET_ITEM_ID: i64 = 41;
 const SUPPORT_TICKET_ITEM_ID: i64 = 111;
+const LIMIT_BREAK_ITEM_CATEGORY: i64 = 164;
+const RAINBOW_CRYSTAL_ITEM_ID: i64 = 149;
+const GOLD_CRYSTAL_ITEM_ID: i64 = 150;
 const TRAINEE_SELECTOR_CATEGORY: i64 = 41;
 const SUPPORT_SELECTOR_CATEGORY: i64 = 42;
 const ITEM_NAME_TEXT_CATEGORY: i64 = 23;
@@ -496,7 +499,12 @@ pub fn generate(
             linked_event_ids.insert(event_id.clone());
         }
     }
-    let reward_event_ids = planner_reward_event_ids(&rewards);
+    let mut reward_event_ids = planner_reward_event_ids(&rewards);
+    reward_event_ids.extend(
+        competitive_variants
+            .iter()
+            .map(|variant| variant.event_id.clone()),
+    );
 
     Ok(GeneratedPlanner {
         core: PlannerCore {
@@ -529,7 +537,12 @@ fn planner_reward_event_ids(rewards: &[PlannerReward]) -> BTreeSet<String> {
         .filter(|reward| {
             (matches!(
                 reward.currency,
-                "free_jewels" | "paid_jewels" | "uma_ticket" | "support_ticket"
+                "free_jewels"
+                    | "paid_jewels"
+                    | "uma_ticket"
+                    | "support_ticket"
+                    | "rainbow_crystal"
+                    | "gold_crystal"
             ) && reward.amount.is_some_and(|amount| amount > 0))
                 || reward.source_items.iter().any(|item| {
                     matches!(
@@ -2660,6 +2673,11 @@ fn push_structured_rewards(
     let mut emitted = false;
     for (currency, amount) in planner_equivalents(&source_items) {
         emitted = true;
+        let currency_source_items = source_items
+            .iter()
+            .filter(|item| planner_currency_for_item(item) == Some(currency))
+            .cloned()
+            .collect();
         rewards.push(PlannerReward {
             id: format!("{id}-{currency}"),
             label: label.to_string(),
@@ -2672,7 +2690,7 @@ fn push_structured_rewards(
             assumption,
             default_enabled,
             source_url: None,
-            source_items: source_items.clone(),
+            source_items: currency_source_items,
             confidence: "exact_source",
             evidence: evidence.clone(),
         });
@@ -2694,7 +2712,10 @@ fn push_structured_rewards(
             assumption: "qualitative_only",
             default_enabled: false,
             source_url: None,
-            source_items,
+            source_items: source_items
+                .into_iter()
+                .filter(|item| planner_currency_for_item(item).is_none())
+                .collect(),
             confidence: "exact_source",
             evidence,
         });
@@ -2719,6 +2740,8 @@ fn planner_currency_for_item(item: &PlannerSourceItem) -> Option<&'static str> {
         (JEWEL_CATEGORY, JEWEL_ITEM_ID) => Some("free_jewels"),
         (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID) => Some("uma_ticket"),
         (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID) => Some("support_ticket"),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_ITEM_ID) => Some("rainbow_crystal"),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_ITEM_ID) => Some("gold_crystal"),
         _ => None,
     }
 }
@@ -5044,7 +5067,9 @@ mod tests {
             INSERT INTO mission_data VALUES
                 (1,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',90,43,300),
                 (2,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',40,41,1),
-                (3,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',91,59,100);
+                (3,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',91,59,100),
+                (4,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,149,1),
+                (5,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,150,1);
         "#,
             )
             .unwrap();
@@ -5061,11 +5086,18 @@ mod tests {
         assert!(rewards
             .iter()
             .any(|reward| reward.currency == "uma_ticket" && reward.amount == Some(1)));
+        assert!(rewards
+            .iter()
+            .any(|reward| { reward.currency == "rainbow_crystal" && reward.amount == Some(1) }));
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "gold_crystal" && reward.amount == Some(1)));
         let details = rewards
             .iter()
             .find(|reward| reward.id.ends_with("-items"))
             .unwrap();
-        assert_eq!(details.source_items.len(), 3);
+        assert_eq!(details.source_items.len(), 1);
+        assert_eq!(details.source_items[0].item_id, 59);
         assert!(!details.default_enabled);
     }
 
