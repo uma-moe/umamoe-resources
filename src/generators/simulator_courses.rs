@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 21;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 22;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
 // Current Global ast_race_paramdefine base-speed and
@@ -338,8 +338,22 @@ const CONSERVE_POWER_STRATEGY_DISTANCE_COEFFICIENTS: [[f64; 4]; 5] = [
 const CONSERVE_POWER_ACTIVITY_STATE_DELTAS: [f64; 4] = [6.7, 4.2, -0.95, -0.8];
 const CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS: [f64; 4] = [1.0, 1.0, 0.98, 0.8];
 const CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS: [f64; 4] = [0.45, 1.0, 0.875, 0.8];
+const COMPETE_FIGHT_TARGET_DISTANCE_M: f64 = 3.0;
+const COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS: f64 = 0.25;
+const COMPETE_FIGHT_TARGET_CONTINUE_SECONDS: f64 = 2.0;
+const COMPETE_FIGHT_TARGET_SPEED_GAP_MPS: f64 = 0.6_f32 as f64;
+const COMPETE_FIGHT_TARGET_ORDER_PERCENT: u8 = 50;
+const COMPETE_FIGHT_EXIT_DISTANCE_M: f64 = 5.0;
+const COMPETE_FIGHT_END_HP_PERCENT: u8 = 5;
+const COMPETE_FIGHT_START_HP_PERCENT: u8 = 15;
+const COMPETE_FIGHT_TARGET_SPEED_BASE: f64 = 200.0;
+const COMPETE_FIGHT_TARGET_SPEED_POWER: f64 = 0.708_f32 as f64;
+const COMPETE_FIGHT_TARGET_SPEED_SCALE: f64 = 0.0001_f32 as f64;
+const COMPETE_FIGHT_ACCELERATION_BASE: f64 = 160.0;
+const COMPETE_FIGHT_ACCELERATION_POWER: f64 = 0.59_f32 as f64;
+const COMPETE_FIGHT_ACCELERATION_SCALE: f64 = 0.0001_f32 as f64;
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -843,6 +857,7 @@ pub struct SimulatorRaceParameters<'a> {
     pub force_in: SimulatorForceInParameters,
     pub position_keep: SimulatorPositionKeepParameters,
     pub conserve_power: SimulatorConservePowerParameters,
+    pub compete_fight: SimulatorCompeteFightParameters,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -1206,6 +1221,24 @@ pub struct SimulatorConservePowerParameters {
     pub duration_distance_coefficients: [f64; 4],
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorCompeteFightParameters {
+    pub target_distance_m: f64,
+    pub target_lane_course_widths: f64,
+    pub target_continue_seconds: f64,
+    pub target_speed_gap_mps: f64,
+    pub target_order_percent: u8,
+    pub exit_distance_m: f64,
+    pub end_hp_percent: u8,
+    pub start_hp_percent: u8,
+    pub target_speed_base: f64,
+    pub target_speed_power: f64,
+    pub target_speed_scale: f64,
+    pub acceleration_base: f64,
+    pub acceleration_power: f64,
+    pub acceleration_scale: f64,
+}
+
 impl SimulatorRaceParameters<'static> {
     pub(crate) fn current() -> Self {
         Self {
@@ -1475,6 +1508,22 @@ impl SimulatorRaceParameters<'static> {
                 activity_acceleration_coefficients:
                     CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS,
                 duration_distance_coefficients: CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS,
+            },
+            compete_fight: SimulatorCompeteFightParameters {
+                target_distance_m: COMPETE_FIGHT_TARGET_DISTANCE_M,
+                target_lane_course_widths: COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS,
+                target_continue_seconds: COMPETE_FIGHT_TARGET_CONTINUE_SECONDS,
+                target_speed_gap_mps: COMPETE_FIGHT_TARGET_SPEED_GAP_MPS,
+                target_order_percent: COMPETE_FIGHT_TARGET_ORDER_PERCENT,
+                exit_distance_m: COMPETE_FIGHT_EXIT_DISTANCE_M,
+                end_hp_percent: COMPETE_FIGHT_END_HP_PERCENT,
+                start_hp_percent: COMPETE_FIGHT_START_HP_PERCENT,
+                target_speed_base: COMPETE_FIGHT_TARGET_SPEED_BASE,
+                target_speed_power: COMPETE_FIGHT_TARGET_SPEED_POWER,
+                target_speed_scale: COMPETE_FIGHT_TARGET_SPEED_SCALE,
+                acceleration_base: COMPETE_FIGHT_ACCELERATION_BASE,
+                acceleration_power: COMPETE_FIGHT_ACCELERATION_POWER,
+                acceleration_scale: COMPETE_FIGHT_ACCELERATION_SCALE,
             },
         }
     }
@@ -1901,6 +1950,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn compete_fight_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+        let compete_fight = &asset["CompeteFight"];
+
+        for (field, expected) in [
+            ("DistanceGap", COMPETE_FIGHT_TARGET_DISTANCE_M),
+            ("LaneGap", COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS),
+            ("TargetContinueTime", COMPETE_FIGHT_TARGET_CONTINUE_SECONDS),
+            ("SpeedGap", COMPETE_FIGHT_TARGET_SPEED_GAP_MPS),
+            ("TargetContinueDistance", COMPETE_FIGHT_EXIT_DISTANCE_M),
+            ("AddParam1Coef1", COMPETE_FIGHT_TARGET_SPEED_BASE),
+            ("AddParam1Coef2", COMPETE_FIGHT_TARGET_SPEED_POWER),
+            ("AddParam1Coef3", COMPETE_FIGHT_TARGET_SPEED_SCALE),
+            ("AddParam2Coef1", COMPETE_FIGHT_ACCELERATION_BASE),
+            ("AddParam2Coef2", COMPETE_FIGHT_ACCELERATION_POWER),
+            ("AddParam2Coef3", COMPETE_FIGHT_ACCELERATION_SCALE),
+        ] {
+            assert_eq!(
+                compete_fight[field].as_f64().map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (field, expected) in [
+            (
+                "TargetOrderPer",
+                u64::from(COMPETE_FIGHT_TARGET_ORDER_PERCENT),
+            ),
+            ("HpPer", u64::from(COMPETE_FIGHT_END_HP_PERCENT)),
+            ("HpPer2", u64::from(COMPETE_FIGHT_START_HP_PERCENT)),
+        ] {
+            assert_eq!(compete_fight[field].as_u64(), Some(expected), "{field}");
+        }
+    }
+
+    #[test]
     fn base_motion_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
             serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
@@ -2114,9 +2200,21 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 21);
+        assert_eq!(generated.race_parameters.schema_version, 22);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
+        assert_eq!(
+            generated.race_parameters.compete_fight.target_speed_gap_mps,
+            f64::from(0.6_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.compete_fight.target_speed_power,
+            f64::from(0.708_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.compete_fight.acceleration_power,
+            f64::from(0.59_f32)
+        );
         assert_eq!(
             generated.race_parameters.acceleration.power_coefficient,
             f64::from(0.0006_f32)
