@@ -6,9 +6,32 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 20;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 21;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
+// Current Global ast_race_paramdefine base-speed and
+// HorseBaseTargetSpeedCalculator inputs.
+const RACE_BASE_SPEED: f64 = 20.0;
+const RACE_BASE_DISTANCE_M: f64 = 2_000.0;
+const RACE_BASE_DISTANCE_RATE_M: f64 = 1_000.0;
+const PHASE_TARGET_SPEED_PERCENT: [[f64; 4]; 6] = [
+    [0.0; 4],
+    [100.0, 98.0, 96.2_f32 as f64, 96.2_f32 as f64],
+    [97.8_f32 as f64, 99.1_f32 as f64, 97.5, 97.5],
+    [
+        93.8_f32 as f64,
+        99.8_f32 as f64,
+        99.4_f32 as f64,
+        99.4_f32 as f64,
+    ],
+    [93.1_f32 as f64, 100.0, 100.0, 100.0],
+    [106.3_f32 as f64, 96.2_f32 as f64, 95.0, 95.0],
+];
+const BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT: f64 = -0.65_f32 as f64;
+const BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR: f64 = 5_500.0;
+const BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR: f64 = 5_500.0;
+const PHASE_END_SPEED_SQRT_COEFFICIENT: f64 = 500.0;
+const PHASE_END_SPEED_SCALE: f64 = 0.002_f32 as f64;
 // Current Global ast_race_paramdefine HorseAccelCalculator inputs. Preserve
 // the serialized f32 payload and source strategy indexing.
 const ACCEL_POWER_COEFFICIENT: f64 = 0.0006_f32 as f64;
@@ -316,7 +339,7 @@ const CONSERVE_POWER_ACTIVITY_STATE_DELTAS: [f64; 4] = [6.7, 4.2, -0.95, -0.8];
 const CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS: [f64; 4] = [1.0, 1.0, 0.98, 0.8];
 const CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS: [f64; 4] = [0.45, 1.0, 0.875, 0.8];
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -808,6 +831,7 @@ pub struct SimulatorRaceParameters<'a> {
     pub around_horse: SimulatorAroundHorseParameters,
     pub deceleration: SimulatorDecelerationParameters,
     pub minimum_speed: SimulatorMinimumSpeedParameters,
+    pub base_motion: SimulatorBaseMotionParameters,
     pub acceleration: SimulatorAccelerationParameters,
     pub hp: SimulatorHpParameters,
     pub temptation: SimulatorTemptationParameters,
@@ -921,6 +945,19 @@ pub struct SimulatorAccelerationParameters {
     pub power_sqrt_coefficient: f64,
     pub start_dash_add: f64,
     pub phase_coefficients: [[f64; 3]; 6],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorBaseMotionParameters {
+    pub race_base_speed: f64,
+    pub race_base_distance_m: f64,
+    pub race_base_distance_rate_m: f64,
+    pub phase_target_speed_percent: [[f64; 4]; 6],
+    pub random_minus_base_percent: f64,
+    pub random_minus_wisdom_divisor: f64,
+    pub random_plus_wisdom_divisor: f64,
+    pub phase_end_speed_sqrt_coefficient: f64,
+    pub phase_end_speed_scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -1237,6 +1274,17 @@ impl SimulatorRaceParameters<'static> {
                 base_speed_rate: MINIMUM_SPEED_BASE_SPEED_RATE,
                 guts_sqrt_coefficient: MINIMUM_SPEED_GUTS_SQRT_COEFFICIENT,
                 guts_coefficient: MINIMUM_SPEED_GUTS_COEFFICIENT,
+            },
+            base_motion: SimulatorBaseMotionParameters {
+                race_base_speed: RACE_BASE_SPEED,
+                race_base_distance_m: RACE_BASE_DISTANCE_M,
+                race_base_distance_rate_m: RACE_BASE_DISTANCE_RATE_M,
+                phase_target_speed_percent: PHASE_TARGET_SPEED_PERCENT,
+                random_minus_base_percent: BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT,
+                random_minus_wisdom_divisor: BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR,
+                random_plus_wisdom_divisor: BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR,
+                phase_end_speed_sqrt_coefficient: PHASE_END_SPEED_SQRT_COEFFICIENT,
+                phase_end_speed_scale: PHASE_END_SPEED_SCALE,
             },
             acceleration: SimulatorAccelerationParameters {
                 power_coefficient: ACCEL_POWER_COEFFICIENT,
@@ -1853,6 +1901,71 @@ mod tests {
     use super::*;
 
     #[test]
+    fn base_motion_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+
+        for (field, expected) in [
+            ("raceBaseSpeedBaseSpeed", RACE_BASE_SPEED),
+            ("raceBaseSpeedBaseDistance", RACE_BASE_DISTANCE_M),
+            ("raceBaseSpeedDistanceRate", RACE_BASE_DISTANCE_RATE_M),
+            ("addSpeedParamCoef", PHASE_END_SPEED_SCALE),
+        ] {
+            assert_eq!(
+                asset[field].as_f64().map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (field, expected) in [
+            (
+                "BaseTargetSpeedRandomMinusVal1",
+                BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT,
+            ),
+            (
+                "BaseTargetSpeedRandomMinusVal2",
+                BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR,
+            ),
+            (
+                "BaseTargetSpeedRandomPlusVal1",
+                BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR,
+            ),
+            (
+                "PhaseEndBaseTargetSpeedCoef",
+                PHASE_END_SPEED_SQRT_COEFFICIENT,
+            ),
+        ] {
+            assert_eq!(
+                asset["BasetTargetSpeed"][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (strategy, source_index) in (1..=4).zip(0..) {
+            for (phase, field) in ["Start", "Middle", "End", "Last"].into_iter().enumerate() {
+                assert_eq!(
+                    asset["BasetTargetSpeed"]["PhaseBaseTargetSpeedPerArray"][source_index][field]
+                        .as_f64()
+                        .map(|value| value as f32),
+                    Some(PHASE_TARGET_SPEED_PERCENT[strategy][phase] as f32),
+                    "strategy {strategy} phase {field}"
+                );
+            }
+        }
+        for (phase, field) in ["Start", "Middle", "End", "Last"].into_iter().enumerate() {
+            assert_eq!(
+                asset["BasetTargetSpeed"]["PhaseBaseTargetSpeedPerExArray"][0][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(PHASE_TARGET_SPEED_PERCENT[5][phase] as f32),
+                "Oonige phase {field}"
+            );
+        }
+    }
+
+    #[test]
     fn acceleration_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
             serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
@@ -2001,7 +2114,7 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 20);
+        assert_eq!(generated.race_parameters.schema_version, 21);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
         assert_eq!(
@@ -2022,6 +2135,13 @@ mod tests {
                 f64::from(0.94_f32),
                 f64::from(0.956_f32),
             ]
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .base_motion
+                .phase_target_speed_percent[2],
+            [f64::from(97.8_f32), f64::from(99.1_f32), 97.5, 97.5,]
         );
         assert_eq!(generated.race_parameters.temptation.lot_section_min, 2);
         assert_eq!(generated.race_parameters.temptation.lot_section_max, 9);
