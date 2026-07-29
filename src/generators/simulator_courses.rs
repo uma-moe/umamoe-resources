@@ -6,9 +6,23 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 19;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 20;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
+// Current Global ast_race_paramdefine HorseAccelCalculator inputs. Preserve
+// the serialized f32 payload and source strategy indexing.
+const ACCEL_POWER_COEFFICIENT: f64 = 0.0006_f32 as f64;
+const ACCEL_UPHILL_POWER_COEFFICIENT: f64 = 0.0004_f32 as f64;
+const ACCEL_POWER_SQRT_COEFFICIENT: f64 = 500.0;
+const ACCEL_START_DASH_ADD: f64 = 24.0;
+const ACCEL_PHASE_COEFFICIENTS: [[f64; 3]; 6] = [
+    [0.0; 3],
+    [1.0, 1.0, 0.996_f32 as f64],
+    [0.985_f32 as f64, 1.0, 0.996_f32 as f64],
+    [0.975_f32 as f64, 1.0, 1.0],
+    [0.945_f32 as f64, 1.0, 0.997_f32 as f64],
+    [1.17_f32 as f64, 0.94_f32 as f64, 0.956_f32 as f64],
+];
 const NEAR_HORSE_DISTANCE_THRESHOLD_M: f64 = 3.0;
 const NEAR_HORSE_LANE_DISTANCE_THRESHOLD_M: f64 = 1.875;
 const EXTRA_MOVE_START_FINAL_CORNER_RATE: f64 = 0.0;
@@ -302,7 +316,7 @@ const CONSERVE_POWER_ACTIVITY_STATE_DELTAS: [f64; 4] = [6.7, 4.2, -0.95, -0.8];
 const CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS: [f64; 4] = [1.0, 1.0, 0.98, 0.8];
 const CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS: [f64; 4] = [0.45, 1.0, 0.875, 0.8];
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -757,6 +771,10 @@ const GLOBAL_COURSE_EVENT_PARAM_OVERRIDES: &[(&str, &str)] = &[(
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
     digest.update(SCHEMA_VERSION.to_le_bytes());
+    digest.update(
+        serde_json::to_vec(&SimulatorRaceParameters::current())
+            .expect("simulator race parameters must serialize"),
+    );
     for (course_id, json) in COURSE_EVENT_PARAMS
         .iter()
         .chain(GLOBAL_COURSE_EVENT_PARAM_OVERRIDES)
@@ -790,6 +808,7 @@ pub struct SimulatorRaceParameters<'a> {
     pub around_horse: SimulatorAroundHorseParameters,
     pub deceleration: SimulatorDecelerationParameters,
     pub minimum_speed: SimulatorMinimumSpeedParameters,
+    pub acceleration: SimulatorAccelerationParameters,
     pub hp: SimulatorHpParameters,
     pub temptation: SimulatorTemptationParameters,
     pub additional_activation: SimulatorAdditionalActivationParameters,
@@ -893,6 +912,15 @@ pub struct SimulatorMinimumSpeedParameters {
     pub base_speed_rate: f64,
     pub guts_sqrt_coefficient: f64,
     pub guts_coefficient: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorAccelerationParameters {
+    pub power_coefficient: f64,
+    pub uphill_power_coefficient: f64,
+    pub power_sqrt_coefficient: f64,
+    pub start_dash_add: f64,
+    pub phase_coefficients: [[f64; 3]; 6],
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -1209,6 +1237,13 @@ impl SimulatorRaceParameters<'static> {
                 base_speed_rate: MINIMUM_SPEED_BASE_SPEED_RATE,
                 guts_sqrt_coefficient: MINIMUM_SPEED_GUTS_SQRT_COEFFICIENT,
                 guts_coefficient: MINIMUM_SPEED_GUTS_COEFFICIENT,
+            },
+            acceleration: SimulatorAccelerationParameters {
+                power_coefficient: ACCEL_POWER_COEFFICIENT,
+                uphill_power_coefficient: ACCEL_UPHILL_POWER_COEFFICIENT,
+                power_sqrt_coefficient: ACCEL_POWER_SQRT_COEFFICIENT,
+                start_dash_add: ACCEL_START_DASH_ADD,
+                phase_coefficients: ACCEL_PHASE_COEFFICIENTS,
             },
             hp: SimulatorHpParameters {
                 initial_stamina_coefficient: HP_INITIAL_STAMINA_COEFFICIENT,
@@ -1818,6 +1853,49 @@ mod tests {
     use super::*;
 
     #[test]
+    fn acceleration_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+
+        assert_eq!(
+            asset["accelPowCoef"].as_f64().map(|value| value as f32),
+            Some(ACCEL_POWER_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["accelPowCoefUpSlope"]
+                .as_f64()
+                .map(|value| value as f32),
+            Some(ACCEL_UPHILL_POWER_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["AccelPowCoefSqrt"].as_f64().map(|value| value as f32),
+            Some(ACCEL_POWER_SQRT_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["StartAccelAdd"].as_f64().map(|value| value as f32),
+            Some(ACCEL_START_DASH_ADD as f32)
+        );
+        for (strategy, source_index) in (1..=4).zip(0..) {
+            for (phase, field) in ["Start", "Middle", "End"].into_iter().enumerate() {
+                assert_eq!(
+                    asset["Speed"]["PhaseAccelCoefArray"][source_index][field]
+                        .as_f64()
+                        .map(|value| value as f32),
+                    Some(ACCEL_PHASE_COEFFICIENTS[strategy][phase] as f32)
+                );
+            }
+        }
+        for (phase, field) in ["Start", "Middle", "End"].into_iter().enumerate() {
+            assert_eq!(
+                asset["Speed"]["PhaseAccelCoefExArray"][0][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(ACCEL_PHASE_COEFFICIENTS[5][phase] as f32)
+            );
+        }
+    }
+
+    #[test]
     fn parses_and_sorts_lane_max_events() {
         let geometry = parse_course_event_params(
             99999,
@@ -1923,9 +2001,28 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 19);
+        assert_eq!(generated.race_parameters.schema_version, 20);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
+        assert_eq!(
+            generated.race_parameters.acceleration.power_coefficient,
+            f64::from(0.0006_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .acceleration
+                .uphill_power_coefficient,
+            f64::from(0.0004_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.acceleration.phase_coefficients[5],
+            [
+                f64::from(1.17_f32),
+                f64::from(0.94_f32),
+                f64::from(0.956_f32),
+            ]
+        );
         assert_eq!(generated.race_parameters.temptation.lot_section_min, 2);
         assert_eq!(generated.race_parameters.temptation.lot_section_max, 9);
         assert_eq!(generated.race_parameters.temptation.force_end_seconds, 12.0);
