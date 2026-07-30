@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::warn;
 
-const SCHEMA_VERSION: u32 = 4;
+const SCHEMA_VERSION: u32 = 5;
 const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 23;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
@@ -1567,6 +1567,7 @@ pub struct SimulatorCourse {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CourseCorner {
     pub start: f32,
+    pub index: u8,
     pub length: f32,
 }
 
@@ -1806,6 +1807,10 @@ fn parse_course_event_params(course_id: i64, json: &str) -> Result<CourseGeometr
     for event in file.course_params {
         match event.param_type {
             0 => corners.push(CourseCorner {
+                index: as_u8(
+                    event_value(&event, 0, course_id, "corner.index")?,
+                    "corner.index",
+                )?,
                 start: distance_as_f32(event.distance, course_id, "corner.start")?,
                 length: event_value_as_f32(&event, 1, course_id, "corner.length")?,
             }),
@@ -2208,7 +2213,7 @@ mod tests {
         let generated = generate(&connection, "test").unwrap();
         let course = &generated.courses[0];
 
-        assert_eq!(generated.schema_version, 4);
+        assert_eq!(generated.schema_version, 5);
         assert_eq!(generated.race_parameters.schema_version, 23);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
