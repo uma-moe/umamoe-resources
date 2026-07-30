@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 5;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 23;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 24;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
 // Current Global ast_race_paramdefine base-speed and
@@ -61,8 +61,10 @@ const LANE_MOVE_SPEED_OUTSIDE_POSITION_COEFFICIENT: f64 = 0.050_000_000_745_058_
 const LANE_MOVE_ACCELERATION_BASE_COEFFICIENT: f64 = 1.5;
 const OVERTAKE_FINAL_IN_LANE_COEFFICIENT: f64 = 1.0;
 const OVERTAKE_FINAL_OUT_LANE_COEFFICIENT: f64 = 1.15;
-// JP ast_race_paramdefine MonoBehaviour fields overTakeCoolDownTime and
-// overTakeCountCoolDownTime. Global constructs the same manager subsystem.
+// Current Global ast_race_paramdefine visibleDistance and
+// overTakeDistPerSpeed fields plus the retained cooldown fields.
+const VISIBLE_DISTANCE_M: f64 = 20.0;
+const OVERTAKE_DISTANCE_PER_SPEED_SECONDS: f64 = 15.0;
 const OVERTAKE_TARGET_COOLDOWN_SECONDS: f64 = 1.5;
 const ORDER_CHANGE_COUNT_COOLDOWN_SECONDS: f64 = 6.0;
 // Current JP ast_race_paramdefine serialized f32 values. Global retains the
@@ -356,7 +358,7 @@ const COMPETE_FIGHT_ACCELERATION_BASE: f64 = 160.0;
 const COMPETE_FIGHT_ACCELERATION_POWER: f64 = 0.59_f32 as f64;
 const COMPETE_FIGHT_ACCELERATION_SCALE: f64 = 0.0001_f32 as f64;
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, visibleDistance, overTakeDistPerSpeed, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -902,12 +904,14 @@ pub struct SimulatorLaneMovementParameters {
 pub struct SimulatorOvertakeLaneParameters {
     pub final_in_lane_coefficient: f64,
     pub final_out_lane_coefficient: f64,
+    pub distance_per_speed_seconds: f64,
     pub target_cooldown_seconds: f64,
     pub order_change_count_cooldown_seconds: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SimulatorAroundHorseParameters {
+    pub visible_distance_m: f64,
     pub block: SimulatorBlockParameters,
     pub surrounded: SimulatorSurroundedParameters,
     pub congestion: SimulatorCongestionParameters,
@@ -1282,10 +1286,12 @@ impl SimulatorRaceParameters<'static> {
             overtake_lane: SimulatorOvertakeLaneParameters {
                 final_in_lane_coefficient: OVERTAKE_FINAL_IN_LANE_COEFFICIENT,
                 final_out_lane_coefficient: OVERTAKE_FINAL_OUT_LANE_COEFFICIENT,
+                distance_per_speed_seconds: OVERTAKE_DISTANCE_PER_SPEED_SECONDS,
                 target_cooldown_seconds: OVERTAKE_TARGET_COOLDOWN_SECONDS,
                 order_change_count_cooldown_seconds: ORDER_CHANGE_COUNT_COOLDOWN_SECONDS,
             },
             around_horse: SimulatorAroundHorseParameters {
+                visible_distance_m: VISIBLE_DISTANCE_M,
                 block: SimulatorBlockParameters {
                     front_distance_m: BLOCK_FRONT_DISTANCE_M,
                     front_lane_course_widths: BLOCK_FRONT_LANE_COURSE_WIDTHS,
@@ -2214,7 +2220,7 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 5);
-        assert_eq!(generated.race_parameters.schema_version, 23);
+        assert_eq!(generated.race_parameters.schema_version, 24);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
         assert_eq!(
@@ -2450,6 +2456,17 @@ mod tests {
                 .overtake_lane
                 .final_out_lane_coefficient,
             1.15
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .distance_per_speed_seconds,
+            15.0
+        );
+        assert_eq!(
+            generated.race_parameters.around_horse.visible_distance_m,
+            20.0
         );
         assert_eq!(
             generated
