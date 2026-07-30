@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 22;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 23;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
 // Current Global ast_race_paramdefine base-speed and
@@ -79,6 +79,9 @@ const SURROUNDED_DIRECTIONAL_DISTANCE_M: f64 = 3.0;
 const SURROUNDED_DIRECTIONAL_LANE_COURSE_WIDTHS: f64 = 0.083_329_997_956_752_78;
 const CONGESTION_LANE_COURSE_WIDTHS: f64 = 0.300_000_011_920_928_96;
 const CONGESTION_HORSE_COUNT_THRESHOLD: u32 = 3;
+const SKILL_ACTIVATION_BASE_PERCENT: f64 = 100.0;
+const SKILL_ACTIVATION_WISDOM_DIVISOR: f64 = 9_000.0;
+const SKILL_ACTIVATION_MIN_PERCENT: u8 = 20;
 const SKILL_INFRONT_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
 const SKILL_BEHIND_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
 const SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS: f64 = 0.055_599_998_682_737_35;
@@ -862,6 +865,9 @@ pub struct SimulatorRaceParameters<'a> {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SimulatorSkillProximityParameters<'a> {
+    pub activation_base_percent: f64,
+    pub activation_wisdom_divisor: f64,
+    pub activation_min_percent: u8,
     pub infront_horse_near_distance_m: f64,
     pub behind_horse_near_distance_m: f64,
     pub infront_horse_near_lane_course_widths: f64,
@@ -1247,6 +1253,9 @@ impl SimulatorRaceParameters<'static> {
             start_delay_max_seconds: START_DELAY_MAX_SECONDS,
             target_speed_min: TARGET_SPEED_MIN,
             skill: SimulatorSkillProximityParameters {
+                activation_base_percent: SKILL_ACTIVATION_BASE_PERCENT,
+                activation_wisdom_divisor: SKILL_ACTIVATION_WISDOM_DIVISOR,
+                activation_min_percent: SKILL_ACTIVATION_MIN_PERCENT,
                 infront_horse_near_distance_m: SKILL_INFRONT_HORSE_NEAR_DISTANCE_M,
                 behind_horse_near_distance_m: SKILL_BEHIND_HORSE_NEAR_DISTANCE_M,
                 infront_horse_near_lane_course_widths: SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS,
@@ -2200,7 +2209,7 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 22);
+        assert_eq!(generated.race_parameters.schema_version, 23);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
         assert_eq!(
