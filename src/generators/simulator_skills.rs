@@ -3,7 +3,7 @@ use rusqlite::{Connection, Row};
 use serde::Serialize;
 use std::collections::BTreeSet;
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 const EFFECTS_PER_ALTERNATIVE: usize = 3;
 const EFFECT_COLUMN_WIDTH: usize = 7;
 const FIRST_ALTERNATIVE_EFFECT_START: usize = 9;
@@ -42,12 +42,25 @@ const SKILL_DATA_SELECT: &str = r#"
          ORDER BY id
         "#;
 
+const RACE_ITEM_SELECT: &str = r#"
+        SELECT id, effect_type_1
+          FROM item_data
+         ORDER BY id
+        "#;
+
 #[derive(Debug, Serialize)]
 pub struct SimulatorSkillSet<'a> {
     pub schema_version: u32,
     pub master_version: &'a str,
     pub skill_tag_ids_available: bool,
+    pub race_items: Vec<SimulatorRaceItem>,
     pub skills: Vec<SimulatorSkill>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SimulatorRaceItem {
+    pub item_id: u32,
+    pub effect_type_1: u16,
 }
 
 #[derive(Debug, Serialize)]
@@ -103,13 +116,27 @@ pub fn generate<'a>(
     for row in rows {
         skills.push(row?);
     }
+    let race_items = race_items(connection)?;
 
     Ok(SimulatorSkillSet {
         schema_version: SCHEMA_VERSION,
         master_version,
         skill_tag_ids_available: true,
+        race_items,
         skills,
     })
+}
+
+fn race_items(connection: &Connection) -> Result<Vec<SimulatorRaceItem>> {
+    let mut statement = connection.prepare(RACE_ITEM_SELECT)?;
+    let rows = statement.query_map([], |row| {
+        Ok(SimulatorRaceItem {
+            item_id: as_u32(row.get(0)?, "item_id")?,
+            effect_type_1: as_u16(row.get(1)?, "effect_type_1")?,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
 }
 
 fn skill_data_select_query(connection: &Connection) -> Result<String> {
@@ -301,7 +328,8 @@ fn invalid_tag_id_error(
 #[cfg(test)]
 mod tests {
     use super::{
-        as_binary_u8, parse_tag_ids, skill_data_select_query, ADDITIONAL_ACTIVATE_TYPE_COLUMNS,
+        as_binary_u8, parse_tag_ids, race_items, skill_data_select_query,
+        ADDITIONAL_ACTIVATE_TYPE_COLUMNS,
     };
     use rusqlite::Connection;
 
@@ -333,5 +361,26 @@ mod tests {
         for column in ADDITIONAL_ACTIVATE_TYPE_COLUMNS {
             assert!(query.contains(&format!("0 AS {column}")));
         }
+    }
+
+    #[test]
+    fn exports_all_race_items_in_source_order() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE item_data (id INTEGER, effect_type_1 INTEGER);
+                 INSERT INTO item_data VALUES (30, 103), (10, 0), (20, 101);",
+            )
+            .unwrap();
+
+        let items = race_items(&connection).unwrap();
+
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].item_id, 10);
+        assert_eq!(items[0].effect_type_1, 0);
+        assert_eq!(items[1].item_id, 20);
+        assert_eq!(items[1].effect_type_1, 101);
+        assert_eq!(items[2].item_id, 30);
+        assert_eq!(items[2].effect_type_1, 103);
     }
 }

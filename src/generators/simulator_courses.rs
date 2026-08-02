@@ -1,13 +1,98 @@
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use tracing::warn;
 
-const SCHEMA_VERSION: u32 = 4;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 9;
+const SCHEMA_VERSION: u32 = 5;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 24;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
+// Current Global ast_race_paramdefine base-speed and
+// HorseBaseTargetSpeedCalculator inputs.
+const RACE_BASE_SPEED: f64 = 20.0;
+const RACE_BASE_DISTANCE_M: f64 = 2_000.0;
+const RACE_BASE_DISTANCE_RATE_M: f64 = 1_000.0;
+const PHASE_TARGET_SPEED_PERCENT: [[f64; 4]; 6] = [
+    [0.0; 4],
+    [100.0, 98.0, 96.2_f32 as f64, 96.2_f32 as f64],
+    [97.8_f32 as f64, 99.1_f32 as f64, 97.5, 97.5],
+    [
+        93.8_f32 as f64,
+        99.8_f32 as f64,
+        99.4_f32 as f64,
+        99.4_f32 as f64,
+    ],
+    [93.1_f32 as f64, 100.0, 100.0, 100.0],
+    [106.3_f32 as f64, 96.2_f32 as f64, 95.0, 95.0],
+];
+const BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT: f64 = -0.65_f32 as f64;
+const BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR: f64 = 5_500.0;
+const BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR: f64 = 5_500.0;
+const PHASE_END_SPEED_SQRT_COEFFICIENT: f64 = 500.0;
+const PHASE_END_SPEED_SCALE: f64 = 0.002_f32 as f64;
+// Current Global ast_race_paramdefine HorseAccelCalculator inputs. Preserve
+// the serialized f32 payload and source strategy indexing.
+const ACCEL_POWER_COEFFICIENT: f64 = 0.0006_f32 as f64;
+const ACCEL_UPHILL_POWER_COEFFICIENT: f64 = 0.0004_f32 as f64;
+const ACCEL_POWER_SQRT_COEFFICIENT: f64 = 500.0;
+const ACCEL_START_DASH_ADD: f64 = 24.0;
+const ACCEL_PHASE_COEFFICIENTS: [[f64; 3]; 6] = [
+    [0.0; 3],
+    [1.0, 1.0, 0.996_f32 as f64],
+    [0.985_f32 as f64, 1.0, 0.996_f32 as f64],
+    [0.975_f32 as f64, 1.0, 1.0],
+    [0.945_f32 as f64, 1.0, 0.997_f32 as f64],
+    [1.17_f32 as f64, 0.94_f32 as f64, 0.956_f32 as f64],
+];
+const NEAR_HORSE_DISTANCE_THRESHOLD_M: f64 = 3.0;
+const NEAR_HORSE_LANE_DISTANCE_THRESHOLD_M: f64 = 1.875;
+const EXTRA_MOVE_START_FINAL_CORNER_RATE: f64 = 0.0;
+const EXTRA_MOVE_LANE_NORMALIZE_COURSE_WIDTHS: f64 = 0.1;
+const EXTRA_MOVE_LANE_COEFFICIENT_COURSE_WIDTHS: f64 = 0.5;
+const EXTRA_MOVE_LANE_RANDOM_MAX_COURSE_WIDTHS: f64 = 0.1;
+// Current JP ast_race_paramdefine serialized f32 values. Global's
+// HorseRaceInfo.MoveLane reads the corresponding RaceParamDefine fields.
+const LANE_MOVE_SPEED_BASE: f64 = 0.019_999_999_552_965_164;
+const LANE_MOVE_SPEED_ADD: f64 = 0.300_000_011_920_928_96;
+const LANE_MOVE_SPEED_POWER_COEFFICIENT: f64 = 0.001_000_000_047_497_451_3;
+const LANE_MOVE_SPEED_OUTSIDE_POSITION_COEFFICIENT: f64 = 0.050_000_000_745_058_06;
+const LANE_MOVE_ACCELERATION_BASE_COEFFICIENT: f64 = 1.5;
+const OVERTAKE_FINAL_IN_LANE_COEFFICIENT: f64 = 1.0;
+const OVERTAKE_FINAL_OUT_LANE_COEFFICIENT: f64 = 1.15;
+// Current Global ast_race_paramdefine visibleDistance and
+// overTakeDistPerSpeed fields plus the retained cooldown fields.
+const VISIBLE_DISTANCE_M: f64 = 20.0;
+const OVERTAKE_DISTANCE_PER_SPEED_SECONDS: f64 = 15.0;
+const OVERTAKE_TARGET_COOLDOWN_SECONDS: f64 = 1.5;
+const ORDER_CHANGE_COUNT_COOLDOWN_SECONDS: f64 = 6.0;
+// Current JP ast_race_paramdefine serialized f32 values. Global retains the
+// same Block, Surrounded, and congestion runtime contract.
+const BLOCK_FRONT_DISTANCE_M: f64 = 2.0;
+const BLOCK_FRONT_LANE_COURSE_WIDTHS: f64 = 0.041_666_671_633_720_4;
+const BLOCK_SIDE_DISTANCE_M: f64 = 1.049_999_952_316_284_2;
+const BLOCK_SIDE_LANE_COURSE_WIDTHS: f64 = 0.111_111_097_037_792_2;
+const BLOCK_FRONT_MIN_SPEED_RATE: f64 = 0.987_999_975_681_304_9;
+const BLOCK_FRONT_MAX_SPEED_RATE: f64 = 1.0;
+const SURROUNDED_OUTSIDE_DISTANCE_M: f64 = 1.5;
+const SURROUNDED_OUTSIDE_LANE_COURSE_WIDTHS: f64 = 0.166_659_995_913_505_55;
+const SURROUNDED_DIRECTIONAL_DISTANCE_M: f64 = 3.0;
+const SURROUNDED_DIRECTIONAL_LANE_COURSE_WIDTHS: f64 = 0.083_329_997_956_752_78;
+const CONGESTION_LANE_COURSE_WIDTHS: f64 = 0.300_000_011_920_928_96;
+const CONGESTION_HORSE_COUNT_THRESHOLD: u32 = 3;
+const SKILL_ACTIVATION_BASE_PERCENT: f64 = 100.0;
+const SKILL_ACTIVATION_WISDOM_DIVISOR: f64 = 9_000.0;
+const SKILL_ACTIVATION_MIN_PERCENT: u8 = 20;
+const SKILL_INFRONT_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
+const SKILL_BEHIND_HORSE_NEAR_DISTANCE_M: f64 = 2.5;
+const SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS: f64 = 0.055_599_998_682_737_35;
+const SKILL_BEHIND_HORSE_NEAR_LANE_COURSE_WIDTHS: f64 = 0.055_599_998_682_737_35;
+const SKILL_BEHIND_NEAR_PARAMETER_SETS: &[SimulatorNearLaneParameters] =
+    &[SimulatorNearLaneParameters {
+        distance_m: 5.0,
+        lane_course_widths: 0.150_000_005_960_464_48,
+    }];
 const DECELERATION_BASE: f64 = 1.0;
 const DECELERATION_PHASE_RATES: [f64; 3] = [1.2, 0.8, 1.0];
 const DECELERATION_HP_ZERO_RATE: f64 = 1.2;
@@ -35,6 +120,150 @@ const HP_GROUND_CONDITION_RATES: [[f64; 5]; 3] = [
     [0.0; 5],
     [0.0, 1.0, 1.0, 1.02, 1.02],
     [0.0, 1.0, 1.0, 1.01, 1.02],
+];
+// Current Global ast_race_paramdefine Temptation block. JP retains the same
+// serialized field layout; runtime arithmetic is performed as `float`.
+const TEMPTATION_LOT_SECTION_MIN: u8 = 2;
+const TEMPTATION_LOT_SECTION_MAX: u8 = 9;
+const TEMPTATION_START_PERCENT_VALUE1: f64 = 13.0;
+const TEMPTATION_FORCE_END_SECONDS: f64 = 12.0;
+const TEMPTATION_END_CHECK_SECONDS: f64 = 3.0;
+const TEMPTATION_END_CHANCE_PERCENT: f64 = 55.0;
+const TEMPTATION_OIKOMI_TO_SASHI_PERCENT: f64 = 10.0;
+const TEMPTATION_OIKOMI_TO_SENKO_PERCENT: f64 = 20.0;
+const TEMPTATION_OIKOMI_TO_NIGE_PERCENT: f64 = 70.0;
+const TEMPTATION_SASHI_TO_SENKO_PERCENT: f64 = 25.0;
+const TEMPTATION_SASHI_TO_NIGE_PERCENT: f64 = 75.0;
+const TEMPTATION_SENKO_TO_NIGE_PERCENT: f64 = 100.0;
+// Current Global AdditionalActivateAbilityMaxCountArray, indexed by type.
+const ADDITIONAL_ACTIVATION_ORDER_UP_MAX_COUNT: u8 = 3;
+const ADDITIONAL_ACTIVATION_ANY_SKILL_TYPE_2_MAX_COUNT: u8 = 3;
+const ADDITIONAL_ACTIVATION_ANY_SKILL_TYPE_3_MAX_COUNT: u8 = 2;
+// Current Global RaceParam/SkillParam fields used by SkillDetail construction
+// and SkillAbilityTimeIncrementOrderUp.UpdateAbilityTime.
+const SKILL_ABILITY_TIME_DIVIDE_DISTANCE_M: u32 = 1000;
+const SKILL_COOLDOWN_TIME_DIVIDE_DISTANCE_M: u32 = 1000;
+const SKILL_ORDER_UP_ADD_ABILITY_TIME_SECONDS: f64 = 1.0;
+const SKILL_ORDER_UP_ADD_ABILITY_TIME_MAX_COUNT: u8 = 3;
+// Current Global SkillParam dynamic ability-time calculator fields. Global
+// evaluates these values as float and selects the first strict upper bound.
+const SKILL_DURATION_DISTANCE_DIFF_TOP_DIVISOR_M: f64 = 62.5;
+const SKILL_DURATION_DISTANCE_DIFF_TOP_MIN_MULTIPLIER: f64 = 0.800_000_011_920_929;
+const SKILL_DURATION_DISTANCE_DIFF_TOP_MAX_MULTIPLIER: f64 = 1.600_000_023_841_858;
+const SKILL_DURATION_REMAIN_HP_TYPE_1: [SimulatorSkillDurationThreshold; 8] = [
+    SimulatorSkillDurationThreshold::new(2_000.0, 1.0),
+    SimulatorSkillDurationThreshold::new(2_400.0, 1.5),
+    SimulatorSkillDurationThreshold::new(2_600.0, 2.0),
+    SimulatorSkillDurationThreshold::new(2_800.0, 2.200_000_047_683_716),
+    SimulatorSkillDurationThreshold::new(3_000.0, 2.5),
+    SimulatorSkillDurationThreshold::new(3_200.0, 3.0),
+    SimulatorSkillDurationThreshold::new(3_500.0, 3.5),
+    SimulatorSkillDurationThreshold::new(99_999.0, 4.0),
+];
+const SKILL_DURATION_REMAIN_HP_TYPE_2: [SimulatorSkillDurationThreshold; 5] = [
+    SimulatorSkillDurationThreshold::new(1_500.0, 1.0),
+    SimulatorSkillDurationThreshold::new(1_800.0, 1.5),
+    SimulatorSkillDurationThreshold::new(2_000.0, 2.0),
+    SimulatorSkillDurationThreshold::new(2_100.0, 2.5),
+    SimulatorSkillDurationThreshold::new(99_999.0, 3.0),
+];
+const SKILL_DURATION_BLOCKED_TIME_TYPE_1: [SimulatorSkillDurationThreshold; 4] = [
+    SimulatorSkillDurationThreshold::new(2.0, 1.0),
+    SimulatorSkillDurationThreshold::new(4.0, 2.0),
+    SimulatorSkillDurationThreshold::new(6.0, 3.0),
+    SimulatorSkillDurationThreshold::new(999.0, 4.0),
+];
+const SKILL_DURATION_BLOCKED_TIME_TYPE_2: [SimulatorSkillDurationThreshold; 0] = [];
+// Current Global SkillParam ability-value calculator block for scaling codes
+// 2..=23. Values preserve the serialized f32 payload exactly.
+const SKILL_VALUE_ACQUIRED_SKILL_EXCLUDED_COUNT: u16 = 1;
+const SKILL_VALUE_ACQUIRED_SKILL_BASE_MULTIPLIER: f64 = 1.0;
+const SKILL_VALUE_ACQUIRED_SKILL_PER_COUNT_MULTIPLIER: f64 = 0.009_999_999_776_482_582;
+const SKILL_VALUE_ACQUIRED_SKILL_MAX_MULTIPLIER: f64 = 1.200_000_047_683_715_8;
+const SKILL_VALUE_AOHARU_TEAM_TOTAL_STATUS: [SimulatorSkillValueThreshold; 5] = [
+    SimulatorSkillValueThreshold::new(1_200.0, 0.800_000_011_920_929),
+    SimulatorSkillValueThreshold::new(1_800.0, 0.899_999_976_158_142_1),
+    SimulatorSkillValueThreshold::new(2_600.0, 1.0),
+    SimulatorSkillValueThreshold::new(3_600.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(99_999.0, 1.200_000_047_683_715_8),
+];
+const SKILL_VALUE_RANDOM_ABILITY_TYPE_1: [SimulatorSkillValueRandomRow; 3] = [
+    SimulatorSkillValueRandomRow::new(0.0, 60),
+    SimulatorSkillValueRandomRow::new(0.019_999_999_552_965_164, 30),
+    SimulatorSkillValueRandomRow::new(0.039_999_999_105_930_33, 10),
+];
+const SKILL_VALUE_RANDOM_ABILITY_TYPE_2: [SimulatorSkillValueRandomRow; 3] =
+    SKILL_VALUE_RANDOM_ABILITY_TYPE_1;
+const SKILL_VALUE_RACE_WINS: [SimulatorSkillValueThreshold; 5] = [
+    SimulatorSkillValueThreshold::new(6.0, 0.800_000_011_920_929),
+    SimulatorSkillValueThreshold::new(14.0, 0.899_999_976_158_142_1),
+    SimulatorSkillValueThreshold::new(18.0, 1.0),
+    SimulatorSkillValueThreshold::new(25.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(99_999.0, 1.200_000_047_683_715_8),
+];
+const SKILL_VALUE_ORDER_UP_COUNT_CORNER_PHASE_END_AFTER: [SimulatorSkillValueThreshold; 4] = [
+    SimulatorSkillValueThreshold::new(2.0, 1.0),
+    SimulatorSkillValueThreshold::new(3.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(4.0, 1.200_000_047_683_715_8),
+    SimulatorSkillValueThreshold::new(99.0, 1.25),
+];
+const SKILL_VALUE_FAN_COUNT: [SimulatorSkillValueThreshold; 5] = [
+    SimulatorSkillValueThreshold::new(20_000.0, 0.800_000_011_920_929),
+    SimulatorSkillValueThreshold::new(50_000.0, 0.899_999_976_158_142_1),
+    SimulatorSkillValueThreshold::new(100_000.0, 1.0),
+    SimulatorSkillValueThreshold::new(160_000.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(99_999_999.0, 1.200_000_047_683_715_8),
+];
+const SKILL_VALUE_MAX_RAW_STAT: [SimulatorSkillValueThreshold; 5] = [
+    SimulatorSkillValueThreshold::new(600.0, 0.800_000_011_920_929),
+    SimulatorSkillValueThreshold::new(800.0, 0.899_999_976_158_142_1),
+    SimulatorSkillValueThreshold::new(1_000.0, 1.0),
+    SimulatorSkillValueThreshold::new(1_100.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(9_999.0, 1.200_000_047_683_715_8),
+];
+const SKILL_VALUE_ACTIVATED_PASSIVE_SKILL_COUNT: [SimulatorSkillValueThreshold; 4] = [
+    SimulatorSkillValueThreshold::new(3.0, 0.0),
+    SimulatorSkillValueThreshold::new(5.0, 1.0),
+    SimulatorSkillValueThreshold::new(6.0, 2.0),
+    SimulatorSkillValueThreshold::new(99.0, 3.0),
+];
+const SKILL_VALUE_HEAL_BASE_MULTIPLIER: f64 = 1.0;
+const SKILL_VALUE_HEAL_PER_ACTIVATION_MULTIPLIER: f64 = 0.100_000_001_490_116_12;
+const SKILL_VALUE_HEAL_MAX_MULTIPLIER: f64 = 1.5;
+const SKILL_VALUE_FINAL_CORNER_BASE_MULTIPLIER: f64 = 1.200_000_047_683_715_8;
+const SKILL_VALUE_FINAL_CORNER_PER_ORDER_SUBTRACT: f64 = 0.019_999_999_552_965_164;
+const SKILL_VALUE_FINAL_CORNER_MIN_MULTIPLIER: f64 = 1.0;
+const SKILL_VALUE_INVERSE_TEAM_MEMBER_NUMERATOR: f64 = 1.0;
+const SKILL_VALUE_BASE_WISDOM: [SimulatorSkillValueThreshold; 6] = [
+    SimulatorSkillValueThreshold::new(500.0, 0.5),
+    SimulatorSkillValueThreshold::new(800.0, 1.0),
+    SimulatorSkillValueThreshold::new(1_000.0, 1.100_000_023_841_858),
+    SimulatorSkillValueThreshold::new(1_200.0, 1.200_000_047_683_715_8),
+    SimulatorSkillValueThreshold::new(1_300.0, 1.299_999_952_316_284_2),
+    SimulatorSkillValueThreshold::new(9_999.0, 1.399_999_976_158_142),
+];
+const SKILL_VALUE_DISTANCE_DIFF_TOP_ADDITIVE: [SimulatorSkillValueAdditiveThreshold; 2] = [
+    SimulatorSkillValueAdditiveThreshold::new(20.0, 0.0),
+    SimulatorSkillValueAdditiveThreshold::new(9_999.0, 0.100_000_001_490_116_12),
+];
+const SKILL_VALUE_BLOCKED_TIME_TYPE_1: [SimulatorSkillValueThreshold; 4] = [
+    SimulatorSkillValueThreshold::new(2.0, 1.0),
+    SimulatorSkillValueThreshold::new(4.0, 2.0),
+    SimulatorSkillValueThreshold::new(6.0, 3.0),
+    SimulatorSkillValueThreshold::new(999.0, 4.0),
+];
+const SKILL_VALUE_BLOCKED_TIME_TYPE_2: [SimulatorSkillValueThreshold; 0] = [];
+const SKILL_VALUE_FINAL_SPEED_TYPE_1: [SimulatorSkillValueThreshold; 5] = [
+    SimulatorSkillValueThreshold::new(1_700.0, 0.0),
+    SimulatorSkillValueThreshold::new(1_800.0, 1.0),
+    SimulatorSkillValueThreshold::new(1_900.0, 2.0),
+    SimulatorSkillValueThreshold::new(2_000.0, 3.0),
+    SimulatorSkillValueThreshold::new(9_999.0, 4.0),
+];
+const SKILL_VALUE_FINAL_SPEED_TYPE_2: [SimulatorSkillValueThreshold; 3] = [
+    SimulatorSkillValueThreshold::new(1_400.0, 1.0),
+    SimulatorSkillValueThreshold::new(1_600.0, 2.0),
+    SimulatorSkillValueThreshold::new(9_999.0, 3.0),
 ];
 const LAST_SPURT_TARGET_SPEED_SPEED_SQRT_COEFFICIENT: f64 = 500.0;
 const LAST_SPURT_TARGET_SPEED_ADD_SPEED_COEFFICIENT: f64 = 0.002_000_000_094_994_902_6;
@@ -114,8 +343,22 @@ const CONSERVE_POWER_STRATEGY_DISTANCE_COEFFICIENTS: [[f64; 4]; 5] = [
 const CONSERVE_POWER_ACTIVITY_STATE_DELTAS: [f64; 4] = [6.7, 4.2, -0.95, -0.8];
 const CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS: [f64; 4] = [1.0, 1.0, 0.98, 0.8];
 const CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS: [f64; 4] = [0.45, 1.0, 0.875, 0.8];
+const COMPETE_FIGHT_TARGET_DISTANCE_M: f64 = 3.0;
+const COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS: f64 = 0.25;
+const COMPETE_FIGHT_TARGET_CONTINUE_SECONDS: f64 = 2.0;
+const COMPETE_FIGHT_TARGET_SPEED_GAP_MPS: f64 = 0.6_f32 as f64;
+const COMPETE_FIGHT_TARGET_ORDER_PERCENT: u8 = 50;
+const COMPETE_FIGHT_EXIT_DISTANCE_M: f64 = 5.0;
+const COMPETE_FIGHT_END_HP_PERCENT: u8 = 5;
+const COMPETE_FIGHT_START_HP_PERCENT: u8 = 15;
+const COMPETE_FIGHT_TARGET_SPEED_BASE: f64 = 200.0;
+const COMPETE_FIGHT_TARGET_SPEED_POWER: f64 = 0.708_f32 as f64;
+const COMPETE_FIGHT_TARGET_SPEED_SCALE: f64 = 0.0001_f32 as f64;
+const COMPETE_FIGHT_ACCELERATION_BASE: f64 = 160.0;
+const COMPETE_FIGHT_ACCELERATION_POWER: f64 = 0.59_f32 as f64;
+const COMPETE_FIGHT_ACCELERATION_SCALE: f64 = 0.0001_f32 as f64;
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, and ConservePowerParam; Global 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, visibleDistance, overTakeDistPerSpeed, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -559,6 +802,32 @@ const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     ),
 ];
 
+// Global course-event bundles are authoritative for Global race replay. Keep
+// JP as the complete fallback set and replace rows only after extracting the
+// corresponding current Global client asset.
+const GLOBAL_COURSE_EVENT_PARAM_OVERRIDES: &[(&str, &str)] = &[(
+    "10501",
+    include_str!("../global_data/courseeventparams/10501.json"),
+)];
+
+pub fn version_hash() -> String {
+    let mut digest = Sha256::new();
+    digest.update(SCHEMA_VERSION.to_le_bytes());
+    digest.update(
+        serde_json::to_vec(&SimulatorRaceParameters::current())
+            .expect("simulator race parameters must serialize"),
+    );
+    for (course_id, json) in COURSE_EVENT_PARAMS
+        .iter()
+        .chain(GLOBAL_COURSE_EVENT_PARAM_OVERRIDES)
+    {
+        digest.update(course_id.as_bytes());
+        digest.update([0]);
+        digest.update(json.as_bytes());
+    }
+    hex::encode(digest.finalize())
+}
+
 #[derive(Debug, Serialize)]
 pub struct SimulatorCourseSet<'a> {
     pub schema_version: u32,
@@ -573,14 +842,109 @@ pub struct SimulatorRaceParameters<'a> {
     pub provenance: &'a str,
     pub start_delay_max_seconds: f64,
     pub target_speed_min: f64,
+    pub skill: SimulatorSkillProximityParameters<'a>,
+    pub near_horse: SimulatorNearHorseParameters,
+    pub extra_move_lane: SimulatorExtraMoveLaneParameters,
+    pub lane_movement: SimulatorLaneMovementParameters,
+    pub overtake_lane: SimulatorOvertakeLaneParameters,
+    pub around_horse: SimulatorAroundHorseParameters,
     pub deceleration: SimulatorDecelerationParameters,
     pub minimum_speed: SimulatorMinimumSpeedParameters,
+    pub base_motion: SimulatorBaseMotionParameters,
+    pub acceleration: SimulatorAccelerationParameters,
     pub hp: SimulatorHpParameters,
+    pub temptation: SimulatorTemptationParameters,
+    pub additional_activation: SimulatorAdditionalActivationParameters,
+    pub skill_timing: SimulatorSkillTimingParameters,
+    pub skill_value_scaling: SimulatorSkillValueScalingParameters<'a>,
     pub last_spurt: SimulatorLastSpurtParameters,
     pub slope: SimulatorSlopeParameters,
     pub force_in: SimulatorForceInParameters,
     pub position_keep: SimulatorPositionKeepParameters,
     pub conserve_power: SimulatorConservePowerParameters,
+    pub compete_fight: SimulatorCompeteFightParameters,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillProximityParameters<'a> {
+    pub activation_base_percent: f64,
+    pub activation_wisdom_divisor: f64,
+    pub activation_min_percent: u8,
+    pub infront_horse_near_distance_m: f64,
+    pub behind_horse_near_distance_m: f64,
+    pub infront_horse_near_lane_course_widths: f64,
+    pub behind_horse_near_lane_course_widths: f64,
+    pub behind_near_parameter_sets: &'a [SimulatorNearLaneParameters],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorNearHorseParameters {
+    pub distance_threshold_m: f64,
+    pub lane_distance_threshold_m: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorExtraMoveLaneParameters {
+    pub start_final_corner_rate: f64,
+    pub lane_normalize_course_widths: f64,
+    pub lane_coefficient_course_widths: f64,
+    pub lane_random_max_course_widths: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorLaneMovementParameters {
+    pub speed_base: f64,
+    pub speed_add: f64,
+    pub power_coefficient: f64,
+    pub outside_position_coefficient: f64,
+    pub acceleration_base_coefficient: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorOvertakeLaneParameters {
+    pub final_in_lane_coefficient: f64,
+    pub final_out_lane_coefficient: f64,
+    pub distance_per_speed_seconds: f64,
+    pub target_cooldown_seconds: f64,
+    pub order_change_count_cooldown_seconds: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorAroundHorseParameters {
+    pub visible_distance_m: f64,
+    pub block: SimulatorBlockParameters,
+    pub surrounded: SimulatorSurroundedParameters,
+    pub congestion: SimulatorCongestionParameters,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorBlockParameters {
+    pub front_distance_m: f64,
+    pub front_lane_course_widths: f64,
+    pub side_distance_m: f64,
+    pub side_lane_course_widths: f64,
+    pub front_min_speed_rate: f64,
+    pub front_max_speed_rate: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSurroundedParameters {
+    pub outside_distance_m: f64,
+    pub outside_lane_course_widths: f64,
+    pub directional_distance_m: f64,
+    pub directional_lane_course_widths: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorCongestionParameters {
+    pub lane_course_widths: f64,
+    pub horse_count_threshold: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub struct SimulatorNearLaneParameters {
+    pub distance_m: f64,
+    pub lane_course_widths: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -597,6 +961,28 @@ pub struct SimulatorMinimumSpeedParameters {
     pub base_speed_rate: f64,
     pub guts_sqrt_coefficient: f64,
     pub guts_coefficient: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorAccelerationParameters {
+    pub power_coefficient: f64,
+    pub uphill_power_coefficient: f64,
+    pub power_sqrt_coefficient: f64,
+    pub start_dash_add: f64,
+    pub phase_coefficients: [[f64; 3]; 6],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorBaseMotionParameters {
+    pub race_base_speed: f64,
+    pub race_base_distance_m: f64,
+    pub race_base_distance_rate_m: f64,
+    pub phase_target_speed_percent: [[f64; 4]; 6],
+    pub random_minus_base_percent: f64,
+    pub random_minus_wisdom_divisor: f64,
+    pub random_plus_wisdom_divisor: f64,
+    pub phase_end_speed_sqrt_coefficient: f64,
+    pub phase_end_speed_scale: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -617,6 +1003,135 @@ pub struct SimulatorHpParameters {
     pub guts_coefficient: f64,
     pub guts_sqrt_coefficient: f64,
     pub ground_condition_rates: [[f64; 5]; 3],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorTemptationParameters {
+    pub lot_section_min: u8,
+    pub lot_section_max: u8,
+    pub start_percent_value1: f64,
+    pub force_end_seconds: f64,
+    pub end_check_seconds: f64,
+    pub end_chance_percent: f64,
+    pub oikomi_to_sashi_percent: f64,
+    pub oikomi_to_senko_percent: f64,
+    pub oikomi_to_nige_percent: f64,
+    pub sashi_to_senko_percent: f64,
+    pub sashi_to_nige_percent: f64,
+    pub senko_to_nige_percent: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorAdditionalActivationParameters {
+    pub order_up_max_count: u8,
+    pub activate_any_skill_type_2_max_count: u8,
+    pub activate_any_skill_type_3_max_count: u8,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillTimingParameters {
+    pub ability_time_divide_distance_m: u32,
+    pub cooldown_time_divide_distance_m: u32,
+    pub order_up_add_ability_time_seconds: f64,
+    pub order_up_add_ability_time_max_count: u8,
+    pub duration_scaling: SimulatorSkillDurationScalingParameters,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillDurationScalingParameters {
+    pub distance_diff_top_divisor_m: f64,
+    pub distance_diff_top_min_multiplier: f64,
+    pub distance_diff_top_max_multiplier: f64,
+    pub remain_hp_type_1: &'static [SimulatorSkillDurationThreshold],
+    pub remain_hp_type_2: &'static [SimulatorSkillDurationThreshold],
+    pub blocked_time_type_1: &'static [SimulatorSkillDurationThreshold],
+    pub blocked_time_type_2: &'static [SimulatorSkillDurationThreshold],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillDurationThreshold {
+    pub upper_bound: f64,
+    pub multiplier: f64,
+}
+
+impl SimulatorSkillDurationThreshold {
+    const fn new(upper_bound: f64, multiplier: f64) -> Self {
+        Self {
+            upper_bound,
+            multiplier,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillValueScalingParameters<'a> {
+    pub acquired_skill_excluded_count: u16,
+    pub acquired_skill_base_multiplier: f64,
+    pub acquired_skill_per_count_multiplier: f64,
+    pub acquired_skill_max_multiplier: f64,
+    pub aoharu_team_total_status: &'a [SimulatorSkillValueThreshold],
+    pub random_ability_value_type_1: &'a [SimulatorSkillValueRandomRow],
+    pub random_ability_value_type_2: &'a [SimulatorSkillValueRandomRow],
+    pub race_wins: &'a [SimulatorSkillValueThreshold],
+    pub order_up_count_corner_phase_end_after: &'a [SimulatorSkillValueThreshold],
+    pub fan_count: &'a [SimulatorSkillValueThreshold],
+    pub max_raw_stat: &'a [SimulatorSkillValueThreshold],
+    pub activated_passive_skill_count: &'a [SimulatorSkillValueThreshold],
+    pub heal_base_multiplier: f64,
+    pub heal_per_activation_multiplier: f64,
+    pub heal_max_multiplier: f64,
+    pub final_corner_base_multiplier: f64,
+    pub final_corner_per_order_subtract: f64,
+    pub final_corner_min_multiplier: f64,
+    pub inverse_team_member_numerator: f64,
+    pub base_wisdom: &'a [SimulatorSkillValueThreshold],
+    pub distance_diff_top_additive: &'a [SimulatorSkillValueAdditiveThreshold],
+    pub blocked_time_type_1: &'a [SimulatorSkillValueThreshold],
+    pub blocked_time_type_2: &'a [SimulatorSkillValueThreshold],
+    pub final_speed_type_1: &'a [SimulatorSkillValueThreshold],
+    pub final_speed_type_2: &'a [SimulatorSkillValueThreshold],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillValueThreshold {
+    pub upper_bound: f64,
+    pub multiplier: f64,
+}
+
+impl SimulatorSkillValueThreshold {
+    const fn new(upper_bound: f64, multiplier: f64) -> Self {
+        Self {
+            upper_bound,
+            multiplier,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillValueRandomRow {
+    pub modifier: f64,
+    pub weight: u32,
+}
+
+impl SimulatorSkillValueRandomRow {
+    const fn new(modifier: f64, weight: u32) -> Self {
+        Self { modifier, weight }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorSkillValueAdditiveThreshold {
+    pub upper_bound: f64,
+    pub additive: f64,
+}
+
+impl SimulatorSkillValueAdditiveThreshold {
+    const fn new(upper_bound: f64, additive: f64) -> Self {
+        Self {
+            upper_bound,
+            additive,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -716,6 +1231,24 @@ pub struct SimulatorConservePowerParameters {
     pub duration_distance_coefficients: [f64; 4],
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorCompeteFightParameters {
+    pub target_distance_m: f64,
+    pub target_lane_course_widths: f64,
+    pub target_continue_seconds: f64,
+    pub target_speed_gap_mps: f64,
+    pub target_order_percent: u8,
+    pub exit_distance_m: f64,
+    pub end_hp_percent: u8,
+    pub start_hp_percent: u8,
+    pub target_speed_base: f64,
+    pub target_speed_power: f64,
+    pub target_speed_scale: f64,
+    pub acceleration_base: f64,
+    pub acceleration_power: f64,
+    pub acceleration_scale: f64,
+}
+
 impl SimulatorRaceParameters<'static> {
     pub(crate) fn current() -> Self {
         Self {
@@ -723,6 +1256,61 @@ impl SimulatorRaceParameters<'static> {
             provenance: RACE_PARAMETERS_PROVENANCE,
             start_delay_max_seconds: START_DELAY_MAX_SECONDS,
             target_speed_min: TARGET_SPEED_MIN,
+            skill: SimulatorSkillProximityParameters {
+                activation_base_percent: SKILL_ACTIVATION_BASE_PERCENT,
+                activation_wisdom_divisor: SKILL_ACTIVATION_WISDOM_DIVISOR,
+                activation_min_percent: SKILL_ACTIVATION_MIN_PERCENT,
+                infront_horse_near_distance_m: SKILL_INFRONT_HORSE_NEAR_DISTANCE_M,
+                behind_horse_near_distance_m: SKILL_BEHIND_HORSE_NEAR_DISTANCE_M,
+                infront_horse_near_lane_course_widths: SKILL_INFRONT_HORSE_NEAR_LANE_COURSE_WIDTHS,
+                behind_horse_near_lane_course_widths: SKILL_BEHIND_HORSE_NEAR_LANE_COURSE_WIDTHS,
+                behind_near_parameter_sets: SKILL_BEHIND_NEAR_PARAMETER_SETS,
+            },
+            near_horse: SimulatorNearHorseParameters {
+                distance_threshold_m: NEAR_HORSE_DISTANCE_THRESHOLD_M,
+                lane_distance_threshold_m: NEAR_HORSE_LANE_DISTANCE_THRESHOLD_M,
+            },
+            extra_move_lane: SimulatorExtraMoveLaneParameters {
+                start_final_corner_rate: EXTRA_MOVE_START_FINAL_CORNER_RATE,
+                lane_normalize_course_widths: EXTRA_MOVE_LANE_NORMALIZE_COURSE_WIDTHS,
+                lane_coefficient_course_widths: EXTRA_MOVE_LANE_COEFFICIENT_COURSE_WIDTHS,
+                lane_random_max_course_widths: EXTRA_MOVE_LANE_RANDOM_MAX_COURSE_WIDTHS,
+            },
+            lane_movement: SimulatorLaneMovementParameters {
+                speed_base: LANE_MOVE_SPEED_BASE,
+                speed_add: LANE_MOVE_SPEED_ADD,
+                power_coefficient: LANE_MOVE_SPEED_POWER_COEFFICIENT,
+                outside_position_coefficient: LANE_MOVE_SPEED_OUTSIDE_POSITION_COEFFICIENT,
+                acceleration_base_coefficient: LANE_MOVE_ACCELERATION_BASE_COEFFICIENT,
+            },
+            overtake_lane: SimulatorOvertakeLaneParameters {
+                final_in_lane_coefficient: OVERTAKE_FINAL_IN_LANE_COEFFICIENT,
+                final_out_lane_coefficient: OVERTAKE_FINAL_OUT_LANE_COEFFICIENT,
+                distance_per_speed_seconds: OVERTAKE_DISTANCE_PER_SPEED_SECONDS,
+                target_cooldown_seconds: OVERTAKE_TARGET_COOLDOWN_SECONDS,
+                order_change_count_cooldown_seconds: ORDER_CHANGE_COUNT_COOLDOWN_SECONDS,
+            },
+            around_horse: SimulatorAroundHorseParameters {
+                visible_distance_m: VISIBLE_DISTANCE_M,
+                block: SimulatorBlockParameters {
+                    front_distance_m: BLOCK_FRONT_DISTANCE_M,
+                    front_lane_course_widths: BLOCK_FRONT_LANE_COURSE_WIDTHS,
+                    side_distance_m: BLOCK_SIDE_DISTANCE_M,
+                    side_lane_course_widths: BLOCK_SIDE_LANE_COURSE_WIDTHS,
+                    front_min_speed_rate: BLOCK_FRONT_MIN_SPEED_RATE,
+                    front_max_speed_rate: BLOCK_FRONT_MAX_SPEED_RATE,
+                },
+                surrounded: SimulatorSurroundedParameters {
+                    outside_distance_m: SURROUNDED_OUTSIDE_DISTANCE_M,
+                    outside_lane_course_widths: SURROUNDED_OUTSIDE_LANE_COURSE_WIDTHS,
+                    directional_distance_m: SURROUNDED_DIRECTIONAL_DISTANCE_M,
+                    directional_lane_course_widths: SURROUNDED_DIRECTIONAL_LANE_COURSE_WIDTHS,
+                },
+                congestion: SimulatorCongestionParameters {
+                    lane_course_widths: CONGESTION_LANE_COURSE_WIDTHS,
+                    horse_count_threshold: CONGESTION_HORSE_COUNT_THRESHOLD,
+                },
+            },
             deceleration: SimulatorDecelerationParameters {
                 base: DECELERATION_BASE,
                 phase_rates: DECELERATION_PHASE_RATES,
@@ -734,6 +1322,24 @@ impl SimulatorRaceParameters<'static> {
                 base_speed_rate: MINIMUM_SPEED_BASE_SPEED_RATE,
                 guts_sqrt_coefficient: MINIMUM_SPEED_GUTS_SQRT_COEFFICIENT,
                 guts_coefficient: MINIMUM_SPEED_GUTS_COEFFICIENT,
+            },
+            base_motion: SimulatorBaseMotionParameters {
+                race_base_speed: RACE_BASE_SPEED,
+                race_base_distance_m: RACE_BASE_DISTANCE_M,
+                race_base_distance_rate_m: RACE_BASE_DISTANCE_RATE_M,
+                phase_target_speed_percent: PHASE_TARGET_SPEED_PERCENT,
+                random_minus_base_percent: BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT,
+                random_minus_wisdom_divisor: BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR,
+                random_plus_wisdom_divisor: BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR,
+                phase_end_speed_sqrt_coefficient: PHASE_END_SPEED_SQRT_COEFFICIENT,
+                phase_end_speed_scale: PHASE_END_SPEED_SCALE,
+            },
+            acceleration: SimulatorAccelerationParameters {
+                power_coefficient: ACCEL_POWER_COEFFICIENT,
+                uphill_power_coefficient: ACCEL_UPHILL_POWER_COEFFICIENT,
+                power_sqrt_coefficient: ACCEL_POWER_SQRT_COEFFICIENT,
+                start_dash_add: ACCEL_START_DASH_ADD,
+                phase_coefficients: ACCEL_PHASE_COEFFICIENTS,
             },
             hp: SimulatorHpParameters {
                 initial_stamina_coefficient: HP_INITIAL_STAMINA_COEFFICIENT,
@@ -752,6 +1358,73 @@ impl SimulatorRaceParameters<'static> {
                 guts_coefficient: HP_GUTS_COEFFICIENT,
                 guts_sqrt_coefficient: HP_GUTS_SQRT_COEFFICIENT,
                 ground_condition_rates: HP_GROUND_CONDITION_RATES,
+            },
+            temptation: SimulatorTemptationParameters {
+                lot_section_min: TEMPTATION_LOT_SECTION_MIN,
+                lot_section_max: TEMPTATION_LOT_SECTION_MAX,
+                start_percent_value1: TEMPTATION_START_PERCENT_VALUE1,
+                force_end_seconds: TEMPTATION_FORCE_END_SECONDS,
+                end_check_seconds: TEMPTATION_END_CHECK_SECONDS,
+                end_chance_percent: TEMPTATION_END_CHANCE_PERCENT,
+                oikomi_to_sashi_percent: TEMPTATION_OIKOMI_TO_SASHI_PERCENT,
+                oikomi_to_senko_percent: TEMPTATION_OIKOMI_TO_SENKO_PERCENT,
+                oikomi_to_nige_percent: TEMPTATION_OIKOMI_TO_NIGE_PERCENT,
+                sashi_to_senko_percent: TEMPTATION_SASHI_TO_SENKO_PERCENT,
+                sashi_to_nige_percent: TEMPTATION_SASHI_TO_NIGE_PERCENT,
+                senko_to_nige_percent: TEMPTATION_SENKO_TO_NIGE_PERCENT,
+            },
+            additional_activation: SimulatorAdditionalActivationParameters {
+                order_up_max_count: ADDITIONAL_ACTIVATION_ORDER_UP_MAX_COUNT,
+                activate_any_skill_type_2_max_count:
+                    ADDITIONAL_ACTIVATION_ANY_SKILL_TYPE_2_MAX_COUNT,
+                activate_any_skill_type_3_max_count:
+                    ADDITIONAL_ACTIVATION_ANY_SKILL_TYPE_3_MAX_COUNT,
+            },
+            skill_timing: SimulatorSkillTimingParameters {
+                ability_time_divide_distance_m: SKILL_ABILITY_TIME_DIVIDE_DISTANCE_M,
+                cooldown_time_divide_distance_m: SKILL_COOLDOWN_TIME_DIVIDE_DISTANCE_M,
+                order_up_add_ability_time_seconds: SKILL_ORDER_UP_ADD_ABILITY_TIME_SECONDS,
+                order_up_add_ability_time_max_count: SKILL_ORDER_UP_ADD_ABILITY_TIME_MAX_COUNT,
+                duration_scaling: SimulatorSkillDurationScalingParameters {
+                    distance_diff_top_divisor_m: SKILL_DURATION_DISTANCE_DIFF_TOP_DIVISOR_M,
+                    distance_diff_top_min_multiplier:
+                        SKILL_DURATION_DISTANCE_DIFF_TOP_MIN_MULTIPLIER,
+                    distance_diff_top_max_multiplier:
+                        SKILL_DURATION_DISTANCE_DIFF_TOP_MAX_MULTIPLIER,
+                    remain_hp_type_1: &SKILL_DURATION_REMAIN_HP_TYPE_1,
+                    remain_hp_type_2: &SKILL_DURATION_REMAIN_HP_TYPE_2,
+                    blocked_time_type_1: &SKILL_DURATION_BLOCKED_TIME_TYPE_1,
+                    blocked_time_type_2: &SKILL_DURATION_BLOCKED_TIME_TYPE_2,
+                },
+            },
+            skill_value_scaling: SimulatorSkillValueScalingParameters {
+                acquired_skill_excluded_count: SKILL_VALUE_ACQUIRED_SKILL_EXCLUDED_COUNT,
+                acquired_skill_base_multiplier: SKILL_VALUE_ACQUIRED_SKILL_BASE_MULTIPLIER,
+                acquired_skill_per_count_multiplier:
+                    SKILL_VALUE_ACQUIRED_SKILL_PER_COUNT_MULTIPLIER,
+                acquired_skill_max_multiplier: SKILL_VALUE_ACQUIRED_SKILL_MAX_MULTIPLIER,
+                aoharu_team_total_status: &SKILL_VALUE_AOHARU_TEAM_TOTAL_STATUS,
+                random_ability_value_type_1: &SKILL_VALUE_RANDOM_ABILITY_TYPE_1,
+                random_ability_value_type_2: &SKILL_VALUE_RANDOM_ABILITY_TYPE_2,
+                race_wins: &SKILL_VALUE_RACE_WINS,
+                order_up_count_corner_phase_end_after:
+                    &SKILL_VALUE_ORDER_UP_COUNT_CORNER_PHASE_END_AFTER,
+                fan_count: &SKILL_VALUE_FAN_COUNT,
+                max_raw_stat: &SKILL_VALUE_MAX_RAW_STAT,
+                activated_passive_skill_count: &SKILL_VALUE_ACTIVATED_PASSIVE_SKILL_COUNT,
+                heal_base_multiplier: SKILL_VALUE_HEAL_BASE_MULTIPLIER,
+                heal_per_activation_multiplier: SKILL_VALUE_HEAL_PER_ACTIVATION_MULTIPLIER,
+                heal_max_multiplier: SKILL_VALUE_HEAL_MAX_MULTIPLIER,
+                final_corner_base_multiplier: SKILL_VALUE_FINAL_CORNER_BASE_MULTIPLIER,
+                final_corner_per_order_subtract: SKILL_VALUE_FINAL_CORNER_PER_ORDER_SUBTRACT,
+                final_corner_min_multiplier: SKILL_VALUE_FINAL_CORNER_MIN_MULTIPLIER,
+                inverse_team_member_numerator: SKILL_VALUE_INVERSE_TEAM_MEMBER_NUMERATOR,
+                base_wisdom: &SKILL_VALUE_BASE_WISDOM,
+                distance_diff_top_additive: &SKILL_VALUE_DISTANCE_DIFF_TOP_ADDITIVE,
+                blocked_time_type_1: &SKILL_VALUE_BLOCKED_TIME_TYPE_1,
+                blocked_time_type_2: &SKILL_VALUE_BLOCKED_TIME_TYPE_2,
+                final_speed_type_1: &SKILL_VALUE_FINAL_SPEED_TYPE_1,
+                final_speed_type_2: &SKILL_VALUE_FINAL_SPEED_TYPE_2,
             },
             last_spurt: SimulatorLastSpurtParameters {
                 target_speed_speed_sqrt_coefficient: LAST_SPURT_TARGET_SPEED_SPEED_SQRT_COEFFICIENT,
@@ -851,6 +1524,22 @@ impl SimulatorRaceParameters<'static> {
                     CONSERVE_POWER_ACTIVITY_ACCELERATION_COEFFICIENTS,
                 duration_distance_coefficients: CONSERVE_POWER_DURATION_DISTANCE_COEFFICIENTS,
             },
+            compete_fight: SimulatorCompeteFightParameters {
+                target_distance_m: COMPETE_FIGHT_TARGET_DISTANCE_M,
+                target_lane_course_widths: COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS,
+                target_continue_seconds: COMPETE_FIGHT_TARGET_CONTINUE_SECONDS,
+                target_speed_gap_mps: COMPETE_FIGHT_TARGET_SPEED_GAP_MPS,
+                target_order_percent: COMPETE_FIGHT_TARGET_ORDER_PERCENT,
+                exit_distance_m: COMPETE_FIGHT_EXIT_DISTANCE_M,
+                end_hp_percent: COMPETE_FIGHT_END_HP_PERCENT,
+                start_hp_percent: COMPETE_FIGHT_START_HP_PERCENT,
+                target_speed_base: COMPETE_FIGHT_TARGET_SPEED_BASE,
+                target_speed_power: COMPETE_FIGHT_TARGET_SPEED_POWER,
+                target_speed_scale: COMPETE_FIGHT_TARGET_SPEED_SCALE,
+                acceleration_base: COMPETE_FIGHT_ACCELERATION_BASE,
+                acceleration_power: COMPETE_FIGHT_ACCELERATION_POWER,
+                acceleration_scale: COMPETE_FIGHT_ACCELERATION_SCALE,
+            },
         }
     }
 }
@@ -884,6 +1573,7 @@ pub struct SimulatorCourse {
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct CourseCorner {
     pub start: f32,
+    pub index: u8,
     pub length: f32,
 }
 
@@ -1101,6 +1791,12 @@ fn load_course_event_params() -> Result<BTreeMap<i64, CourseGeometry>> {
         }
         courses.insert(id, parse_course_event_params(id, json)?);
     }
+    for (course_id, json) in GLOBAL_COURSE_EVENT_PARAM_OVERRIDES {
+        let id = course_id
+            .parse::<i64>()
+            .with_context(|| format!("invalid bundled Global course event param id {course_id}"))?;
+        courses.insert(id, parse_course_event_params(id, json)?);
+    }
     Ok(courses)
 }
 
@@ -1117,6 +1813,10 @@ fn parse_course_event_params(course_id: i64, json: &str) -> Result<CourseGeometr
     for event in file.course_params {
         match event.param_type {
             0 => corners.push(CourseCorner {
+                index: as_u8(
+                    event_value(&event, 0, course_id, "corner.index")?,
+                    "corner.index",
+                )?,
                 start: distance_as_f32(event.distance, course_id, "corner.start")?,
                 length: event_value_as_f32(&event, 1, course_id, "corner.length")?,
             }),
@@ -1270,6 +1970,151 @@ mod tests {
     use super::*;
 
     #[test]
+    fn compete_fight_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+        let compete_fight = &asset["CompeteFight"];
+
+        for (field, expected) in [
+            ("DistanceGap", COMPETE_FIGHT_TARGET_DISTANCE_M),
+            ("LaneGap", COMPETE_FIGHT_TARGET_LANE_COURSE_WIDTHS),
+            ("TargetContinueTime", COMPETE_FIGHT_TARGET_CONTINUE_SECONDS),
+            ("SpeedGap", COMPETE_FIGHT_TARGET_SPEED_GAP_MPS),
+            ("TargetContinueDistance", COMPETE_FIGHT_EXIT_DISTANCE_M),
+            ("AddParam1Coef1", COMPETE_FIGHT_TARGET_SPEED_BASE),
+            ("AddParam1Coef2", COMPETE_FIGHT_TARGET_SPEED_POWER),
+            ("AddParam1Coef3", COMPETE_FIGHT_TARGET_SPEED_SCALE),
+            ("AddParam2Coef1", COMPETE_FIGHT_ACCELERATION_BASE),
+            ("AddParam2Coef2", COMPETE_FIGHT_ACCELERATION_POWER),
+            ("AddParam2Coef3", COMPETE_FIGHT_ACCELERATION_SCALE),
+        ] {
+            assert_eq!(
+                compete_fight[field].as_f64().map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (field, expected) in [
+            (
+                "TargetOrderPer",
+                u64::from(COMPETE_FIGHT_TARGET_ORDER_PERCENT),
+            ),
+            ("HpPer", u64::from(COMPETE_FIGHT_END_HP_PERCENT)),
+            ("HpPer2", u64::from(COMPETE_FIGHT_START_HP_PERCENT)),
+        ] {
+            assert_eq!(compete_fight[field].as_u64(), Some(expected), "{field}");
+        }
+    }
+
+    #[test]
+    fn base_motion_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+
+        for (field, expected) in [
+            ("raceBaseSpeedBaseSpeed", RACE_BASE_SPEED),
+            ("raceBaseSpeedBaseDistance", RACE_BASE_DISTANCE_M),
+            ("raceBaseSpeedDistanceRate", RACE_BASE_DISTANCE_RATE_M),
+            ("addSpeedParamCoef", PHASE_END_SPEED_SCALE),
+        ] {
+            assert_eq!(
+                asset[field].as_f64().map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (field, expected) in [
+            (
+                "BaseTargetSpeedRandomMinusVal1",
+                BASE_TARGET_SPEED_RANDOM_MINUS_BASE_PERCENT,
+            ),
+            (
+                "BaseTargetSpeedRandomMinusVal2",
+                BASE_TARGET_SPEED_RANDOM_MINUS_WISDOM_DIVISOR,
+            ),
+            (
+                "BaseTargetSpeedRandomPlusVal1",
+                BASE_TARGET_SPEED_RANDOM_PLUS_WISDOM_DIVISOR,
+            ),
+            (
+                "PhaseEndBaseTargetSpeedCoef",
+                PHASE_END_SPEED_SQRT_COEFFICIENT,
+            ),
+        ] {
+            assert_eq!(
+                asset["BasetTargetSpeed"][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(expected as f32),
+                "{field}"
+            );
+        }
+        for (strategy, source_index) in (1..=4).zip(0..) {
+            for (phase, field) in ["Start", "Middle", "End", "Last"].into_iter().enumerate() {
+                assert_eq!(
+                    asset["BasetTargetSpeed"]["PhaseBaseTargetSpeedPerArray"][source_index][field]
+                        .as_f64()
+                        .map(|value| value as f32),
+                    Some(PHASE_TARGET_SPEED_PERCENT[strategy][phase] as f32),
+                    "strategy {strategy} phase {field}"
+                );
+            }
+        }
+        for (phase, field) in ["Start", "Middle", "End", "Last"].into_iter().enumerate() {
+            assert_eq!(
+                asset["BasetTargetSpeed"]["PhaseBaseTargetSpeedPerExArray"][0][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(PHASE_TARGET_SPEED_PERCENT[5][phase] as f32),
+                "Oonige phase {field}"
+            );
+        }
+    }
+
+    #[test]
+    fn acceleration_constants_match_decoded_global_asset() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+
+        assert_eq!(
+            asset["accelPowCoef"].as_f64().map(|value| value as f32),
+            Some(ACCEL_POWER_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["accelPowCoefUpSlope"]
+                .as_f64()
+                .map(|value| value as f32),
+            Some(ACCEL_UPHILL_POWER_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["AccelPowCoefSqrt"].as_f64().map(|value| value as f32),
+            Some(ACCEL_POWER_SQRT_COEFFICIENT as f32)
+        );
+        assert_eq!(
+            asset["StartAccelAdd"].as_f64().map(|value| value as f32),
+            Some(ACCEL_START_DASH_ADD as f32)
+        );
+        for (strategy, source_index) in (1..=4).zip(0..) {
+            for (phase, field) in ["Start", "Middle", "End"].into_iter().enumerate() {
+                assert_eq!(
+                    asset["Speed"]["PhaseAccelCoefArray"][source_index][field]
+                        .as_f64()
+                        .map(|value| value as f32),
+                    Some(ACCEL_PHASE_COEFFICIENTS[strategy][phase] as f32)
+                );
+            }
+        }
+        for (phase, field) in ["Start", "Middle", "End"].into_iter().enumerate() {
+            assert_eq!(
+                asset["Speed"]["PhaseAccelCoefExArray"][0][field]
+                    .as_f64()
+                    .map(|value| value as f32),
+                Some(ACCEL_PHASE_COEFFICIENTS[5][phase] as f32)
+            );
+        }
+    }
+
+    #[test]
     fn parses_and_sorts_lane_max_events() {
         let geometry = parse_course_event_params(
             99999,
@@ -1318,6 +2163,21 @@ mod tests {
     }
 
     #[test]
+    fn global_course_event_override_replaces_jp_geometry() {
+        let courses = load_course_event_params().unwrap();
+        let geometry = courses.get(&10501).unwrap();
+
+        assert_eq!(geometry.corners.len(), 2);
+        assert_eq!(geometry.corners[0].start, 300.0);
+        assert_eq!(geometry.corners[0].length, 350.0);
+        assert_eq!(geometry.corners[1].start, 650.0);
+        assert_eq!(geometry.corners[1].length, 240.0);
+        assert_eq!(geometry.straights.len(), 1);
+        assert_eq!(geometry.straights[0].start, 890.0);
+        assert_eq!(geometry.straights[0].end, 1200.0);
+    }
+
+    #[test]
     fn emits_initial_lane_master_data() {
         let connection = Connection::open_in_memory().unwrap();
         connection
@@ -1359,10 +2219,322 @@ mod tests {
         let generated = generate(&connection, "test").unwrap();
         let course = &generated.courses[0];
 
-        assert_eq!(generated.schema_version, 4);
-        assert_eq!(generated.race_parameters.schema_version, 9);
+        assert_eq!(generated.schema_version, 5);
+        assert_eq!(generated.race_parameters.schema_version, 24);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
+        assert_eq!(
+            generated.race_parameters.compete_fight.target_speed_gap_mps,
+            f64::from(0.6_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.compete_fight.target_speed_power,
+            f64::from(0.708_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.compete_fight.acceleration_power,
+            f64::from(0.59_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.acceleration.power_coefficient,
+            f64::from(0.0006_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .acceleration
+                .uphill_power_coefficient,
+            f64::from(0.0004_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.acceleration.phase_coefficients[5],
+            [
+                f64::from(1.17_f32),
+                f64::from(0.94_f32),
+                f64::from(0.956_f32),
+            ]
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .base_motion
+                .phase_target_speed_percent[2],
+            [f64::from(97.8_f32), f64::from(99.1_f32), 97.5, 97.5,]
+        );
+        assert_eq!(generated.race_parameters.temptation.lot_section_min, 2);
+        assert_eq!(generated.race_parameters.temptation.lot_section_max, 9);
+        assert_eq!(generated.race_parameters.temptation.force_end_seconds, 12.0);
+        assert_eq!(
+            generated.race_parameters.temptation.end_chance_percent,
+            55.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .additional_activation
+                .order_up_max_count,
+            3
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .additional_activation
+                .activate_any_skill_type_2_max_count,
+            3
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .additional_activation
+                .activate_any_skill_type_3_max_count,
+            2
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .ability_time_divide_distance_m,
+            1000
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .cooldown_time_divide_distance_m,
+            1000
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .order_up_add_ability_time_seconds,
+            1.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .order_up_add_ability_time_max_count,
+            3
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .duration_scaling
+                .distance_diff_top_min_multiplier,
+            0.800_000_011_920_929
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .duration_scaling
+                .remain_hp_type_1[3]
+                .multiplier,
+            2.200_000_047_683_716
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_timing
+                .duration_scaling
+                .blocked_time_type_1[3]
+                .upper_bound,
+            999.0
+        );
+        assert!(generated
+            .race_parameters
+            .skill_timing
+            .duration_scaling
+            .blocked_time_type_2
+            .is_empty());
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_value_scaling
+                .aoharu_team_total_status[0]
+                .multiplier,
+            f64::from(0.8_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_value_scaling
+                .random_ability_value_type_1[2]
+                .weight,
+            10
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill_value_scaling
+                .distance_diff_top_additive[1]
+                .additive,
+            f64::from(0.1_f32)
+        );
+        assert!(generated
+            .race_parameters
+            .skill_value_scaling
+            .blocked_time_type_2
+            .is_empty());
+        assert_eq!(
+            generated.race_parameters.near_horse.distance_threshold_m,
+            3.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .near_horse
+                .lane_distance_threshold_m,
+            1.875
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .extra_move_lane
+                .start_final_corner_rate,
+            0.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .extra_move_lane
+                .lane_normalize_course_widths,
+            0.1
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .extra_move_lane
+                .lane_coefficient_course_widths,
+            0.5
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .extra_move_lane
+                .lane_random_max_course_widths,
+            0.1
+        );
+        assert_eq!(
+            generated.race_parameters.lane_movement.speed_base,
+            f64::from(0.02_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.lane_movement.speed_add,
+            f64::from(0.3_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.lane_movement.power_coefficient,
+            f64::from(0.001_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .lane_movement
+                .outside_position_coefficient,
+            f64::from(0.05_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .lane_movement
+                .acceleration_base_coefficient,
+            1.5
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .final_in_lane_coefficient,
+            1.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .final_out_lane_coefficient,
+            1.15
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .distance_per_speed_seconds,
+            15.0
+        );
+        assert_eq!(
+            generated.race_parameters.around_horse.visible_distance_m,
+            20.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .target_cooldown_seconds,
+            1.5
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .overtake_lane
+                .order_change_count_cooldown_seconds,
+            6.0
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .around_horse
+                .block
+                .front_lane_course_widths,
+            f64::from(0.041_666_672_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .around_horse
+                .surrounded
+                .directional_lane_course_widths,
+            f64::from(0.083_33_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .around_horse
+                .congestion
+                .lane_course_widths,
+            f64::from(0.3_f32)
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .around_horse
+                .congestion
+                .horse_count_threshold,
+            3
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill
+                .infront_horse_near_distance_m,
+            2.5
+        );
+        assert_eq!(
+            generated
+                .race_parameters
+                .skill
+                .behind_horse_near_lane_course_widths,
+            f64::from(0.0556_f32)
+        );
+        assert_eq!(
+            generated.race_parameters.skill.behind_near_parameter_sets,
+            &[SimulatorNearLaneParameters {
+                distance_m: 5.0,
+                lane_course_widths: f64::from(0.15_f32),
+            }]
+        );
         assert_eq!(generated.race_parameters.deceleration.base, 1.0);
         assert_eq!(
             generated.race_parameters.deceleration.phase_rates,
