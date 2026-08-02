@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 15;
+const ALGORITHM_VERSION: u8 = 16;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -171,7 +171,7 @@ pub struct PlannerSourceItem {
     pub bonus: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct PlannerCompetitiveVariant {
     pub id: String,
     pub competition: &'static str,
@@ -478,6 +478,7 @@ pub fn generate(
     };
     let mut rewards = load_master_rewards(connection, jp_connection, timeline)?;
     rewards.extend(load_news_rewards(&archive, timeline));
+    project_missing_story_rewards(timeline, &mut rewards);
     deduplicate_rewards(&mut rewards);
     let event_benefits = build_event_benefits(connection, &rewards, &gacha_shards)?;
     let competitive_variants =
@@ -531,6 +532,85 @@ pub fn generate(
     })
 }
 
+/// Future story events are a stable recurring reward source. Global master data
+/// only has released story tables, so carry the latest confirmed Global table
+/// into unconfirmed timeline entries until exact data is available.
+fn project_missing_story_rewards(timeline: &Value, rewards: &mut Vec<PlannerReward>) {
+    let mut dates = BTreeMap::<String, String>::new();
+    let mut confirmed_event_ids = BTreeSet::<String>::new();
+    let mut missing_event_ids = Vec::new();
+    let existing_event_ids = rewards
+        .iter()
+        .filter_map(|reward| reward.event_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    for event in timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if event.get("type").and_then(Value::as_str) != Some("story_event") {
+            continue;
+        }
+        let (Some(event_id), Some(date)) = (
+            event.get("id").and_then(Value::as_str),
+            event.get("global_release_date").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        dates.insert(event_id.to_string(), date.to_string());
+        if event.get("is_confirmed").and_then(Value::as_bool) == Some(true) {
+            confirmed_event_ids.insert(event_id.to_string());
+        } else if !existing_event_ids.contains(event_id) {
+            missing_event_ids.push(event_id.to_string());
+        }
+    }
+
+    let Some(template) = rewards
+        .iter()
+        .filter(|reward| {
+            reward.event_id.as_ref().is_some_and(|event_id| {
+                confirmed_event_ids.contains(event_id)
+                    && reward.currency == "free_jewels"
+                    && reward.amount.is_some_and(|amount| amount > 0)
+            })
+        })
+        .max_by_key(|reward| {
+            reward
+                .event_id
+                .as_ref()
+                .and_then(|event_id| dates.get(event_id))
+                .cloned()
+        })
+        .cloned()
+    else {
+        return;
+    };
+
+    missing_event_ids.sort_by_key(|event_id| dates.get(event_id).cloned());
+    for event_id in missing_event_ids {
+        let Some(available_at) = dates.get(&event_id) else {
+            continue;
+        };
+        rewards.push(PlannerReward {
+            id: format!("projected-story-{event_id}-{}", template.id),
+            label: "Story event rewards (projected Global parity)".to_string(),
+            event_id: Some(event_id),
+            gacha_id: None,
+            currency: template.currency,
+            amount: template.amount,
+            available_at: available_at.clone(),
+            provenance: "global_story_reward_parity",
+            assumption: template.assumption,
+            default_enabled: true,
+            source_url: None,
+            source_items: template.source_items.clone(),
+            confidence: "projected_global_parity",
+            evidence: None,
+        });
+    }
+}
 fn planner_reward_event_ids(rewards: &[PlannerReward]) -> BTreeSet<String> {
     rewards
         .iter()
@@ -2032,8 +2112,336 @@ fn load_competitive_variants_with_jp(
             variant.label.clone(),
         ))
     });
+    project_missing_competitive_variants(timeline, &mut variants);
     Ok(variants)
 }
+
+/// The Global master only contains already-released competitions. When the JP
+/// master is unavailable to the deployment, carry the latest confirmed Global
+/// reward table forward until an exact Global or JP row replaces it. League of
+/// Heroes and Strongest Team have no released Global template yet, so their
+/// projected planner currencies use compact baselines extracted from the latest
+/// local JP master snapshot.
+fn project_missing_competitive_variants(
+    timeline: &Value,
+    variants: &mut Vec<PlannerCompetitiveVariant>,
+) {
+    const COMPETITIONS: [&str; 4] = [
+        "champions_meeting",
+        "league_of_heroes",
+        "strongest_team",
+        "legend_race",
+    ];
+
+    let mut dates = BTreeMap::<String, String>::new();
+    let mut confirmed_event_ids = BTreeSet::<String>::new();
+    let mut missing_by_competition = BTreeMap::<&str, Vec<String>>::new();
+    let existing_event_ids = variants
+        .iter()
+        .map(|variant| variant.event_id.clone())
+        .collect::<BTreeSet<_>>();
+
+    for event in timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(event_id) = event.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(event_type) = event.get("type").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(date) = event.get("global_release_date").and_then(Value::as_str) else {
+            continue;
+        };
+        dates.insert(event_id.to_string(), date.to_string());
+        if event.get("is_confirmed").and_then(Value::as_bool) == Some(true) {
+            confirmed_event_ids.insert(event_id.to_string());
+            continue;
+        }
+        if COMPETITIONS.contains(&event_type) && !existing_event_ids.contains(event_id) {
+            missing_by_competition
+                .entry(event_type)
+                .or_default()
+                .push(event_id.to_string());
+        }
+    }
+
+    for competition in COMPETITIONS {
+        let Some(missing_event_ids) = missing_by_competition.get_mut(competition) else {
+            continue;
+        };
+        missing_event_ids.sort_by_key(|event_id| dates.get(event_id).cloned());
+
+        let template_event_id = variants
+            .iter()
+            .filter(|variant| {
+                variant.competition == competition
+                    && confirmed_event_ids.contains(&variant.event_id)
+            })
+            .max_by_key(|variant| dates.get(&variant.event_id).cloned())
+            .map(|variant| variant.event_id.clone());
+
+        if let Some(template_event_id) = template_event_id {
+            let templates = variants
+                .iter()
+                .filter(|variant| {
+                    variant.competition == competition && variant.event_id == template_event_id
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+
+            for event_id in missing_event_ids {
+                for template in &templates {
+                    variants.push(PlannerCompetitiveVariant {
+                        id: format!("projected-{competition}-{event_id}-{}", template.id),
+                        competition,
+                        event_id: event_id.clone(),
+                        master_event_id: template.master_event_id,
+                        label: template.label.clone(),
+                        source_items: template.source_items.clone(),
+                        provenance: "global_reward_parity",
+                        confidence: "projected_global_parity",
+                        default_enabled: false,
+                    });
+                }
+            }
+            continue;
+        }
+
+        for event_id in missing_event_ids {
+            for template in projected_competition_templates(competition) {
+                variants.push(PlannerCompetitiveVariant {
+                    id: format!("projected-{competition}-{event_id}-{}", template.id),
+                    competition,
+                    event_id: event_id.clone(),
+                    master_event_id: template.master_event_id,
+                    label: template.label.to_string(),
+                    source_items: projected_source_items(template.items),
+                    provenance: "jp_reward_parity_template",
+                    confidence: "projected_jp_parity",
+                    default_enabled: false,
+                });
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ProjectedCompetitionTemplate {
+    id: &'static str,
+    master_event_id: i64,
+    label: &'static str,
+    items: &'static [(i64, i64, i64)],
+}
+
+fn projected_competition_templates(competition: &str) -> &'static [ProjectedCompetitionTemplate] {
+    const CHAMPIONS_MEETING: &[ProjectedCompetitionTemplate] = &[ProjectedCompetitionTemplate {
+        id: "placement-outcomes",
+        master_event_id: 0,
+        label: "Projected final placement rewards",
+        items: &[],
+    }];
+    const LEGEND_RACE: &[ProjectedCompetitionTemplate] = &[ProjectedCompetitionTemplate {
+        id: "first-clear",
+        master_event_id: 83,
+        label: "First clear (projected Global parity)",
+        items: &[(90, 43, 150)],
+    }];
+    const LEAGUE_OF_HEROES: &[ProjectedCompetitionTemplate] = &[
+        ProjectedCompetitionTemplate {
+            id: "rank-2",
+            master_event_id: 15,
+            label: "League rank type 1, rank 12 (1000-1999)",
+            items: &[(90, 43, 50)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-3",
+            master_event_id: 15,
+            label: "League rank type 1, rank 13 (2000-2999)",
+            items: &[(90, 43, 50)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-4",
+            master_event_id: 15,
+            label: "League rank type 1, rank 14 (3000-3999)",
+            items: &[(90, 43, 50)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-5",
+            master_event_id: 15,
+            label: "League rank type 2, rank 21 (4000-5499)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-6",
+            master_event_id: 15,
+            label: "League rank type 2, rank 22 (5500-6999)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-7",
+            master_event_id: 15,
+            label: "League rank type 2, rank 23 (7000-8499)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-8",
+            master_event_id: 15,
+            label: "League rank type 2, rank 24 (8500-9999)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-9",
+            master_event_id: 15,
+            label: "League rank type 3, rank 31 (10000-12499)",
+            items: &[(90, 43, 300), (40, 111, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-10",
+            master_event_id: 15,
+            label: "League rank type 3, rank 32 (12500-14999)",
+            items: &[(90, 43, 300), (40, 41, 1), (164, 150, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-11",
+            master_event_id: 15,
+            label: "League rank type 3, rank 33 (15000-17499)",
+            items: &[(90, 43, 300), (40, 111, 1), (164, 150, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-12",
+            master_event_id: 15,
+            label: "League rank type 3, rank 34 (17500-19999)",
+            items: &[(90, 43, 300), (40, 41, 1), (164, 149, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-13",
+            master_event_id: 15,
+            label: "League rank type 4, rank 41 (20000-22999)",
+            items: &[(90, 43, 500), (164, 149, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-14",
+            master_event_id: 15,
+            label: "League rank type 4, rank 42 (23000-25999)",
+            items: &[(90, 43, 500)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-15",
+            master_event_id: 15,
+            label: "League rank type 4, rank 43 (26000-29999)",
+            items: &[(90, 43, 500)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-16",
+            master_event_id: 15,
+            label: "League rank type 4, rank 44 (30000+)",
+            items: &[(90, 43, 500)],
+        },
+    ];
+    const STRONGEST_TEAM: &[ProjectedCompetitionTemplate] = &[
+        ProjectedCompetitionTemplate {
+            id: "rank-5",
+            master_event_id: 1008,
+            label: "Team rank 5 (130000-139999 evaluation points)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-9",
+            master_event_id: 1008,
+            label: "Team rank 9 (170000-174999 evaluation points)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-13",
+            master_event_id: 1008,
+            label: "Team rank 13 (190000-194999 evaluation points)",
+            items: &[(90, 43, 100)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-17",
+            master_event_id: 1008,
+            label: "Team rank 17 (210000-214999 evaluation points)",
+            items: &[(90, 43, 200)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-18",
+            master_event_id: 1008,
+            label: "Team rank 18 (215000-219999 evaluation points)",
+            items: &[(164, 150, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-19",
+            master_event_id: 1008,
+            label: "Team rank 19 (220000-224999 evaluation points)",
+            items: &[(40, 41, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-21",
+            master_event_id: 1008,
+            label: "Team rank 21 (230000-234999 evaluation points)",
+            items: &[(40, 111, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-25",
+            master_event_id: 1008,
+            label: "Team rank 25 (250000-254999 evaluation points)",
+            items: &[(90, 43, 300)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-27",
+            master_event_id: 1008,
+            label: "Team rank 27 (260000-264999 evaluation points)",
+            items: &[(90, 43, 300)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-28",
+            master_event_id: 1008,
+            label: "Team rank 28 (265000-269999 evaluation points)",
+            items: &[(164, 149, 1)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "rank-30",
+            master_event_id: 1008,
+            label: "Team rank 30 (275000+ evaluation points)",
+            items: &[(90, 43, 500)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "missions",
+            master_event_id: 1008,
+            label: "Event missions (full completion)",
+            items: &[(40, 41, 1), (40, 111, 1), (90, 43, 500), (164, 150, 1)],
+        },
+    ];
+
+    match competition {
+        "champions_meeting" => CHAMPIONS_MEETING,
+        "league_of_heroes" => LEAGUE_OF_HEROES,
+        "strongest_team" => STRONGEST_TEAM,
+        "legend_race" => LEGEND_RACE,
+        _ => &[],
+    }
+}
+
+fn projected_source_items(items: &[(i64, i64, i64)]) -> Vec<PlannerSourceItem> {
+    items
+        .iter()
+        .map(|&(item_category, item_id, amount)| PlannerSourceItem {
+            item_category,
+            item_id,
+            amount,
+            mission_count: None,
+            odds: None,
+            order_min: None,
+            order_max: None,
+            bonus: None,
+        })
+        .collect()
+}
+
 fn load_competitive_variants_for(
     connection: &Connection,
     timeline: &Value,
@@ -5365,5 +5773,194 @@ mod tests {
         assert_eq!(variants[0].source_items[0].amount, 50);
         assert_eq!(variants[0].source_items[0].odds, Some(1_000_000));
         assert!(!variants[0].default_enabled);
+    }
+    #[test]
+    fn projects_latest_confirmed_competition_rewards_to_missing_future_events() {
+        let timeline = json!({"events": [
+            {"id":"legend-old","type":"legend_race","global_release_date":"2025-01-01T00:00:00Z","is_confirmed":true},
+            {"id":"legend-latest","type":"legend_race","global_release_date":"2025-02-01T00:00:00Z","is_confirmed":true},
+            {"id":"champions-past","type":"champions_meeting","global_release_date":"2025-01-01T00:00:00Z","is_confirmed":true},
+            {"id":"heroes-past","type":"league_of_heroes","global_release_date":"2025-01-01T00:00:00Z","is_confirmed":true},
+            {"id":"team-past","type":"strongest_team","global_release_date":"2025-01-01T00:00:00Z","is_confirmed":true},
+            {"id":"legend-future","type":"legend_race","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":false},
+            {"id":"champions-future","type":"champions_meeting","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":false},
+            {"id":"heroes-future","type":"league_of_heroes","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":false},
+            {"id":"team-future","type":"strongest_team","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":false},
+            {"id":"legend-exact","type":"legend_race","global_release_date":"2026-02-01T00:00:00Z","is_confirmed":false}
+        ]});
+        let variant =
+            |id: &str, competition: &'static str, event_id: &str, master_event_id, amount| {
+                super::PlannerCompetitiveVariant {
+                    id: id.to_string(),
+                    competition,
+                    event_id: event_id.to_string(),
+                    master_event_id,
+                    label: "Published reward table".to_string(),
+                    source_items: vec![PlannerSourceItem {
+                        item_category: 90,
+                        item_id: 43,
+                        amount,
+                        mission_count: None,
+                        odds: None,
+                        order_min: None,
+                        order_max: None,
+                        bonus: None,
+                    }],
+                    provenance: "global_master",
+                    confidence: "exact_variant",
+                    default_enabled: false,
+                }
+            };
+        let mut variants = vec![
+            variant("legend-old", "legend_race", "legend-old", 1, 100),
+            variant("legend-latest", "legend_race", "legend-latest", 2, 150),
+            variant("champions", "champions_meeting", "champions-past", 3, 200),
+            variant("heroes", "league_of_heroes", "heroes-past", 4, 300),
+            variant("team", "strongest_team", "team-past", 5, 400),
+            variant("legend-exact", "legend_race", "legend-exact", 6, 500),
+        ];
+
+        super::project_missing_competitive_variants(&timeline, &mut variants);
+
+        assert_eq!(variants.len(), 10);
+        for event_id in [
+            "legend-future",
+            "champions-future",
+            "heroes-future",
+            "team-future",
+        ] {
+            let projected = variants
+                .iter()
+                .find(|variant| variant.event_id == event_id)
+                .unwrap();
+            assert_eq!(projected.provenance, "global_reward_parity");
+            assert_eq!(projected.confidence, "projected_global_parity");
+        }
+        let legend = variants
+            .iter()
+            .find(|variant| variant.event_id == "legend-future")
+            .unwrap();
+        assert_eq!(legend.master_event_id, 2);
+        assert_eq!(legend.source_items[0].amount, 150);
+        assert_eq!(
+            variants
+                .iter()
+                .filter(|variant| variant.event_id == "legend-exact")
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn projects_builtin_competition_rewards_without_confirmed_global_templates() {
+        let timeline = json!({"events": [
+            {"id":"champions-future","type":"champions_meeting","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":false},
+            {"id":"heroes-future","type":"league_of_heroes","global_release_date":"2026-01-02T00:00:00Z","is_confirmed":false},
+            {"id":"team-future","type":"strongest_team","global_release_date":"2026-01-03T00:00:00Z","is_confirmed":false},
+            {"id":"legend-future","type":"legend_race","global_release_date":"2026-01-04T00:00:00Z","is_confirmed":false}
+        ]});
+        let mut variants = Vec::new();
+
+        super::project_missing_competitive_variants(&timeline, &mut variants);
+
+        for (event_id, competition) in [
+            ("champions-future", "champions_meeting"),
+            ("heroes-future", "league_of_heroes"),
+            ("team-future", "strongest_team"),
+            ("legend-future", "legend_race"),
+        ] {
+            let projected = variants
+                .iter()
+                .filter(|variant| variant.event_id == event_id)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                projected.len(),
+                super::projected_competition_templates(competition).len()
+            );
+            assert!(projected.iter().all(|variant| {
+                variant.provenance == "jp_reward_parity_template"
+                    && variant.confidence == "projected_jp_parity"
+            }));
+        }
+        assert!(variants.iter().any(|variant| {
+            variant.event_id == "heroes-future"
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 90 && item.item_id == 43 && item.amount == 500
+                })
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 164 && item.item_id == 149 && item.amount == 1
+                })
+        }));
+        assert!(variants.iter().any(|variant| {
+            variant.event_id == "team-future"
+                && variant.label == "Event missions (full completion)"
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 90 && item.item_id == 43 && item.amount == 500
+                })
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 164 && item.item_id == 150 && item.amount == 1
+                })
+        }));
+        assert!(variants.iter().any(|variant| {
+            variant.event_id == "legend-future"
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 90 && item.item_id == 43 && item.amount == 150
+                })
+        }));
+    }
+    #[test]
+    fn projects_latest_confirmed_story_reward_to_missing_future_events() {
+        let timeline = json!({"events": [
+            {"id":"story-past","type":"story_event","global_release_date":"2026-01-01T00:00:00Z","is_confirmed":true},
+            {"id":"story-future","type":"story_event","global_release_date":"2026-02-01T00:00:00Z","is_confirmed":false},
+            {"id":"story-exact","type":"story_event","global_release_date":"2026-03-01T00:00:00Z","is_confirmed":false}
+        ]});
+        let reward = |id: &str, event_id: &str, amount| PlannerReward {
+            id: id.to_string(),
+            label: "Story event rewards".to_string(),
+            event_id: Some(event_id.to_string()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(amount),
+            available_at: "2026-01-01T00:00:00Z".to_string(),
+            provenance: "global_master",
+            assumption: "full_completion",
+            default_enabled: true,
+            source_url: None,
+            source_items: vec![PlannerSourceItem {
+                item_category: 90,
+                item_id: 43,
+                amount,
+                mission_count: None,
+                odds: None,
+                order_min: None,
+                order_max: None,
+                bonus: None,
+            }],
+            confidence: "exact_source",
+            evidence: None,
+        };
+        let mut rewards = vec![
+            reward("story-past-rewards", "story-past", 2010),
+            reward("story-exact-rewards", "story-exact", 999),
+        ];
+
+        super::project_missing_story_rewards(&timeline, &mut rewards);
+
+        assert_eq!(rewards.len(), 3);
+        let projected = rewards
+            .iter()
+            .find(|reward| reward.event_id.as_deref() == Some("story-future"))
+            .unwrap();
+        assert_eq!(projected.amount, Some(2010));
+        assert_eq!(projected.available_at, "2026-02-01T00:00:00Z");
+        assert_eq!(projected.provenance, "global_story_reward_parity");
+        assert_eq!(projected.confidence, "projected_global_parity");
+        assert_eq!(
+            rewards
+                .iter()
+                .filter(|reward| reward.event_id.as_deref() == Some("story-exact"))
+                .count(),
+            1
+        );
     }
 }
