@@ -1,9 +1,9 @@
-name: Sync Umapyoi JP Events
+name: Sync News Archives
 
 on:
   schedule:
-    # 13:00 JST (04:00 UTC), once per day.
-    - cron: '0 4 * * *'
+    # Every six hours so short-lived official social posts are captured.
+    - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
       full:
@@ -16,7 +16,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-umapyoi-jp-events
+  group: sync-news-archives
   cancel-in-progress: false
 
 jobs:
@@ -39,15 +39,28 @@ jobs:
           fi
           cargo run "${args[@]}"
 
-      - name: Commit updated archive
+      - name: Archive official Global news
+        shell: bash
+        run: cargo run --locked -- sync-global-news
+
+      - name: Archive official Global social posts
+        shell: bash
+        run: cargo run --locked -- sync-global-social
+
+      - name: Commit updated archives
         shell: bash
         run: |
-          if git diff --quiet -- src/jp_data/umapyoi_archive.json; then
-            echo "Umapyoi archive is already current."
+          archive_paths=(
+            src/jp_data/umapyoi_archive.json
+            src/global_data/official_news_archive.json
+            src/global_data/official_social_archive.json
+          )
+          if git diff --quiet -- "${archive_paths[@]}"; then
+            echo "News archives are already current."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/jp_data/umapyoi_archive.json
-          git commit -m "chore: sync umapyoi JP events"
+          git add "${archive_paths[@]}"
+          git commit -m "chore: sync news archives"
           git push

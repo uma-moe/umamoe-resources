@@ -11,6 +11,8 @@ mod auth_common;
 mod browser_proof;
 mod cache;
 mod generators;
+mod global_news;
+mod global_social;
 #[path = "../master_fetch.rs"]
 mod master_fetch;
 mod pipeline;
@@ -72,6 +74,30 @@ enum Command {
         /// Re-normalize the saved raw responses without making network requests.
         #[arg(long)]
         offline: bool,
+    },
+    /// Archive official English news posts for Global planner rewards.
+    SyncGlobalNews {
+        #[arg(
+            long,
+            default_value = "https://umamusume.com/api/ajax/pr_info_index?format=json"
+        )]
+        endpoint: String,
+        #[arg(long, default_value = "src/global_data/official_news_archive.json")]
+        out: PathBuf,
+    },
+    /// Archive official English X posts for Global planner rewards.
+    SyncGlobalSocial {
+        #[arg(long, default_value = "https://x.com/umamusume_eng")]
+        profile_url: String,
+        #[arg(
+            long,
+            default_value = "https://syndication.twitter.com/srv/timeline-profile/screen-name/umamusume_eng"
+        )]
+        syndication_url: String,
+        #[arg(long, default_value = "https://publish.twitter.com/oembed")]
+        oembed_endpoint: String,
+        #[arg(long, default_value = "src/global_data/official_social_archive.json")]
+        out: PathBuf,
     },
 }
 
@@ -194,6 +220,39 @@ async fn main() -> Result<()> {
             );
             for error in summary.source_errors {
                 warn!(error, "umapyoi source could not be fully synchronized");
+            }
+        }
+        Command::SyncGlobalNews { endpoint, out } => {
+            let summary = global_news::sync(&endpoint, &out).await?;
+            info!(
+                posts = summary.posts,
+                new_posts = summary.new_posts,
+                updated_posts = summary.updated_posts,
+                changed = summary.changed,
+                "official Global news archive synchronized"
+            );
+        }
+        Command::SyncGlobalSocial {
+            profile_url,
+            syndication_url,
+            oembed_endpoint,
+            out,
+        } => {
+            let summary =
+                global_social::sync(&profile_url, &syndication_url, &oembed_endpoint, &out).await?;
+            info!(
+                posts = summary.posts,
+                discovered_posts = summary.discovered_posts,
+                new_posts = summary.new_posts,
+                updated_posts = summary.updated_posts,
+                changed = summary.changed,
+                "official Global social archive synchronized"
+            );
+            for error in summary.source_errors {
+                warn!(
+                    error,
+                    "official Global social source could not be fully synchronized"
+                );
             }
         }
     }
