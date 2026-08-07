@@ -1,13 +1,13 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
 use anyhow::{Context, Result};
-use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 14;
+const ALGORITHM_VERSION: u8 = 17;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -21,6 +21,8 @@ const ITEM_NAME_TEXT_CATEGORY: i64 = 23;
 const DEFAULT_JEWEL_COST_PER_PULL: i64 = 150;
 const DEFAULT_SPARK_PULLS: i64 = 200;
 const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
+const GLOBAL_NEWS_ARCHIVE: &[u8] = include_bytes!("../global_data/official_news_archive.json");
+const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_social_archive.json");
 const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
 
@@ -77,10 +79,44 @@ pub struct PlannerIncomeRule {
 pub struct PlannerRewards {
     pub version: u8,
     pub rewards: Vec<PlannerReward>,
+    pub global_reward_comparison: PlannerGlobalRewardComparison,
     pub event_benefits: Vec<PlannerEventBenefit>,
     pub free_pull_campaigns: Vec<PlannerFreePullCampaign>,
     pub competitive_variants: Vec<PlannerCompetitiveVariant>,
     pub news_details: Vec<PlannerNewsDetail>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlannerGlobalRewardComparison {
+    pub news_match_method: &'static str,
+    pub observation_start: String,
+    pub observation_end: String,
+    pub observation_days: i64,
+    pub observed_months: f64,
+    pub matched_news_global_carats: i64,
+    pub matched_news_jp_carats: i64,
+    pub matched_news_extra_carats: i64,
+    pub en_only_news_carats: i64,
+    pub social_carats: i64,
+    pub social_reward_posts: usize,
+    pub social_news_duplicate_reward_items_removed: usize,
+    pub social_news_duplicate_carats_removed: i64,
+    pub speculative_observed_carats: i64,
+    pub speculative_monthly_carats: i64,
+    pub matched_news: Vec<PlannerGlobalNewsComparison>,
+    pub en_only_news: Vec<PlannerGlobalNewsComparison>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlannerGlobalNewsComparison {
+    pub announce_id: i64,
+    pub title: String,
+    pub global_carats: i64,
+    pub jp_carats: i64,
+    pub extra_carats: i64,
+    pub global_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub jp_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -368,10 +404,50 @@ struct ArchiveNews {
     raw: Value,
 }
 
+#[derive(Debug, Deserialize)]
+struct GlobalNewsArchive {
+    #[serde(default)]
+    posts: Vec<GlobalNewsPost>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalNewsPost {
+    announce_id: i64,
+    page_url: String,
+    #[serde(default)]
+    snapshots: Vec<GlobalNewsSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalNewsSnapshot {
+    raw: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalSocialArchive {
+    #[serde(default)]
+    posts: Vec<GlobalSocialPost>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalSocialPost {
+    status_id: String,
+    status_url: String,
+    #[serde(default)]
+    snapshots: Vec<GlobalSocialSnapshot>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GlobalSocialSnapshot {
+    raw: Value,
+}
+
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
     digest.update([ALGORITHM_VERSION]);
     digest.update(UMAPYOI_ARCHIVE);
+    digest.update(GLOBAL_NEWS_ARCHIVE);
+    digest.update(GLOBAL_SOCIAL_ARCHIVE);
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
     hex::encode(digest.finalize())
@@ -386,6 +462,8 @@ pub fn generate(
     timeline: &Value,
 ) -> Result<GeneratedPlanner> {
     let archive = load_archive()?;
+    let global_news_archive = load_global_news_archive()?;
+    let global_social_archive = load_global_social_archive()?;
     let timeline_links = timeline_gacha_links(timeline);
     let mut gachas = load_gachas_with_jp(connection, jp_connection, &timeline_links)?;
     apply_free_pulls(connection, &mut gachas)?;
@@ -473,8 +551,23 @@ pub fn generate(
         version: ALGORITHM_VERSION,
         rules: income_rules,
     };
+    let mut global_rewards = load_global_news_rewards(&global_news_archive, &archive, timeline);
+    global_rewards.extend(load_global_social_rewards(&global_social_archive));
+    let global_social_deduplication =
+        remove_global_social_rewards_covered_by_news(&mut global_rewards);
+    let jp_news_rewards = load_news_rewards(&archive, timeline);
+    let global_reward_comparison = build_global_reward_comparison(
+        &global_rewards,
+        &jp_news_rewards,
+        &archive,
+        global_social_deduplication,
+    );
+
     let mut rewards = load_master_rewards(connection, jp_connection, timeline)?;
-    rewards.extend(load_news_rewards(&archive, timeline));
+    rewards.extend(global_rewards);
+    rewards.extend(jp_news_rewards);
+    remove_global_news_login_bonuses_covered_by_master(&mut rewards);
+    prefer_global_news_over_jp_news(&mut rewards);
     deduplicate_rewards(&mut rewards);
     let event_benefits = build_event_benefits(connection, &rewards, &gacha_shards)?;
     let competitive_variants =
@@ -511,6 +604,7 @@ pub fn generate(
         rewards: PlannerRewards {
             version: ALGORITHM_VERSION,
             rewards,
+            global_reward_comparison,
             event_benefits,
             free_pull_campaigns,
             competitive_variants,
@@ -1040,6 +1134,16 @@ fn apply_free_pulls(
 
 fn load_archive() -> Result<Archive> {
     serde_json::from_slice(UMAPYOI_ARCHIVE).context("failed to parse Umapyoi archive")
+}
+
+fn load_global_news_archive() -> Result<GlobalNewsArchive> {
+    serde_json::from_slice(GLOBAL_NEWS_ARCHIVE)
+        .context("failed to parse official Global news archive")
+}
+
+fn load_global_social_archive() -> Result<GlobalSocialArchive> {
+    serde_json::from_slice(GLOBAL_SOCIAL_ARCHIVE)
+        .context("failed to parse official Global social archive")
 }
 
 fn apply_news_free_pulls(
@@ -2884,6 +2988,699 @@ fn load_login_bonus_rewards(
     Ok(())
 }
 
+fn load_global_news_rewards(
+    archive: &GlobalNewsArchive,
+    jp_archive: &Archive,
+    timeline: &Value,
+) -> Vec<PlannerReward> {
+    let mut rewards = Vec::new();
+    for post in &archive.posts {
+        let Some(raw) = post.snapshots.last().map(|snapshot| &snapshot.raw) else {
+            continue;
+        };
+        let Some(posted_at) = raw
+            .get("post_at")
+            .and_then(Value::as_str)
+            .and_then(normalize_global_news_timestamp)
+        else {
+            continue;
+        };
+        let title = raw
+            .get("title")
+            .and_then(Value::as_str)
+            .unwrap_or("Official Global reward");
+        let message = raw.get("message").and_then(Value::as_str).unwrap_or("");
+        let text = html_to_text(message);
+        let event_id = jp_archive
+            .news
+            .iter()
+            .find(|candidate| candidate.post_id == post.announce_id)
+            .and_then(|candidate| {
+                let candidate_title = candidate.title.as_deref().unwrap_or(title);
+                match_news_event(candidate, candidate_title, timeline)
+            })
+            .map(|link| link.event_id);
+
+        if let Some((amount, evidence)) = extract_global_correction_total(&text) {
+            rewards.push(global_news_reward(
+                format!("global-news-{}-corrected-gift", post.announce_id),
+                title,
+                event_id.clone(),
+                amount,
+                posted_at.clone(),
+                "official_global_carat_gift",
+                &post.page_url,
+                evidence,
+            ));
+            continue;
+        }
+
+        if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
+            rewards.push(global_news_reward(
+                format!("global-news-{}-login-bonus", post.announce_id),
+                title,
+                event_id.clone(),
+                total,
+                planner_date_after_days(&posted_at, (total / daily).saturating_sub(1)),
+                "all_login_days_global",
+                &post.page_url,
+                format!("{daily} Carats per login day; {evidence}"),
+            ));
+        }
+
+        for (occurrence, (amount, evidence)) in
+            extract_global_direct_gifts(&text).into_iter().enumerate()
+        {
+            rewards.push(global_news_reward(
+                format!(
+                    "global-news-{}-gift-{amount}-{occurrence}",
+                    post.announce_id
+                ),
+                title,
+                event_id.clone(),
+                amount,
+                posted_at.clone(),
+                "official_global_carat_gift",
+                &post.page_url,
+                evidence,
+            ));
+        }
+    }
+    rewards
+}
+
+fn load_global_social_rewards(archive: &GlobalSocialArchive) -> Vec<PlannerReward> {
+    let mut rewards = Vec::new();
+    for post in &archive.posts {
+        let Some(raw) = post.snapshots.last().map(|snapshot| &snapshot.raw) else {
+            continue;
+        };
+        let Some(posted_at) = raw
+            .get("created_at")
+            .and_then(Value::as_str)
+            .and_then(normalize_global_news_timestamp)
+        else {
+            continue;
+        };
+        let text = raw.get("text").and_then(Value::as_str).unwrap_or("");
+        if !is_confirmed_social_distribution(text) {
+            continue;
+        }
+        let label = social_reward_label(text);
+        for (occurrence, (amount, evidence)) in
+            extract_global_direct_gifts(text).into_iter().enumerate()
+        {
+            rewards.push(global_social_reward(
+                format!(
+                    "global-social-{}-gift-{amount}-{occurrence}",
+                    post.status_id
+                ),
+                &label,
+                amount,
+                posted_at.clone(),
+                &post.status_url,
+                evidence,
+            ));
+        }
+    }
+    rewards
+}
+
+fn is_confirmed_social_distribution(text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if lower.contains("chance to win")
+        || lower.contains("follow & repost")
+        || lower.contains("follow and repost")
+        || lower.contains("winner")
+    {
+        return false;
+    }
+    [
+        "we've just sent out",
+        "we have gifted",
+        "we've gifted",
+        "we're giving everyone",
+        "we are giving everyone",
+        "we've sent everyone",
+        "we have sent everyone",
+        "we're sending a gift",
+        "we are sending a gift",
+        "sent a gift to all trainers",
+        "check your presents to claim it now",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+}
+
+fn social_reward_label(text: &str) -> String {
+    let first_line = text.lines().next().unwrap_or("Official Global social gift");
+    if let Some(start) = first_line.find('"') {
+        if let Some(end) = first_line[start + 1..].find('"') {
+            let quoted = first_line[start + 1..start + 1 + end].trim();
+            if !quoted.is_empty() {
+                return quoted.to_string();
+            }
+        }
+    }
+    first_line.chars().take(140).collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn global_news_reward(
+    id: String,
+    title: &str,
+    event_id: Option<String>,
+    amount: i64,
+    available_at: String,
+    assumption: &'static str,
+    source_url: &str,
+    evidence: String,
+) -> PlannerReward {
+    PlannerReward {
+        id,
+        label: title.to_string(),
+        event_id,
+        gacha_id: None,
+        currency: "free_jewels",
+        amount: Some(amount),
+        available_at,
+        provenance: "global_news",
+        assumption,
+        default_enabled: true,
+        source_url: Some(source_url.to_string()),
+        source_items: Vec::new(),
+        confidence: "exact_source_text",
+        evidence: Some(evidence),
+    }
+}
+
+fn global_social_reward(
+    id: String,
+    title: &str,
+    amount: i64,
+    available_at: String,
+    source_url: &str,
+    evidence: String,
+) -> PlannerReward {
+    PlannerReward {
+        id,
+        label: title.to_string(),
+        event_id: None,
+        gacha_id: None,
+        currency: "free_jewels",
+        amount: Some(amount),
+        available_at,
+        provenance: "global_social",
+        assumption: "official_global_carat_gift",
+        default_enabled: true,
+        source_url: Some(source_url.to_string()),
+        source_items: Vec::new(),
+        confidence: "exact_source_text",
+        evidence: Some(evidence),
+    }
+}
+
+fn normalize_global_news_timestamp(value: &str) -> Option<String> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|date| date.with_timezone(&Utc).to_rfc3339())
+        .ok()
+        .or_else(|| {
+            NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S")
+                .ok()
+                .map(|date| date.and_utc().to_rfc3339())
+        })
+}
+
+fn extract_global_correction_total(text: &str) -> Option<(i64, String)> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("correct amount")
+        || !lower.contains("actual amount")
+        || !(lower.contains("incorrect") || lower.contains("difference"))
+    {
+        return None;
+    }
+    let lines = text.lines().collect::<Vec<_>>();
+    for (index, line) in lines.iter().enumerate() {
+        if !line.to_ascii_lowercase().contains("correct amount") {
+            continue;
+        }
+        for candidate in lines.iter().skip(index + 1).take(4) {
+            let amounts = carat_amounts_from_line(candidate);
+            if let Some(amount) = amounts
+                .into_iter()
+                .find(|amount| (1..=100_000).contains(amount))
+            {
+                return Some((amount, candidate.chars().take(320).collect()));
+            }
+        }
+    }
+    None
+}
+
+fn extract_global_login_bonus_total(text: &str) -> Option<(i64, i64, String)> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("login bonus") || !lower.contains("carat") {
+        return None;
+    }
+    text.lines().find_map(|line| {
+        let lower_line = line.to_ascii_lowercase();
+        if !lower_line.contains("carat")
+            || !(lower_line.contains("each day") || lower_line.contains("per day"))
+            || !lower_line.contains("up to")
+        {
+            return None;
+        }
+        let up_to = lower_line.find("up to")?;
+        let daily = carat_amounts_from_line(&lower_line[..up_to])
+            .into_iter()
+            .find(|amount| (1..=10_000).contains(amount))?;
+        let total = amount_after_phrase(&lower_line, "up to")?;
+        (total >= daily && total <= daily.saturating_mul(60) && total % daily == 0)
+            .then(|| (daily, total, line.chars().take(320).collect()))
+    })
+}
+
+fn extract_global_direct_gifts(text: &str) -> Vec<(i64, String)> {
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    let mut amounts = BTreeMap::<i64, String>::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        if !is_global_gift_heading(line) {
+            continue;
+        }
+        for candidate in lines.iter().skip(index + 1).take(10) {
+            if is_global_gift_section_end(candidate) {
+                break;
+            }
+            collect_global_gift_line(candidate, true, &mut amounts);
+        }
+    }
+
+    for line in &lines {
+        let lower = line.to_ascii_lowercase();
+        let direct_sentence = lower.contains("gifted eligible trainers with")
+            || lower.contains("we've sent everyone")
+            || lower.contains("we have sent everyone")
+            || lower.contains("we're sending a gift")
+            || lower.contains("we are sending a gift")
+            || ((lower.contains("we've sent") || lower.contains("we have sent"))
+                && lower.contains("gift")
+                && lower.contains("trainer"));
+        if direct_sentence {
+            collect_global_gift_line(line, true, &mut amounts);
+        }
+    }
+
+    amounts.into_iter().collect()
+}
+
+fn collect_global_gift_line(
+    line: &str,
+    explicit_section: bool,
+    amounts: &mut BTreeMap<i64, String>,
+) {
+    let lower = line.to_ascii_lowercase();
+    if !lower.contains("carat")
+        || lower.contains("up to")
+        || lower.contains("winner")
+        || lower.contains("paid carat")
+        || has_sales_context(&lower)
+        || has_cost_context(&lower)
+        || (!explicit_section && !(lower.contains("gift") || lower.contains("gifted")))
+    {
+        return;
+    }
+    for amount in carat_amounts_from_line(line) {
+        if (1..=100_000).contains(&amount) {
+            amounts
+                .entry(amount)
+                .or_insert_with(|| line.chars().take(320).collect());
+        }
+    }
+}
+
+fn carat_amounts_from_line(line: &str) -> Vec<i64> {
+    let lower = line.to_ascii_lowercase();
+    let mut amounts = amounts_immediately_before_word(&lower, "carat");
+    let mut offset = 0;
+    while let Some(relative) = lower[offset..].find("carat") {
+        let index = offset + relative;
+        if let Some(amount) = amount_after_phrase(&lower[index..], "carat") {
+            amounts.push(amount);
+        }
+        offset = index + "carat".len();
+    }
+    amounts.sort_unstable();
+    amounts.dedup();
+    amounts
+}
+
+fn is_global_gift_heading(value: &str) -> bool {
+    let lower = normalized_global_heading(value);
+    lower == "gift contents"
+        || lower == "contents of the gift"
+        || lower == "present contents"
+        || lower == "contents"
+}
+
+fn is_global_gift_section_end(value: &str) -> bool {
+    let lower = normalized_global_heading(value);
+    [
+        "eligible trainers",
+        "how to receive",
+        "gift expiry",
+        "availability period",
+        "important information",
+        "sale period",
+        "price",
+    ]
+    .iter()
+    .any(|heading| lower.starts_with(heading))
+}
+
+fn normalized_global_heading(value: &str) -> String {
+    let value = value
+        .find(|character: char| character.is_ascii_alphanumeric())
+        .map(|index| &value[index..])
+        .unwrap_or("");
+    value
+        .trim()
+        .trim_end_matches(|character: char| character.is_ascii_whitespace() || character == ':')
+        .to_ascii_lowercase()
+}
+
+fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerReward>) {
+    let master_logins = rewards
+        .iter()
+        .enumerate()
+        .filter(|(_, reward)| {
+            reward.provenance == "global_master"
+                && reward.label.to_ascii_lowercase().contains("login bonus")
+                && reward.amount.is_some_and(|amount| amount > 0)
+        })
+        .filter_map(|(index, reward)| {
+            Some((
+                index,
+                reward.amount?,
+                planner_timestamp(&reward.available_at)?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut used_master_rows = BTreeSet::new();
+    let mut suppressed_ids = BTreeSet::new();
+    for reward in rewards.iter().filter(|reward| {
+        reward.provenance == "global_news" && reward.assumption == "all_login_days_global"
+    }) {
+        let (Some(amount), Some(timestamp)) =
+            (reward.amount, planner_timestamp(&reward.available_at))
+        else {
+            continue;
+        };
+        if let Some((master_index, _, _)) = master_logins
+            .iter()
+            .filter(|(index, master_amount, master_timestamp)| {
+                !used_master_rows.contains(index)
+                    && *master_amount == amount
+                    && (timestamp - *master_timestamp).abs() <= 45 * 86_400
+            })
+            .min_by_key(|(_, _, master_timestamp)| (timestamp - *master_timestamp).abs())
+        {
+            used_master_rows.insert(*master_index);
+            suppressed_ids.insert(reward.id.clone());
+        }
+    }
+    rewards.retain(|reward| !suppressed_ids.contains(&reward.id));
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct GlobalSocialDeduplication {
+    reward_items_removed: usize,
+    carats_removed: i64,
+}
+
+fn remove_global_social_rewards_covered_by_news(
+    rewards: &mut Vec<PlannerReward>,
+) -> GlobalSocialDeduplication {
+    let news_claims = rewards
+        .iter()
+        .filter(|reward| reward.provenance == "global_news")
+        .filter_map(|reward| {
+            Some((
+                reward.currency,
+                reward.amount?,
+                planner_timestamp(&reward.available_at)?,
+                reward.available_at.get(..10)?.to_string(),
+                reward.label.to_ascii_lowercase(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let mut result = GlobalSocialDeduplication::default();
+    rewards.retain(|reward| {
+        if reward.provenance != "global_social" {
+            return true;
+        }
+        let (Some(amount), Some(timestamp), Some(day)) = (
+            reward.amount,
+            planner_timestamp(&reward.available_at),
+            reward.available_at.get(..10),
+        ) else {
+            return true;
+        };
+        let label = reward.label.to_ascii_lowercase();
+        let covered_by_news = news_claims.iter().any(
+            |(news_currency, news_amount, news_timestamp, news_day, news_label)| {
+                *news_currency == reward.currency
+                    && *news_amount == amount
+                    && (news_day == day
+                        || ((news_timestamp - timestamp).abs() <= 2 * 86_400
+                            && (news_label.contains(&label) || label.contains(news_label))))
+            },
+        );
+        if covered_by_news {
+            result.reward_items_removed += 1;
+            result.carats_removed += amount.max(0);
+        }
+        !covered_by_news
+    });
+    result
+}
+
+fn build_global_reward_comparison(
+    global_rewards: &[PlannerReward],
+    jp_news_rewards: &[PlannerReward],
+    jp_archive: &Archive,
+    social_deduplication: GlobalSocialDeduplication,
+) -> PlannerGlobalRewardComparison {
+    let mut global_by_post = BTreeMap::<i64, Vec<&PlannerReward>>::new();
+    for reward in global_rewards.iter().filter(|reward| {
+        reward.provenance == "global_news"
+            && reward.currency == "free_jewels"
+            && reward.amount.is_some_and(|amount| amount > 0)
+    }) {
+        if let Some(post_id) = reward_post_id(&reward.id, "global-news-") {
+            global_by_post.entry(post_id).or_default().push(reward);
+        }
+    }
+
+    let mut jp_by_post = BTreeMap::<i64, i64>::new();
+    for reward in jp_news_rewards.iter().filter(|reward| {
+        reward.provenance == "jp_news"
+            && reward.currency == "free_jewels"
+            && reward.amount.is_some_and(|amount| amount > 0)
+    }) {
+        if let (Some(post_id), Some(amount)) = (reward_post_id(&reward.id, "news-"), reward.amount)
+        {
+            *jp_by_post.entry(post_id).or_default() += amount;
+        }
+    }
+    let jp_posts = jp_archive
+        .news
+        .iter()
+        .map(|post| (post.post_id, post))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut matched_news = Vec::new();
+    let mut en_only_news = Vec::new();
+    for (announce_id, rewards) in global_by_post {
+        let global_carats = rewards.iter().filter_map(|reward| reward.amount).sum();
+        let first = rewards[0];
+        let title = first.label.clone();
+        let global_url = first.source_url.clone().unwrap_or_default();
+        if let Some(jp_post) = jp_posts.get(&announce_id) {
+            let jp_carats = jp_by_post.get(&announce_id).copied().unwrap_or_default();
+            matched_news.push(PlannerGlobalNewsComparison {
+                announce_id,
+                title,
+                global_carats,
+                jp_carats,
+                extra_carats: global_carats - jp_carats,
+                global_url,
+                jp_url: Some(jp_post.page_url.clone()),
+            });
+        } else {
+            en_only_news.push(PlannerGlobalNewsComparison {
+                announce_id,
+                title,
+                global_carats,
+                jp_carats: 0,
+                extra_carats: global_carats,
+                global_url,
+                jp_url: None,
+            });
+        }
+    }
+
+    let matched_news_global_carats = matched_news
+        .iter()
+        .map(|comparison| comparison.global_carats)
+        .sum::<i64>();
+    let matched_news_jp_carats = matched_news
+        .iter()
+        .map(|comparison| comparison.jp_carats)
+        .sum::<i64>();
+    let matched_news_extra_carats = matched_news
+        .iter()
+        .map(|comparison| comparison.extra_carats)
+        .sum::<i64>();
+    let en_only_news_carats = en_only_news
+        .iter()
+        .map(|comparison| comparison.global_carats)
+        .sum::<i64>();
+    let social_carats = global_rewards
+        .iter()
+        .filter(|reward| reward.provenance == "global_social")
+        .filter(|reward| reward.currency == "free_jewels")
+        .filter_map(|reward| reward.amount)
+        .filter(|amount| *amount > 0)
+        .sum::<i64>();
+    let social_reward_posts = global_rewards
+        .iter()
+        .filter(|reward| {
+            reward.provenance == "global_social"
+                && reward.currency == "free_jewels"
+                && reward.amount.is_some_and(|amount| amount > 0)
+        })
+        .filter_map(|reward| reward.source_url.as_deref())
+        .collect::<BTreeSet<_>>()
+        .len();
+    let speculative_observed_carats =
+        (matched_news_extra_carats + en_only_news_carats + social_carats).max(0);
+
+    let mut observed_dates = global_rewards
+        .iter()
+        .filter(|reward| {
+            matches!(reward.provenance, "global_news" | "global_social")
+                && reward.currency == "free_jewels"
+                && reward.amount.is_some_and(|amount| amount > 0)
+        })
+        .filter_map(|reward| reward.available_at.get(..10))
+        .filter_map(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+        .collect::<Vec<_>>();
+    observed_dates.sort_unstable();
+    let observation_start_date = observed_dates
+        .first()
+        .copied()
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH.date_naive());
+    let observation_end_date = observed_dates
+        .last()
+        .copied()
+        .unwrap_or(observation_start_date);
+    let observation_days = (observation_end_date - observation_start_date)
+        .num_days()
+        .saturating_add(1)
+        .max(1);
+    let observed_months = observation_days as f64 / (365.2425 / 12.0);
+    let observed_months = (observed_months * 1000.0).round() / 1000.0;
+    let speculative_monthly_carats =
+        (speculative_observed_carats as f64 / observed_months).round() as i64;
+
+    PlannerGlobalRewardComparison {
+        news_match_method: "same_announce_id",
+        observation_start: observation_start_date.to_string(),
+        observation_end: observation_end_date.to_string(),
+        observation_days,
+        observed_months,
+        matched_news_global_carats,
+        matched_news_jp_carats,
+        matched_news_extra_carats,
+        en_only_news_carats,
+        social_carats,
+        social_reward_posts,
+        social_news_duplicate_reward_items_removed: social_deduplication.reward_items_removed,
+        social_news_duplicate_carats_removed: social_deduplication.carats_removed,
+        speculative_observed_carats,
+        speculative_monthly_carats,
+        matched_news,
+        en_only_news,
+    }
+}
+
+fn reward_post_id(value: &str, prefix: &str) -> Option<i64> {
+    value.strip_prefix(prefix)?.split('-').next()?.parse().ok()
+}
+
+fn prefer_global_news_over_jp_news(rewards: &mut Vec<PlannerReward>) {
+    let mut global_claims = BTreeMap::<(String, &'static str, i64, &'static str), usize>::new();
+    for reward in rewards
+        .iter()
+        .filter(|reward| reward.provenance == "global_news")
+    {
+        let (Some(event_id), Some(amount)) = (reward.event_id.as_ref(), reward.amount) else {
+            continue;
+        };
+        *global_claims
+            .entry((
+                event_id.clone(),
+                reward.currency,
+                amount,
+                reward_semantic_kind(reward),
+            ))
+            .or_default() += 1;
+    }
+    rewards.retain(|reward| {
+        if reward.provenance != "jp_news" {
+            return true;
+        }
+        let (Some(event_id), Some(amount)) = (reward.event_id.as_ref(), reward.amount) else {
+            return true;
+        };
+        let key = (
+            event_id.clone(),
+            reward.currency,
+            amount,
+            reward_semantic_kind(reward),
+        );
+        let Some(remaining) = global_claims.get_mut(&key) else {
+            return true;
+        };
+        if *remaining == 0 {
+            return true;
+        }
+        *remaining -= 1;
+        false
+    });
+}
+
+fn reward_semantic_kind(reward: &PlannerReward) -> &'static str {
+    if reward.assumption.contains("login") || reward.id.contains("login-bonus") {
+        "login_bonus"
+    } else {
+        "gift"
+    }
+}
+
+fn planner_timestamp(value: &str) -> Option<i64> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|date| date.timestamp())
+        .ok()
+        .or_else(|| {
+            NaiveDate::parse_from_str(value.get(..10)?, "%Y-%m-%d")
+                .ok()?
+                .and_hms_opt(0, 0, 0)
+                .map(|date| date.and_utc().timestamp())
+        })
+}
+
 fn load_news_rewards(archive: &Archive, timeline: &Value) -> Vec<PlannerReward> {
     let mut rewards = Vec::new();
     for post in &archive.news {
@@ -3548,9 +4345,10 @@ fn deduplicate_rewards(rewards: &mut Vec<PlannerReward>) {
         let priority = match reward.provenance {
             "global_master" => 0,
             "global_news" => 1,
-            "jp_master_snapshot" | "jp_master_catalog" => 2,
-            "jp_news" | "jp_fallback" => 3,
-            _ => 3,
+            "global_social" => 2,
+            "jp_master_snapshot" | "jp_master_catalog" => 3,
+            "jp_news" | "jp_fallback" => 4,
+            _ => 4,
         };
         (priority, reward.available_at.clone(), reward.id.clone())
     });
@@ -3688,15 +4486,20 @@ fn mode(values: impl Iterator<Item = i64>) -> Option<i64> {
 mod tests {
     use super::{
         amounts_before_word, apply_news_free_pulls, archive_combined_text, build_event_benefits,
-        extract_free_pull_total, extract_login_bonus_total, extract_news_free_pull_claims,
-        has_cost_context, has_sales_context, html_to_text, jewel_amounts_from_line, load_archive,
-        load_competitive_reward_metadata, load_competitive_variants, load_daily_pack_rules,
-        load_gachas, load_mission_campaign_rewards, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, match_news_event, partition_news_free_pull_campaign_days,
-        partition_news_free_pull_days, planner_reward_event_ids, reward_sections,
+        build_global_reward_comparison, extract_free_pull_total, extract_global_correction_total,
+        extract_global_direct_gifts, extract_global_login_bonus_total, extract_login_bonus_total,
+        extract_news_free_pull_claims, has_cost_context, has_sales_context, html_to_text,
+        jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
+        load_competitive_variants, load_daily_pack_rules, load_gachas, load_global_news_rewards,
+        load_global_social_rewards, load_mission_campaign_rewards, load_news_details,
+        load_news_rewards, load_paid_news_income_rules, match_news_event,
+        partition_news_free_pull_campaign_days, partition_news_free_pull_days,
+        planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
         seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
-        ArchiveNews, GachaAccumulator, NewsFreePullCampaignClaim, PlannerFreePullAllocation,
-        PlannerGacha, PlannerGachaShard, PlannerReward, PlannerSourceItem, TimelineLink,
+        ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
+        GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
+        PlannerFreePullAllocation, PlannerGacha, PlannerGachaShard, PlannerReward,
+        PlannerSourceItem, TimelineLink,
     };
     use rusqlite::Connection;
     use serde_json::json;
@@ -3731,6 +4534,322 @@ mod tests {
             amounts_before_word("Jewels are included", "jewel"),
             Vec::<i64>::new()
         );
+    }
+
+    #[test]
+    fn extracts_global_direct_gifts_without_repeating_summary_sentences() {
+        let text = "In appreciation of your support, we've sent a 1,500-carat gift to all trainers!\nGift Contents\nCarats x 1,500\nEligible Trainers\nAll trainers";
+        assert_eq!(
+            extract_global_direct_gifts(text)
+                .into_iter()
+                .map(|(amount, _)| amount)
+                .collect::<Vec<_>>(),
+            vec![1500]
+        );
+    }
+
+    #[test]
+    fn extracts_detailed_global_login_bonus_but_not_its_preview() {
+        let detailed = "1.5-Year Anniversary Celebration Login Bonus has begun!\nIn addition, each day you log in during the event period, you will receive a gift of 300 carats, up to a maximum of 3,000!";
+        let preview = "1.5-Year Anniversary Celebration Login Bonus coming soon!\nBy simply logging in every day during the event period, you can receive up to 3,000 carats in presents!";
+
+        assert_eq!(
+            extract_global_login_bonus_total(detailed).map(|(daily, total, _)| (daily, total)),
+            Some((300, 3000))
+        );
+        assert_eq!(extract_global_login_bonus_total(preview), None);
+    }
+
+    #[test]
+    fn corrections_publish_the_correct_total_instead_of_actual_plus_difference() {
+        let text = "The amount of carats distributed was incorrect.\n■ Correct Amount\n1,500 carats\n■ Actual Amount\n1,350 carats\n■ Contents\nCarats x 150\nThis value is the difference.";
+        assert_eq!(
+            extract_global_correction_total(text).map(|(amount, _)| amount),
+            Some(1500)
+        );
+    }
+
+    #[test]
+    fn global_news_rewards_are_enabled_and_exclude_previews_sales_and_contests() {
+        let archive = GlobalNewsArchive {
+            posts: vec![
+                global_post(
+                    902,
+                    "1.5-Year Anniversary Celebration Part 2 now available!",
+                    "To celebrate, we've sent a gift of 3,000 carats to all trainers!<br>Gift Contents<br>Carats x 3,000<br>Eligible Trainers<br>All trainers<br>1.5-Year Anniversary Celebration Login Bonus has begun!<br>Each day you log in, you will receive 300 carats, up to a maximum of 3,000!",
+                ),
+                global_post(
+                    904,
+                    "Check out all the latest updates!",
+                    "1.5-Year Anniversary Celebration Login Bonus coming soon!<br>By simply logging in every day, you can receive up to 3,000 carats in presents!",
+                ),
+                global_post(
+                    917,
+                    "Celebration items now available!",
+                    "Sale Details<br>1,500 paid carats<br>Purchase Carats",
+                ),
+                global_post(
+                    200001,
+                    "English Launch Celebration Event",
+                    "Digital Prize<br>5,000 Carats: 100 winners",
+                ),
+            ],
+        };
+        let rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+
+        assert_eq!(
+            rewards
+                .iter()
+                .map(|reward| reward.amount.unwrap())
+                .collect::<Vec<_>>(),
+            vec![3000, 3000]
+        );
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.default_enabled && reward.provenance == "global_news"));
+    }
+
+    fn global_post(announce_id: i64, title: &str, message: &str) -> GlobalNewsPost {
+        GlobalNewsPost {
+            announce_id,
+            page_url: format!("https://umamusume.com/news/{announce_id}/"),
+            snapshots: vec![GlobalNewsSnapshot {
+                raw: json!({
+                    "announce_id": announce_id,
+                    "post_at": "2026-07-22 22:00:00",
+                    "title": title,
+                    "message": message,
+                }),
+            }],
+        }
+    }
+
+    #[test]
+    fn global_social_rewards_include_distributed_gifts_but_not_contests() {
+        let archive = GlobalSocialArchive {
+            posts: vec![
+                global_social_post(
+                    "2072446465872691644",
+                    "Heads up, Trainers! We've just sent out the \"Three Cheers for Trainer! July Giveaway\" gift, so keep an eye out!\n🎁 Gift Contents:\n- Carats ×600\n- Monies ×20,000",
+                ),
+                global_social_post(
+                    "2080000000000000000",
+                    "Follow & repost for a chance to win a $50 Gift Card, or 5,000 carats!",
+                ),
+            ],
+        };
+
+        let rewards = load_global_social_rewards(&archive);
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(600));
+        assert_eq!(rewards[0].label, "Three Cheers for Trainer! July Giveaway");
+        assert_eq!(rewards[0].provenance, "global_social");
+        assert!(rewards[0].default_enabled);
+    }
+
+    #[test]
+    fn global_social_rewards_include_direct_sent_everyone_carat_lists() {
+        let archive = GlobalSocialArchive {
+            posts: vec![global_social_post(
+                "1938044706874880272",
+                "We've sent everyone a Head Start 3-star Voucher, 3,750 Carats, and other items to celebrate launch! Check your presents to claim them.",
+            )],
+        };
+
+        let rewards = load_global_social_rewards(&archive);
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(3750));
+        assert_eq!(rewards[0].provenance, "global_social");
+        assert!(rewards[0].default_enabled);
+    }
+
+    #[test]
+    fn global_social_rewards_include_sending_gift_to_all_trainers() {
+        let archive = GlobalSocialArchive {
+            posts: vec![global_social_post(
+                "2040917484069597339",
+                "Giving Thanks to All Our Trainers! As a token of our gratitude, we're sending a gift of 1,500 carats to all trainers.",
+            )],
+        };
+
+        let rewards = load_global_social_rewards(&archive);
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(1500));
+        assert_eq!(rewards[0].provenance, "global_social");
+        assert!(rewards[0].default_enabled);
+    }
+
+    #[test]
+    fn corrected_news_total_replaces_the_adjacent_social_announcement() {
+        let reward =
+            |id: &str, label: &str, available_at: &str, provenance: &'static str, amount: i64| {
+                PlannerReward {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    event_id: None,
+                    gacha_id: None,
+                    currency: "free_jewels",
+                    amount: Some(amount),
+                    available_at: available_at.to_string(),
+                    provenance,
+                    assumption: "official_global_carat_gift",
+                    default_enabled: true,
+                    source_url: None,
+                    source_items: Vec::new(),
+                    confidence: "exact_source_text",
+                    evidence: None,
+                }
+            };
+        let mut rewards = vec![
+            reward(
+                "news",
+                "Regarding the Three Cheers for Trainer! August Giveaway Gift Contents",
+                "2026-08-06T04:45:00+00:00",
+                "global_news",
+                1500,
+            ),
+            reward(
+                "social-duplicate",
+                "Three Cheers for Trainer! August Giveaway",
+                "2026-08-05T22:15:09+00:00",
+                "global_social",
+                1500,
+            ),
+            reward(
+                "social-unique",
+                "Three Cheers for Trainer! July Giveaway",
+                "2026-07-01T22:25:16+00:00",
+                "global_social",
+                600,
+            ),
+        ];
+
+        remove_global_social_rewards_covered_by_news(&mut rewards);
+        assert_eq!(
+            rewards
+                .iter()
+                .map(|reward| reward.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["news", "social-unique"]
+        );
+    }
+
+    #[test]
+    fn global_comparison_separates_jp_delta_en_only_and_deduplicated_social() {
+        let reward = |id: &str,
+                      label: &str,
+                      available_at: &str,
+                      provenance: &'static str,
+                      amount: i64,
+                      source_url: &str| PlannerReward {
+            id: id.to_string(),
+            label: label.to_string(),
+            event_id: None,
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(amount),
+            available_at: available_at.to_string(),
+            provenance,
+            assumption: "official_global_carat_gift",
+            default_enabled: provenance != "jp_news",
+            source_url: Some(source_url.to_string()),
+            source_items: Vec::new(),
+            confidence: "exact_source_text",
+            evidence: None,
+        };
+        let mut global_rewards = vec![
+            reward(
+                "global-news-902-gift-1500-0",
+                "Matched campaign",
+                "2026-01-01T00:00:00Z",
+                "global_news",
+                1500,
+                "https://umamusume.com/news/902/",
+            ),
+            reward(
+                "global-news-100001-gift-300-0",
+                "EN maintenance",
+                "2026-02-01T00:00:00Z",
+                "global_news",
+                300,
+                "https://umamusume.com/news/100001/",
+            ),
+            reward(
+                "global-social-duplicate-gift-300-0",
+                "EN maintenance",
+                "2026-02-01T01:00:00Z",
+                "global_social",
+                300,
+                "https://x.com/umamusume_eng/status/1",
+            ),
+            reward(
+                "global-social-unique-gift-600-0",
+                "Social-only giveaway",
+                "2026-03-01T00:00:00Z",
+                "global_social",
+                600,
+                "https://x.com/umamusume_eng/status/2",
+            ),
+        ];
+        let social_deduplication =
+            remove_global_social_rewards_covered_by_news(&mut global_rewards);
+        let jp_rewards = vec![reward(
+            "news-902-section-0-jewels-1000-0",
+            "Matched campaign",
+            "2022-01-01T00:00:00Z",
+            "jp_news",
+            1000,
+            "https://umapyoi.net/news/902?lang=jp",
+        )];
+        let jp_archive = Archive {
+            news: vec![ArchiveNews {
+                post_id: 902,
+                page_url: "https://umapyoi.net/news/902?lang=jp".to_string(),
+                title: Some("Matched campaign".to_string()),
+                posted_at: Some("2022-01-01T00:00:00Z".to_string()),
+                event_types: Vec::new(),
+                raw: json!({}),
+            }],
+        };
+
+        let comparison = build_global_reward_comparison(
+            &global_rewards,
+            &jp_rewards,
+            &jp_archive,
+            social_deduplication,
+        );
+
+        assert_eq!(comparison.matched_news_global_carats, 1500);
+        assert_eq!(comparison.matched_news_jp_carats, 1000);
+        assert_eq!(comparison.matched_news_extra_carats, 500);
+        assert_eq!(comparison.en_only_news_carats, 300);
+        assert_eq!(comparison.social_carats, 600);
+        assert_eq!(comparison.social_reward_posts, 1);
+        assert_eq!(comparison.social_news_duplicate_reward_items_removed, 1);
+        assert_eq!(comparison.social_news_duplicate_carats_removed, 300);
+        assert_eq!(comparison.speculative_observed_carats, 1400);
+        assert_eq!(comparison.matched_news.len(), 1);
+        assert_eq!(comparison.en_only_news.len(), 1);
+        assert_eq!(comparison.observation_start, "2026-01-01");
+        assert_eq!(comparison.observation_end, "2026-03-01");
+        assert!(comparison.speculative_monthly_carats > 0);
+    }
+
+    fn global_social_post(status_id: &str, text: &str) -> GlobalSocialPost {
+        GlobalSocialPost {
+            status_id: status_id.to_string(),
+            status_url: format!("https://x.com/umamusume_eng/status/{status_id}"),
+            snapshots: vec![GlobalSocialSnapshot {
+                raw: json!({
+                    "created_at": "2026-07-01T22:25:16.749+00:00",
+                    "text": text,
+                }),
+            }],
+        }
     }
 
     #[test]
