@@ -1,13 +1,13 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
 use anyhow::{Context, Result};
-use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 17;
+const ALGORITHM_VERSION: u8 = 18;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -92,6 +92,8 @@ pub struct PlannerRewards {
 #[derive(Debug, Serialize)]
 pub struct PlannerGlobalRewardComparison {
     pub news_match_method: &'static str,
+    pub speculative_method: &'static str,
+    pub archive_as_of: String,
     pub observation_start: String,
     pub observation_end: String,
     pub observation_days: i64,
@@ -105,9 +107,22 @@ pub struct PlannerGlobalRewardComparison {
     pub social_news_duplicate_reward_items_removed: usize,
     pub social_news_duplicate_carats_removed: i64,
     pub speculative_observed_carats: i64,
+    pub speculative_mean_monthly_carats: i64,
     pub speculative_monthly_carats: i64,
+    pub speculative_window_start: String,
+    pub speculative_window_end: String,
+    pub speculative_months: Vec<PlannerGlobalRewardMonth>,
     pub matched_news: Vec<PlannerGlobalNewsComparison>,
     pub en_only_news: Vec<PlannerGlobalNewsComparison>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PlannerGlobalRewardMonth {
+    pub month: String,
+    pub matched_news_extra_carats: i64,
+    pub en_only_news_carats: i64,
+    pub social_carats: i64,
+    pub total_carats: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -417,6 +432,7 @@ struct GlobalNewsArchive {
 struct GlobalNewsPost {
     announce_id: i64,
     page_url: String,
+    first_seen_at: String,
     #[serde(default)]
     snapshots: Vec<GlobalNewsSnapshot>,
 }
@@ -436,6 +452,7 @@ struct GlobalSocialArchive {
 struct GlobalSocialPost {
     status_id: String,
     status_url: String,
+    first_seen_at: String,
     #[serde(default)]
     snapshots: Vec<GlobalSocialSnapshot>,
 }
@@ -559,11 +576,13 @@ pub fn generate(
     let global_social_deduplication =
         remove_global_social_rewards_covered_by_news(&mut global_rewards);
     let jp_news_rewards = load_news_rewards(&archive, timeline);
+    let global_archive_as_of = global_archive_as_of(&global_news_archive, &global_social_archive);
     let global_reward_comparison = build_global_reward_comparison(
         &global_rewards,
         &jp_news_rewards,
         &archive,
         global_social_deduplication,
+        global_archive_as_of,
     );
 
     let mut rewards = load_master_rewards(connection, jp_connection, timeline)?;
@@ -1237,6 +1256,19 @@ fn load_global_news_archive() -> Result<GlobalNewsArchive> {
 fn load_global_social_archive() -> Result<GlobalSocialArchive> {
     serde_json::from_slice(GLOBAL_SOCIAL_ARCHIVE)
         .context("failed to parse official Global social archive")
+}
+
+fn global_archive_as_of(
+    news: &GlobalNewsArchive,
+    social: &GlobalSocialArchive,
+) -> Option<NaiveDate> {
+    news.posts
+        .iter()
+        .map(|post| post.first_seen_at.as_str())
+        .chain(social.posts.iter().map(|post| post.first_seen_at.as_str()))
+        .filter_map(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.date_naive())
+        .max()
 }
 
 fn apply_news_free_pulls(
@@ -3849,6 +3881,13 @@ struct GlobalSocialDeduplication {
     carats_removed: i64,
 }
 
+#[derive(Clone, Copy, Debug, Default)]
+struct GlobalRewardMonthAccumulator {
+    matched_news_extra_carats: i64,
+    en_only_news_carats: i64,
+    social_carats: i64,
+}
+
 fn remove_global_social_rewards_covered_by_news(
     rewards: &mut Vec<PlannerReward>,
 ) -> GlobalSocialDeduplication {
@@ -3901,6 +3940,7 @@ fn build_global_reward_comparison(
     jp_news_rewards: &[PlannerReward],
     jp_archive: &Archive,
     social_deduplication: GlobalSocialDeduplication,
+    archive_as_of: Option<NaiveDate>,
 ) -> PlannerGlobalRewardComparison {
     let mut global_by_post = BTreeMap::<i64, Vec<&PlannerReward>>::new();
     for reward in global_rewards.iter().filter(|reward| {
@@ -3932,23 +3972,35 @@ fn build_global_reward_comparison(
 
     let mut matched_news = Vec::new();
     let mut en_only_news = Vec::new();
+    let mut monthly_uplift = BTreeMap::<String, GlobalRewardMonthAccumulator>::new();
     for (announce_id, rewards) in global_by_post {
         let global_carats = rewards.iter().filter_map(|reward| reward.amount).sum();
         let first = rewards[0];
         let title = first.label.clone();
         let global_url = first.source_url.clone().unwrap_or_default();
+        let month = first.available_at.get(..7).map(str::to_string);
         if let Some(jp_post) = jp_posts.get(&announce_id) {
             let jp_carats = jp_by_post.get(&announce_id).copied().unwrap_or_default();
+            let extra_carats = global_carats - jp_carats;
+            if let Some(month) = month {
+                monthly_uplift
+                    .entry(month)
+                    .or_default()
+                    .matched_news_extra_carats += extra_carats;
+            }
             matched_news.push(PlannerGlobalNewsComparison {
                 announce_id,
                 title,
                 global_carats,
                 jp_carats,
-                extra_carats: global_carats - jp_carats,
+                extra_carats,
                 global_url,
                 jp_url: Some(jp_post.page_url.clone()),
             });
         } else {
+            if let Some(month) = month {
+                monthly_uplift.entry(month).or_default().en_only_news_carats += global_carats;
+            }
             en_only_news.push(PlannerGlobalNewsComparison {
                 announce_id,
                 title,
@@ -3984,6 +4036,18 @@ fn build_global_reward_comparison(
         .filter_map(|reward| reward.amount)
         .filter(|amount| *amount > 0)
         .sum::<i64>();
+    for reward in global_rewards.iter().filter(|reward| {
+        reward.provenance == "global_social"
+            && reward.currency == "free_jewels"
+            && reward.amount.is_some_and(|amount| amount > 0)
+    }) {
+        if let (Some(month), Some(amount)) = (reward.available_at.get(..7), reward.amount) {
+            monthly_uplift
+                .entry(month.to_string())
+                .or_default()
+                .social_carats += amount;
+        }
+    }
     let social_reward_posts = global_rewards
         .iter()
         .filter(|reward| {
@@ -4022,11 +4086,51 @@ fn build_global_reward_comparison(
         .max(1);
     let observed_months = observation_days as f64 / (365.2425 / 12.0);
     let observed_months = (observed_months * 1000.0).round() / 1000.0;
-    let speculative_monthly_carats =
+    let speculative_mean_monthly_carats =
         (speculative_observed_carats as f64 / observed_months).round() as i64;
+    let archive_as_of_date = archive_as_of
+        .unwrap_or(observation_end_date)
+        .max(observation_end_date);
+    let archive_month_start =
+        NaiveDate::from_ymd_opt(archive_as_of_date.year(), archive_as_of_date.month(), 1)
+            .unwrap_or(archive_as_of_date);
+    let speculative_months = (1..=6)
+        .rev()
+        .filter_map(|months_ago| archive_month_start.checked_sub_months(Months::new(months_ago)))
+        .map(|month_start| {
+            let month = month_start.format("%Y-%m").to_string();
+            let values = monthly_uplift.get(&month).copied().unwrap_or_default();
+            PlannerGlobalRewardMonth {
+                month,
+                matched_news_extra_carats: values.matched_news_extra_carats,
+                en_only_news_carats: values.en_only_news_carats,
+                social_carats: values.social_carats,
+                total_carats: values.matched_news_extra_carats
+                    + values.en_only_news_carats
+                    + values.social_carats,
+            }
+        })
+        .collect::<Vec<_>>();
+    let speculative_monthly_carats = median_monthly_carats(
+        speculative_months
+            .iter()
+            .map(|month| month.total_carats)
+            .collect(),
+    )
+    .max(0);
+    let speculative_window_start = speculative_months
+        .first()
+        .map(|month| month.month.clone())
+        .unwrap_or_default();
+    let speculative_window_end = speculative_months
+        .last()
+        .map(|month| month.month.clone())
+        .unwrap_or_default();
 
     PlannerGlobalRewardComparison {
         news_match_method: "same_announce_id",
+        speculative_method: "median_last_6_complete_calendar_months",
+        archive_as_of: archive_as_of_date.to_string(),
         observation_start: observation_start_date.to_string(),
         observation_end: observation_end_date.to_string(),
         observation_days,
@@ -4040,9 +4144,26 @@ fn build_global_reward_comparison(
         social_news_duplicate_reward_items_removed: social_deduplication.reward_items_removed,
         social_news_duplicate_carats_removed: social_deduplication.carats_removed,
         speculative_observed_carats,
+        speculative_mean_monthly_carats,
         speculative_monthly_carats,
+        speculative_window_start,
+        speculative_window_end,
+        speculative_months,
         matched_news,
         en_only_news,
+    }
+}
+
+fn median_monthly_carats(mut values: Vec<i64>) -> i64 {
+    if values.is_empty() {
+        return 0;
+    }
+    values.sort_unstable();
+    let middle = values.len() / 2;
+    if values.len() % 2 == 0 {
+        ((values[middle - 1] as i128 + values[middle] as i128) / 2) as i64
+    } else {
+        values[middle]
     }
 }
 
@@ -4932,6 +5053,7 @@ mod tests {
         PlannerFreePullAllocation, PlannerGacha, PlannerGachaShard, PlannerReward,
         PlannerSourceItem, TimelineLink,
     };
+    use chrono::NaiveDate;
     use rusqlite::Connection;
     use serde_json::json;
     use std::collections::{BTreeMap, BTreeSet};
@@ -5048,6 +5170,7 @@ mod tests {
         GlobalNewsPost {
             announce_id,
             page_url: format!("https://umamusume.com/news/{announce_id}/"),
+            first_seen_at: "2026-07-23T00:00:00Z".to_string(),
             snapshots: vec![GlobalNewsSnapshot {
                 raw: json!({
                     "announce_id": announce_id,
@@ -5252,6 +5375,7 @@ mod tests {
             &jp_rewards,
             &jp_archive,
             social_deduplication,
+            Some(NaiveDate::from_ymd_opt(2026, 4, 1).unwrap()),
         );
 
         assert_eq!(comparison.matched_news_global_carats, 1500);
@@ -5267,13 +5391,25 @@ mod tests {
         assert_eq!(comparison.en_only_news.len(), 1);
         assert_eq!(comparison.observation_start, "2026-01-01");
         assert_eq!(comparison.observation_end, "2026-03-01");
-        assert!(comparison.speculative_monthly_carats > 0);
+        assert_eq!(comparison.archive_as_of, "2026-04-01");
+        assert_eq!(comparison.speculative_window_start, "2025-10");
+        assert_eq!(comparison.speculative_window_end, "2026-03");
+        assert_eq!(
+            comparison
+                .speculative_months
+                .iter()
+                .map(|month| month.total_carats)
+                .collect::<Vec<_>>(),
+            vec![0, 0, 0, 500, 300, 600]
+        );
+        assert_eq!(comparison.speculative_monthly_carats, 150);
     }
 
     fn global_social_post(status_id: &str, text: &str) -> GlobalSocialPost {
         GlobalSocialPost {
             status_id: status_id.to_string(),
             status_url: format!("https://x.com/umamusume_eng/status/{status_id}"),
+            first_seen_at: "2026-07-02T00:00:00Z".to_string(),
             snapshots: vec![GlobalSocialSnapshot {
                 raw: json!({
                     "created_at": "2026-07-01T22:25:16.749+00:00",
