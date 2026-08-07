@@ -9,6 +9,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `character_banners.json`, `supports_banners.json`, and `paid_gacha_banners.json` generation from `gacha_data` + `gacha_available`
 - `banner_timeline.json` generation from bundled JP banner/event history plus confirmed global anchors from `master.mdb` and `src/jp_data/confirmed_global_banner_dates.csv`
 - `jp_news_events.json` from an incremental umapyoi.net archive of every JP news post and detailed gacha record, including event-family tags and discovered image/banner URLs
+- `planner_rewards.json` Global gift rewards from durable, revision-preserving archives of the official English news API and `@umamusume_eng` social posts
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
 - `character_names.json` overlay generation from the bundled mapping, with names refreshed from global `text_data` category `6`
 - `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` DB-first generation from `master.mdb`
@@ -169,7 +170,22 @@ Existing news posts are not fetched again, so routine refreshes are incremental.
 cargo run -- sync-umapyoi --full
 ```
 
-`.github/workflows/sync-umapyoi.yml` runs the incremental sync once daily at 13:00 JST (04:00 UTC) and commits the archive only when extracted content changed. It can also be started manually with the full-refresh option.
+## Synchronize Official Global Rewards
+
+Official English announcements are archived before resource generation so temporary or later-deleted posts remain auditable. Each post keeps its raw API payload, first-seen timestamp, and every changed snapshot rather than deleting missing upstream records or overwriting corrections:
+
+```powershell
+cargo run -- sync-global-news
+cargo run -- sync-global-social
+```
+
+Website news is stored in `src/global_data/official_news_archive.json`. Social posts are stored separately in `src/global_data/official_social_archive.json`. Social discovery reads the public official X profile plus X's public syndication history, then verifies and stores the canonical text through X's own oEmbed endpoint. The live profile is checked often enough to capture posts before they fall out of its small public response; records and changed snapshots are never removed from either archive when a source later deletes them.
+
+Normal planner generation extracts exact free-Carat gifts, detailed login bonuses, and corrected giveaway totals as default-enabled `global_news` or `global_social` rewards. A social post must explicitly say the gift was distributed; follow/repost contests, chance-to-win prizes, previews, paid-Carat sales, entry costs, and qualitative or player-dependent rewards are retained in the raw archives but not added as fixed planner income. Same-day, same-amount website and social announcements are counted once. A matching Global reward replaces the corresponding future JP-news estimate, while login bonuses already represented by Global master data are not counted twice.
+
+`planner_rewards.json` also publishes `global_reward_comparison`. Website posts are matched to JP only by their shared numeric announce ID, then split into the Global-minus-JP delta for matched news and the full reward for EN-only news. Official social rewards are a third bucket after website/social deduplication; the resource exposes both the retained social total and the count/Carat value of overlapping items removed. Their combined observed uplift is divided by the complete observation window from the first to latest archived reward to produce `speculative_monthly_carats`; the frontend starts that projection only after the latest confirmed reward date, preventing confirmed and speculative income from overlapping.
+
+`.github/workflows/sync-umapyoi.yml` runs the JP, Global website, and Global social syncs every six hours and commits the archives only when source content changed. It can also be started manually with the full-refresh option for the JP source.
 
 Timeline images are stored in the frontend rather than hotlinked at runtime. Generate a plain `banner_timeline.json`, then run `node scripts/sync_umapyoi_timeline_images.mjs --timeline-json <path> --frontend-root <umamoe-frontend>`. The Node/Sharp sync consumes the archive maintained by the Rust `sync-umapyoi` command; it is not a separate Python scraper. The original files below `assets/images/...` and `assets/timeline-images/...` are immutable production fallbacks: the sync never writes, deletes, or restores those paths. Official JP news-post artwork is stored separately below `assets/timeline-images/jp/`; official EN news-post artwork is stored below `assets/timeline-images/en/`. Each locale has a manifest mapping the unchanged timeline `image_path` to its overlay only after that overlay exists and opens successfully. The frontend resolves EN first, then JP, then the untouched legacy path, so removing either overlay directory is a complete rollback. Pass `--refresh-jp` to refresh only the managed JP overlay.
 
