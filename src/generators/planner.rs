@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 19;
+const ALGORITHM_VERSION: u8 = 20;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -4097,7 +4097,7 @@ fn build_global_reward_comparison(
     let archive_month_start =
         NaiveDate::from_ymd_opt(archive_as_of_date.year(), archive_as_of_date.month(), 1)
             .unwrap_or(archive_as_of_date);
-    let speculative_months = (1..=12)
+    let speculative_months = (1..=6)
         .rev()
         .filter_map(|months_ago| archive_month_start.checked_sub_months(Months::new(months_ago)))
         .map(|month_start| {
@@ -4153,7 +4153,7 @@ fn build_global_reward_comparison(
 
     PlannerGlobalRewardComparison {
         news_match_method: "same_announce_id",
-        speculative_method: "mean_last_12_complete_calendar_months",
+        speculative_method: "mean_last_6_complete_calendar_months",
         archive_as_of: archive_as_of_date.to_string(),
         observation_start: observation_start_date.to_string(),
         observation_end: observation_end_date.to_string(),
@@ -5427,7 +5427,7 @@ mod tests {
         assert_eq!(comparison.observation_start, "2026-01-01");
         assert_eq!(comparison.observation_end, "2026-03-01");
         assert_eq!(comparison.archive_as_of, "2026-04-01");
-        assert_eq!(comparison.speculative_window_start, "2025-04");
+        assert_eq!(comparison.speculative_window_start, "2025-10");
         assert_eq!(comparison.speculative_window_end, "2026-03");
         assert_eq!(
             comparison
@@ -5435,9 +5435,9 @@ mod tests {
                 .iter()
                 .map(|month| month.total_carats)
                 .collect::<Vec<_>>(),
-            vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 500, 300, 600]
+            vec![0, 0, 0, 500, 300, 600]
         );
-        assert_eq!(comparison.speculative_monthly_carats, 117);
+        assert_eq!(comparison.speculative_monthly_carats, 233);
         assert_eq!(comparison.speculative_recent_median_monthly_carats, 150);
         assert_eq!(comparison.speculative_recent_median_window_start, "2025-10");
         assert_eq!(comparison.speculative_recent_median_window_end, "2026-03");
