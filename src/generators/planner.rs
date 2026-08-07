@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 20;
+const ALGORITHM_VERSION: u8 = 21;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -3487,17 +3487,7 @@ fn load_global_news_rewards(
             })
             .map(|link| link.event_id);
 
-        if let Some((amount, evidence)) = extract_global_correction_total(&text) {
-            rewards.push(global_news_reward(
-                format!("global-news-{}-corrected-gift", post.announce_id),
-                title,
-                event_id.clone(),
-                amount,
-                posted_at.clone(),
-                "official_global_carat_gift",
-                &post.page_url,
-                evidence,
-            ));
+        if is_global_correction_notice(&text) {
             continue;
         }
 
@@ -3677,30 +3667,11 @@ fn normalize_global_news_timestamp(value: &str) -> Option<String> {
         })
 }
 
-fn extract_global_correction_total(text: &str) -> Option<(i64, String)> {
+fn is_global_correction_notice(text: &str) -> bool {
     let lower = text.to_ascii_lowercase();
-    if !lower.contains("correct amount")
-        || !lower.contains("actual amount")
-        || !(lower.contains("incorrect") || lower.contains("difference"))
-    {
-        return None;
-    }
-    let lines = text.lines().collect::<Vec<_>>();
-    for (index, line) in lines.iter().enumerate() {
-        if !line.to_ascii_lowercase().contains("correct amount") {
-            continue;
-        }
-        for candidate in lines.iter().skip(index + 1).take(4) {
-            let amounts = carat_amounts_from_line(candidate);
-            if let Some(amount) = amounts
-                .into_iter()
-                .find(|amount| (1..=100_000).contains(amount))
-            {
-                return Some((amount, candidate.chars().take(320).collect()));
-            }
-        }
-    }
-    None
+    lower.contains("correct amount")
+        && lower.contains("actual amount")
+        && (lower.contains("incorrect") || lower.contains("difference"))
 }
 
 fn extract_global_login_bonus_total(text: &str) -> Option<(i64, i64, String)> {
@@ -5073,9 +5044,9 @@ fn mode(values: impl Iterator<Item = i64>) -> Option<i64> {
 mod tests {
     use super::{
         amounts_before_word, apply_news_free_pulls, archive_combined_text, build_event_benefits,
-        build_global_reward_comparison, extract_free_pull_total, extract_global_correction_total,
-        extract_global_direct_gifts, extract_global_login_bonus_total, extract_login_bonus_total,
-        extract_news_free_pull_claims, has_cost_context, has_sales_context, html_to_text,
+        build_global_reward_comparison, extract_free_pull_total, extract_global_direct_gifts,
+        extract_global_login_bonus_total, extract_login_bonus_total, extract_news_free_pull_claims,
+        has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
         jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
         load_competitive_variants, load_daily_pack_rules, load_gachas, load_global_news_rewards,
         load_global_social_rewards, load_mission_campaign_rewards, load_news_details,
@@ -5149,12 +5120,9 @@ mod tests {
     }
 
     #[test]
-    fn corrections_publish_the_correct_total_instead_of_actual_plus_difference() {
+    fn identifies_correction_notices_that_must_not_create_new_income() {
         let text = "The amount of carats distributed was incorrect.\n■ Correct Amount\n1,500 carats\n■ Actual Amount\n1,350 carats\n■ Contents\nCarats x 150\nThis value is the difference.";
-        assert_eq!(
-            extract_global_correction_total(text).map(|(amount, _)| amount),
-            Some(1500)
-        );
+        assert!(is_global_correction_notice(text));
     }
 
     #[test]
@@ -5273,58 +5241,32 @@ mod tests {
     }
 
     #[test]
-    fn corrected_news_total_replaces_the_adjacent_social_announcement() {
-        let reward =
-            |id: &str, label: &str, available_at: &str, provenance: &'static str, amount: i64| {
-                PlannerReward {
-                    id: id.to_string(),
-                    label: label.to_string(),
-                    event_id: None,
-                    gacha_id: None,
-                    currency: "free_jewels",
-                    amount: Some(amount),
-                    available_at: available_at.to_string(),
-                    provenance,
-                    assumption: "official_global_carat_gift",
-                    default_enabled: true,
-                    source_url: None,
-                    source_items: Vec::new(),
-                    confidence: "exact_source_text",
-                    evidence: None,
-                }
-            };
-        let mut rewards = vec![
-            reward(
-                "news",
+    fn correction_news_is_ignored_without_hiding_the_original_social_gift() {
+        let news = GlobalNewsArchive {
+            posts: vec![global_post(
+                100_301,
                 "Regarding the Three Cheers for Trainer! August Giveaway Gift Contents",
-                "2026-08-06T04:45:00+00:00",
-                "global_news",
-                1500,
-            ),
-            reward(
-                "social-duplicate",
-                "Three Cheers for Trainer! August Giveaway",
-                "2026-08-05T22:15:09+00:00",
-                "global_social",
-                1500,
-            ),
-            reward(
-                "social-unique",
-                "Three Cheers for Trainer! July Giveaway",
-                "2026-07-01T22:25:16+00:00",
-                "global_social",
-                600,
-            ),
-        ];
+                "The amount of carats distributed was incorrect.<br>■ Correct Amount<br>1,500 carats<br>■ Actual Amount<br>1,350 carats<br>■ Contents<br>Carats x 150<br>This value is the difference.",
+            )],
+        };
+        let social = GlobalSocialArchive {
+            posts: vec![global_social_post(
+                "2085127495951753255",
+                "Heads up, Trainers! We've just sent out the \"Three Cheers for Trainer! August Giveaway\" gift, so keep an eye out!\n🎁 Gift Contents:\n- Carats ×1,500",
+            )],
+        };
+        let mut rewards =
+            load_global_news_rewards(&news, &Archive { news: Vec::new() }, &json!({"events": []}));
+        assert!(rewards.is_empty());
 
-        remove_global_social_rewards_covered_by_news(&mut rewards);
-        assert_eq!(
-            rewards
-                .iter()
-                .map(|reward| reward.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["news", "social-unique"]
-        );
+        rewards.extend(load_global_social_rewards(&social));
+        let deduplication = remove_global_social_rewards_covered_by_news(&mut rewards);
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(1500));
+        assert_eq!(rewards[0].provenance, "global_social");
+        assert_eq!(deduplication.reward_items_removed, 0);
+        assert_eq!(deduplication.carats_removed, 0);
     }
 
     #[test]
