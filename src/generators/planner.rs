@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 18;
+const ALGORITHM_VERSION: u8 = 19;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -108,6 +108,9 @@ pub struct PlannerGlobalRewardComparison {
     pub social_news_duplicate_carats_removed: i64,
     pub speculative_observed_carats: i64,
     pub speculative_mean_monthly_carats: i64,
+    pub speculative_recent_median_monthly_carats: i64,
+    pub speculative_recent_median_window_start: String,
+    pub speculative_recent_median_window_end: String,
     pub speculative_monthly_carats: i64,
     pub speculative_window_start: String,
     pub speculative_window_end: String,
@@ -4094,7 +4097,7 @@ fn build_global_reward_comparison(
     let archive_month_start =
         NaiveDate::from_ymd_opt(archive_as_of_date.year(), archive_as_of_date.month(), 1)
             .unwrap_or(archive_as_of_date);
-    let speculative_months = (1..=6)
+    let speculative_months = (1..=12)
         .rev()
         .filter_map(|months_ago| archive_month_start.checked_sub_months(Months::new(months_ago)))
         .map(|month_start| {
@@ -4111,13 +4114,34 @@ fn build_global_reward_comparison(
             }
         })
         .collect::<Vec<_>>();
-    let speculative_monthly_carats = median_monthly_carats(
+    let speculative_monthly_carats = mean_monthly_carats(
         speculative_months
             .iter()
             .map(|month| month.total_carats)
             .collect(),
     )
     .max(0);
+    let recent_median_months = speculative_months
+        .iter()
+        .rev()
+        .take(6)
+        .rev()
+        .collect::<Vec<_>>();
+    let speculative_recent_median_monthly_carats = median_monthly_carats(
+        recent_median_months
+            .iter()
+            .map(|month| month.total_carats)
+            .collect(),
+    )
+    .max(0);
+    let speculative_recent_median_window_start = recent_median_months
+        .first()
+        .map(|month| month.month.clone())
+        .unwrap_or_default();
+    let speculative_recent_median_window_end = recent_median_months
+        .last()
+        .map(|month| month.month.clone())
+        .unwrap_or_default();
     let speculative_window_start = speculative_months
         .first()
         .map(|month| month.month.clone())
@@ -4129,7 +4153,7 @@ fn build_global_reward_comparison(
 
     PlannerGlobalRewardComparison {
         news_match_method: "same_announce_id",
-        speculative_method: "median_last_6_complete_calendar_months",
+        speculative_method: "mean_last_12_complete_calendar_months",
         archive_as_of: archive_as_of_date.to_string(),
         observation_start: observation_start_date.to_string(),
         observation_end: observation_end_date.to_string(),
@@ -4145,6 +4169,9 @@ fn build_global_reward_comparison(
         social_news_duplicate_carats_removed: social_deduplication.carats_removed,
         speculative_observed_carats,
         speculative_mean_monthly_carats,
+        speculative_recent_median_monthly_carats,
+        speculative_recent_median_window_start,
+        speculative_recent_median_window_end,
         speculative_monthly_carats,
         speculative_window_start,
         speculative_window_end,
@@ -4152,6 +4179,14 @@ fn build_global_reward_comparison(
         matched_news,
         en_only_news,
     }
+}
+
+fn mean_monthly_carats(values: Vec<i64>) -> i64 {
+    if values.is_empty() {
+        return 0;
+    }
+    (values.iter().map(|value| *value as i128).sum::<i128>() as f64 / values.len() as f64).round()
+        as i64
 }
 
 fn median_monthly_carats(mut values: Vec<i64>) -> i64 {
@@ -5392,7 +5427,7 @@ mod tests {
         assert_eq!(comparison.observation_start, "2026-01-01");
         assert_eq!(comparison.observation_end, "2026-03-01");
         assert_eq!(comparison.archive_as_of, "2026-04-01");
-        assert_eq!(comparison.speculative_window_start, "2025-10");
+        assert_eq!(comparison.speculative_window_start, "2025-04");
         assert_eq!(comparison.speculative_window_end, "2026-03");
         assert_eq!(
             comparison
@@ -5400,9 +5435,12 @@ mod tests {
                 .iter()
                 .map(|month| month.total_carats)
                 .collect::<Vec<_>>(),
-            vec![0, 0, 0, 500, 300, 600]
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 500, 300, 600]
         );
-        assert_eq!(comparison.speculative_monthly_carats, 150);
+        assert_eq!(comparison.speculative_monthly_carats, 117);
+        assert_eq!(comparison.speculative_recent_median_monthly_carats, 150);
+        assert_eq!(comparison.speculative_recent_median_window_start, "2025-10");
+        assert_eq!(comparison.speculative_recent_median_window_end, "2026-03");
     }
 
     fn global_social_post(status_id: &str, text: &str) -> GlobalSocialPost {
