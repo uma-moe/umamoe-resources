@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 17;
+const ALGORITHM_VERSION: u8 = 18;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -353,6 +353,14 @@ struct NewsFreePullCampaignClaim {
     total_pulls: i64,
     campaign_start: Option<(u32, u32, u32, u32)>,
     has_explicit_total: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NewsFreePullTargetWindow {
+    banner_kind: &'static str,
+    pin_to_window_start: bool,
+    start: (u32, u32, u32, u32),
+    end: (u32, u32, u32, u32),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -1154,6 +1162,9 @@ fn apply_news_free_pulls(
     let mut candidates = BTreeMap::<NewsFreePullCampaignKey, NewsFreePullCampaignCandidate>::new();
     for post in &archive.news {
         let combined = archive_combined_text(post);
+        let target_windows = extract_news_free_pull_target_windows(&combined);
+        let pinned_banner_kinds =
+            extract_news_free_pull_pinned_banner_kinds(&combined, &target_windows);
         let campaigns = merge_news_free_pull_claims(extract_news_free_pull_claims(&combined));
         if campaigns.is_empty() {
             continue;
@@ -1176,15 +1187,16 @@ fn apply_news_free_pulls(
                 .campaign_start
                 .and_then(|parts| resolve_jp_campaign_start(posted_at.timestamp(), parts))
                 .unwrap_or_else(|| posted_at.timestamp());
-            let Some(assignments) = partition_news_free_pull_campaign_days(
+            let Some(assignments) = partition_news_free_pull_campaign_days_with_targets(
                 campaign_start,
                 &campaign,
+                &target_windows,
+                &pinned_banner_kinds,
                 timeline_links,
                 gachas,
             ) else {
-                // A stated campaign duration must not be attached in full to
-                // one banner when its daily entitlements cannot be mapped
-                // unambiguously across JP banner changes.
+                // A stated campaign duration must not be published when its
+                // named JP target gacha cannot be resolved unambiguously.
                 continue;
             };
             let key = NewsFreePullCampaignKey {
@@ -1224,6 +1236,43 @@ fn apply_news_free_pulls(
             }
         }
     }
+
+    // Preview and summary posts can describe the same campaign with an
+    // ambiguous "10 free gachas" phrase, producing both 10x1 and 1x10
+    // interpretations. For one JP day and target scope, keep only the unique
+    // strongest source. A dedicated campaign notice outranks its preview.
+    let mut preferred_scopes =
+        BTreeMap::<(i64, Vec<&'static str>), (((bool, bool, bool, usize), i64, i64), usize)>::new();
+    for (key, candidate) in &candidates {
+        let scope = (key.campaign_jp_day, key.banner_kinds.clone());
+        let rank = (
+            candidate.source_specificity,
+            candidate.campaign.total_pulls,
+            -candidate.post_id,
+        );
+        preferred_scopes
+            .entry(scope)
+            .and_modify(|(current_rank, count)| match rank.cmp(current_rank) {
+                std::cmp::Ordering::Greater => {
+                    *current_rank = rank;
+                    *count = 1;
+                }
+                std::cmp::Ordering::Equal => *count += 1,
+                std::cmp::Ordering::Less => {}
+            })
+            .or_insert((rank, 1));
+    }
+    candidates.retain(|key, candidate| {
+        let scope = (key.campaign_jp_day, key.banner_kinds.clone());
+        let rank = (
+            candidate.source_specificity,
+            candidate.campaign.total_pulls,
+            -candidate.post_id,
+        );
+        preferred_scopes
+            .get(&scope)
+            .is_some_and(|(preferred, count)| *count == 1 && rank == *preferred)
+    });
 
     let mut result = Vec::new();
     for (key, candidate) in candidates {
@@ -1333,9 +1382,117 @@ fn partition_news_free_pull_campaign_days(
     timeline_links: &BTreeMap<i64, TimelineLink>,
     gachas: &BTreeMap<i64, GachaAccumulator>,
 ) -> Option<BTreeMap<i64, i64>> {
-    let days = campaign.entitlement_days;
+    partition_news_free_pull_campaign_days_with_targets(
+        campaign_start,
+        campaign,
+        &[],
+        &BTreeSet::new(),
+        timeline_links,
+        gachas,
+    )
+}
 
+fn partition_news_free_pull_campaign_days_with_targets(
+    campaign_start: i64,
+    campaign: &NewsFreePullCampaignClaim,
+    target_windows: &[NewsFreePullTargetWindow],
+    pinned_banner_kinds: &BTreeSet<&'static str>,
+    timeline_links: &BTreeMap<i64, TimelineLink>,
+    gachas: &BTreeMap<i64, GachaAccumulator>,
+) -> Option<BTreeMap<i64, i64>> {
+    let entitlement_times = free_pull_entitlement_times(campaign_start, campaign.entitlement_days)?;
+    let raw_resolved_windows = target_windows
+        .iter()
+        .filter(|window| campaign.banner_kinds.contains(window.banner_kind))
+        .filter_map(|window| {
+            let start = resolve_jp_campaign_start(campaign_start, window.start)?;
+            let end = resolve_jp_campaign_start(campaign_start, window.end)?;
+            Some((window.banner_kind, window.pin_to_window_start, start, end))
+        })
+        .collect::<Vec<_>>();
+    let resolved_windows = raw_resolved_windows
+        .iter()
+        .filter_map(|(kind, pin_to_window_start, stated_start, end)| {
+            let start = if stated_start <= end {
+                *stated_start
+            } else {
+                // The archived English translation of post 1124 says 1/29
+                // where the JP notice says 1/2. Recover a malformed later
+                // window from the previous target's adjacent end boundary.
+                raw_resolved_windows
+                    .iter()
+                    .filter_map(|(_, _, _, other_end)| (*other_end < *end).then_some(*other_end))
+                    .max()?
+                    .checked_add(60)?
+            };
+            (end >= &start && *end - start <= 60 * 86_400).then_some((
+                *kind,
+                *pin_to_window_start,
+                start,
+                *end,
+            ))
+        })
+        .collect::<BTreeSet<_>>();
+    let resolved_banner_kinds = resolved_windows
+        .iter()
+        .map(|(kind, _, _, _)| *kind)
+        .collect::<BTreeSet<_>>();
+    if !resolved_windows.is_empty() && resolved_banner_kinds != campaign.banner_kinds {
+        return None;
+    }
+
+    // Detailed older notices explicitly list every target gacha window. Map
+    // each entitlement through those windows, using the window start to pick
+    // the banner. This preserves real mid-campaign switches, including cases
+    // where character and support gachas share one master-data start time.
+    if !resolved_windows.is_empty() {
+        let mut assignments = BTreeMap::new();
+        for entitlement_at in entitlement_times {
+            let matching_gachas = resolved_windows
+                .iter()
+                .filter(|(_, _, start, end)| entitlement_at >= *start && entitlement_at <= *end)
+                .filter_map(|(kind, pin_to_window_start, start, _)| {
+                    if *pin_to_window_start {
+                        free_pull_target_gacha(*kind, *start, timeline_links, gachas)
+                    } else {
+                        free_pull_schedule_gacha_at(*kind, entitlement_at, timeline_links, gachas)
+                    }
+                })
+                .collect::<BTreeSet<_>>();
+            if matching_gachas.len() != 1 {
+                return None;
+            }
+            let gacha_id = matching_gachas.into_iter().next()?;
+            *assignments.entry(gacha_id).or_insert(0) += campaign.pulls_per_day;
+        }
+        return (assignments.values().sum::<i64>() == campaign.total_pulls).then_some(assignments);
+    }
+
+    if campaign.banner_kinds.len() != 1 {
+        return None;
+    }
+    let banner_kind = *campaign.banner_kinds.iter().next()?;
+    if pinned_banner_kinds.contains(banner_kind) {
+        // Newer notices name one specific target gacha for the complete
+        // campaign. Later overlapping banners are separate products; their
+        // start dates do not transfer the remaining free pulls.
+        let gacha_id = free_pull_target_gacha(banner_kind, campaign_start, timeline_links, gachas)?;
+        return Some(BTreeMap::from([(gacha_id, campaign.total_pulls)]));
+    }
+
+    // Generic targets such as "Pickup Pretty Derby Gacha" follow the active
+    // standard banner when that banner is actually replaced mid-campaign.
     let mut assignments = BTreeMap::new();
+    for entitlement_at in entitlement_times {
+        let gacha_id =
+            free_pull_schedule_gacha_at(banner_kind, entitlement_at, timeline_links, gachas)?;
+        *assignments.entry(gacha_id).or_insert(0) += campaign.pulls_per_day;
+    }
+    (assignments.values().sum::<i64>() == campaign.total_pulls).then_some(assignments)
+}
+
+fn free_pull_entitlement_times(campaign_start: i64, days: i64) -> Option<Vec<i64>> {
+    let mut entitlements = Vec::with_capacity(usize::try_from(days).ok()?);
     let campaign_start_jp = campaign_start + 9 * 60 * 60;
     let current_jp_day = campaign_start_jp.div_euclid(86_400) * 86_400;
     let mut next_reset_jp = current_jp_day + 5 * 60 * 60;
@@ -1350,65 +1507,79 @@ fn partition_news_free_pull_campaign_days(
                 .checked_add((day - 1).checked_mul(86_400)?)?
                 .checked_sub(9 * 60 * 60)?
         };
-        let mut candidates = timeline_links
-            .iter()
-            .filter_map(|(gacha_id, link)| {
-                if !is_free_pull_schedule_gacha(*gacha_id, link, gachas)
-                    || (!campaign.banner_kinds.is_empty()
-                        && !campaign.banner_kinds.iter().any(|expected| {
-                            link.banner_kind.to_ascii_lowercase().contains(expected)
-                        }))
-                {
-                    return None;
-                }
-                let start = DateTime::parse_from_rfc3339(&link.jp_start_date)
-                    .ok()?
-                    .timestamp();
-                let next_start = timeline_links
-                    .iter()
-                    .filter(|(other_id, other)| {
-                        *other_id != gacha_id
-                            && is_free_pull_schedule_gacha(**other_id, other, gachas)
-                            && (campaign.banner_kinds.is_empty()
-                                || campaign.banner_kinds.iter().any(|expected| {
-                                    other.banner_kind.to_ascii_lowercase().contains(expected)
-                                }))
-                    })
-                    .filter_map(|(_, other)| {
-                        DateTime::parse_from_rfc3339(&other.jp_start_date)
-                            .ok()
-                            .map(|date| date.timestamp())
-                    })
-                    .filter(|other_start| *other_start > start)
-                    .min()
-                    .unwrap_or(start + 21 * 86_400);
-                (entitlement_at >= start && entitlement_at < next_start)
-                    .then_some((start, *gacha_id))
-            })
-            .collect::<Vec<_>>();
-        candidates.sort_unstable_by(|left, right| {
-            right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1))
-        });
-        let (latest_start, gacha_id) = candidates.first().copied()?;
-        if candidates
-            .get(1)
-            .is_some_and(|candidate| candidate.0 == latest_start)
-        {
-            return None;
-        }
-        // Paid banners are schedule boundaries, never free-pull targets. If a
-        // campaign day resolves to one, the evidence is incomplete for the
-        // remaining entitlement days; omit the pool instead of moving those
-        // pulls back onto an earlier standard banner.
-        if timeline_links
+        entitlements.push(entitlement_at);
+    }
+    Some(entitlements)
+}
+
+fn free_pull_target_gacha(
+    banner_kind: &str,
+    target_start: i64,
+    timeline_links: &BTreeMap<i64, TimelineLink>,
+    gachas: &BTreeMap<i64, GachaAccumulator>,
+) -> Option<i64> {
+    let mut candidates = timeline_links
+        .iter()
+        .filter_map(|(gacha_id, link)| {
+            if link.is_paid
+                || !is_free_pull_schedule_gacha(*gacha_id, link, gachas)
+                || !link.banner_kind.to_ascii_lowercase().contains(banner_kind)
+            {
+                return None;
+            }
+            let start = DateTime::parse_from_rfc3339(&link.jp_start_date)
+                .ok()?
+                .timestamp();
+            (start <= target_start && target_start - start <= 21 * 86_400)
+                .then_some((start, *gacha_id))
+        })
+        .collect::<Vec<_>>();
+    candidates
+        .sort_unstable_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    let (latest_start, gacha_id) = candidates.first().copied()?;
+    if candidates
+        .get(1)
+        .is_some_and(|candidate| candidate.0 == latest_start)
+    {
+        return None;
+    }
+    Some(gacha_id)
+}
+
+fn free_pull_schedule_gacha_at(
+    banner_kind: &str,
+    entitlement_at: i64,
+    timeline_links: &BTreeMap<i64, TimelineLink>,
+    gachas: &BTreeMap<i64, GachaAccumulator>,
+) -> Option<i64> {
+    let mut candidates = timeline_links
+        .iter()
+        .filter_map(|(gacha_id, link)| {
+            if !is_free_pull_schedule_gacha(*gacha_id, link, gachas)
+                || !link.banner_kind.to_ascii_lowercase().contains(banner_kind)
+            {
+                return None;
+            }
+            let start = DateTime::parse_from_rfc3339(&link.jp_start_date)
+                .ok()?
+                .timestamp();
+            (start <= entitlement_at && entitlement_at - start < 21 * 86_400)
+                .then_some((start, *gacha_id))
+        })
+        .collect::<Vec<_>>();
+    candidates
+        .sort_unstable_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    let (latest_start, gacha_id) = candidates.first().copied()?;
+    if candidates
+        .get(1)
+        .is_some_and(|candidate| candidate.0 == latest_start)
+        || timeline_links
             .get(&gacha_id)
             .is_none_or(|link| link.is_paid)
-        {
-            return None;
-        }
-        *assignments.entry(gacha_id).or_insert(0) += campaign.pulls_per_day;
+    {
+        return None;
     }
-    (assignments.values().sum::<i64>() == campaign.total_pulls).then_some(assignments)
+    Some(gacha_id)
 }
 
 fn is_free_pull_schedule_gacha(
@@ -1709,37 +1880,180 @@ fn is_free_pull_anchor(line: &str) -> bool {
         && !has_sales_context(&lower)
 }
 
+fn extract_news_free_pull_target_windows(value: &str) -> Vec<NewsFreePullTargetWindow> {
+    let lines = value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    lines
+        .windows(2)
+        .filter_map(|pair| {
+            let (banner_kind, pin_to_window_start) = free_pull_target_banner_kind(pair[0])?;
+            if pair[1].chars().count() > 100 {
+                return None;
+            }
+            let range = extract_numeric_month_day_times(pair[1]);
+            (range.len() >= 2).then(|| NewsFreePullTargetWindow {
+                banner_kind,
+                pin_to_window_start,
+                start: range[0],
+                end: range[1],
+            })
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+fn extract_news_free_pull_pinned_banner_kinds(
+    value: &str,
+    target_windows: &[NewsFreePullTargetWindow],
+) -> BTreeSet<&'static str> {
+    let mut result = target_windows
+        .iter()
+        .filter_map(|window| window.pin_to_window_start.then_some(window.banner_kind))
+        .collect::<BTreeSet<_>>();
+    let lines = value
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    for pair in lines.windows(2) {
+        let heading = pair[0].to_ascii_lowercase();
+        if !(heading.contains("target gacha") || heading.contains("eligible gacha")) {
+            continue;
+        }
+        if let Some((kind, true)) = free_pull_target_banner_kind(pair[1]) {
+            result.insert(kind);
+        }
+    }
+    for line in lines {
+        if line.chars().count() <= 120 {
+            if let Some((kind, true)) = free_pull_target_banner_kind(line) {
+                result.insert(kind);
+            }
+        }
+    }
+    result
+}
+
+fn free_pull_target_banner_kind(value: &str) -> Option<(&'static str, bool)> {
+    let lower = value.to_ascii_lowercase();
+    if lower.contains("example")
+        || lower.contains("percentage")
+        || lower.contains("offer ratio")
+        || lower.contains("please check")
+    {
+        return None;
+    }
+    let support =
+        lower.contains("support card gacha") || value.contains("ã‚µãƒãƒ¼ãƒˆã‚«ãƒ¼ãƒ‰ã‚¬ãƒãƒ£");
+    let character = lower.contains("pretty derby gacha")
+        || lower.contains("training umamusume gacha")
+        || value.contains("ãƒ—ãƒªãƒ†ã‚£ãƒ¼ãƒ€ãƒ¼ãƒ“ãƒ¼ã‚¬ãƒãƒ£")
+        || value.contains("è‚²æˆã‚¦ãƒžå¨˜ã‚¬ãƒãƒ£");
+    let pins_one_banner =
+        lower.contains("anniv") || lower.contains("scenario") || lower.contains("commemorat");
+    match (support, character) {
+        (true, false) => Some(("support", pins_one_banner)),
+        (false, true) => Some(("character", pins_one_banner)),
+        _ => None,
+    }
+}
+
 fn extract_month_day_time(value: &str) -> Option<(u32, u32, u32, u32)> {
+    extract_numeric_month_day_times(value)
+        .into_iter()
+        .next()
+        .or_else(|| extract_english_month_day_time(value))
+}
+
+fn extract_numeric_month_day_times(value: &str) -> Vec<(u32, u32, u32, u32)> {
     let tokens = value.split_whitespace().collect::<Vec<_>>();
-    for pair in tokens.windows(2) {
-        let date =
-            pair[0].trim_matches(|character: char| !character.is_ascii_digit() && character != '/');
-        let time =
-            pair[1].trim_matches(|character: char| !character.is_ascii_digit() && character != ':');
-        let Some((month, day)) = date.split_once('/') else {
-            continue;
-        };
-        let Some((hour, minute)) = time.split_once(':') else {
-            continue;
-        };
-        let (Ok(month), Ok(day), Ok(hour), Ok(minute)) = (
-            month.parse::<u32>(),
-            day.parse::<u32>(),
-            hour.parse::<u32>(),
-            minute.parse::<u32>(),
-        ) else {
-            continue;
-        };
-        let parsed = (month, day, hour, minute);
-        if (1..=12).contains(&parsed.0)
-            && (1..=31).contains(&parsed.1)
-            && parsed.2 <= 23
-            && parsed.3 <= 59
+    tokens
+        .windows(2)
+        .filter_map(|pair| {
+            let date = pair[0]
+                .trim_matches(|character: char| !character.is_ascii_digit() && character != '/');
+            let time = pair[1]
+                .trim_matches(|character: char| !character.is_ascii_digit() && character != ':');
+            let (month, day) = date.split_once('/')?;
+            let (hour, minute) = time.split_once(':')?;
+            let (Ok(month), Ok(day), Ok(hour), Ok(minute)) = (
+                month.parse::<u32>(),
+                day.parse::<u32>(),
+                hour.parse::<u32>(),
+                minute.parse::<u32>(),
+            ) else {
+                return None;
+            };
+            let parsed = (month, day, hour, minute);
+            if (1..=12).contains(&parsed.0)
+                && (1..=31).contains(&parsed.1)
+                && parsed.2 <= 23
+                && parsed.3 <= 59
+            {
+                Some(parsed)
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn extract_english_month_day_time(value: &str) -> Option<(u32, u32, u32, u32)> {
+    let tokens = value.split_whitespace().collect::<Vec<_>>();
+    for (index, token) in tokens.iter().enumerate() {
+        let month = match token
+            .trim_matches(|character: char| !character.is_ascii_alphabetic())
+            .to_ascii_lowercase()
+            .as_str()
         {
-            return Some(parsed);
+            "january" | "jan" => 1,
+            "february" | "feb" => 2,
+            "march" | "mar" => 3,
+            "april" | "apr" => 4,
+            "may" => 5,
+            "june" | "jun" => 6,
+            "july" | "jul" => 7,
+            "august" | "aug" => 8,
+            "september" | "sep" | "sept" => 9,
+            "october" | "oct" => 10,
+            "november" | "nov" => 11,
+            "december" | "dec" => 12,
+            _ => continue,
+        };
+        let day = tokens
+            .get(index + 1)?
+            .trim_matches(|character: char| !character.is_ascii_digit())
+            .parse::<u32>()
+            .ok()?;
+        if !(1..=31).contains(&day) {
+            continue;
+        }
+        let nearby_time = tokens[index.saturating_sub(3)..index]
+            .iter()
+            .rev()
+            .find_map(|token| parse_clock_time(token))
+            .or_else(|| {
+                tokens[index + 2..tokens.len().min(index + 9)]
+                    .iter()
+                    .find_map(|token| parse_clock_time(token))
+            });
+        if let Some((hour, minute)) = nearby_time {
+            return Some((month, day, hour, minute));
         }
     }
     None
+}
+
+fn parse_clock_time(value: &str) -> Option<(u32, u32)> {
+    let token =
+        value.trim_matches(|character: char| !character.is_ascii_digit() && character != ':');
+    let (hour, minute) = token.split_once(':')?;
+    let (hour, minute) = (hour.parse::<u32>().ok()?, minute.parse::<u32>().ok()?);
+    (hour <= 23 && minute <= 59).then_some((hour, minute))
 }
 
 fn archive_combined_text(post: &ArchiveNews) -> String {
@@ -4488,13 +4802,15 @@ mod tests {
         amounts_before_word, apply_news_free_pulls, archive_combined_text, build_event_benefits,
         build_global_reward_comparison, extract_free_pull_total, extract_global_correction_total,
         extract_global_direct_gifts, extract_global_login_bonus_total, extract_login_bonus_total,
-        extract_news_free_pull_claims, has_cost_context, has_sales_context, html_to_text,
-        jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
-        load_competitive_variants, load_daily_pack_rules, load_gachas, load_global_news_rewards,
-        load_global_social_rewards, load_mission_campaign_rewards, load_news_details,
-        load_news_rewards, load_paid_news_income_rules, match_news_event,
-        partition_news_free_pull_campaign_days, partition_news_free_pull_days,
-        planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
+        extract_month_day_time, extract_news_free_pull_claims,
+        extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
+        has_cost_context, has_sales_context, html_to_text, jewel_amounts_from_line, load_archive,
+        load_competitive_reward_metadata, load_competitive_variants, load_daily_pack_rules,
+        load_gachas, load_global_news_rewards, load_global_social_rewards,
+        load_mission_campaign_rewards, load_news_details, load_news_rewards,
+        load_paid_news_income_rules, match_news_event, partition_news_free_pull_campaign_days,
+        partition_news_free_pull_days, planner_reward_event_ids,
+        remove_global_social_rewards_covered_by_news, reward_sections,
         seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
         ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
         GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
@@ -5076,12 +5392,16 @@ mod tests {
                 posted_at: Some("2026-01-01T03:00:00+00:00".to_string()),
                 event_types: Vec::new(),
                 raw: json!({
-                    "message_english": "One free 10-pull gacha per day. Eligible Gacha: Support Card Gacha"
+                    "message_english": "One free 10-pull gacha per day.\nTarget Gacha\n2.5th Anniversary Support Card Gacha"
                 }),
             }],
         };
         let mut links = BTreeMap::new();
-        for (gacha_id, banner_kind) in [(10, "support"), (20, "character")] {
+        for (gacha_id, banner_kind, jp_start_date) in [
+            (10, "support", "2026-01-01T03:00:00+00:00"),
+            (11, "support", "2026-01-05T03:00:00+00:00"),
+            (20, "character", "2026-01-01T03:00:00+00:00"),
+        ] {
             links.insert(
                 gacha_id,
                 TimelineLink {
@@ -5089,7 +5409,7 @@ mod tests {
                     banner_kind: banner_kind.to_string(),
                     start_date: "2026-07-01T03:00:00+00:00".to_string(),
                     end_date: "2026-07-10T03:00:00+00:00".to_string(),
-                    jp_start_date: "2026-01-01T03:00:00+00:00".to_string(),
+                    jp_start_date: jp_start_date.to_string(),
                     pickup_card_ids: Vec::new(),
                     gacha_type: 3,
                     is_paid: false,
@@ -5099,6 +5419,13 @@ mod tests {
         let mut gachas = BTreeMap::from([
             (
                 10,
+                GachaAccumulator {
+                    gacha_type: 3,
+                    ..GachaAccumulator::default()
+                },
+            ),
+            (
+                11,
                 GachaAccumulator {
                     gacha_type: 3,
                     ..GachaAccumulator::default()
@@ -5116,6 +5443,7 @@ mod tests {
         apply_news_free_pulls(&archive, &links, &mut gachas);
 
         assert_eq!(gachas[&10].free_pulls, 80);
+        assert_eq!(gachas[&11].free_pulls, 0);
         assert_eq!(gachas[&20].free_pulls, 0);
         assert_eq!(gachas[&10].free_pulls_provenance, Some("jp_news"));
     }
@@ -5746,6 +6074,72 @@ mod tests {
     }
 
     #[test]
+    fn parses_written_english_campaign_start_in_preview_posts() {
+        assert_eq!(
+            extract_month_day_time("The campaign begins at 12:00 on October 29, 2025 (Wednesday)."),
+            Some((10, 29, 12, 0))
+        );
+        assert_eq!(
+            extract_month_day_time("The campaign begins on June 27, 2025 (Friday) at 12:00."),
+            Some((6, 27, 12, 0))
+        );
+    }
+
+    #[test]
+    fn archived_notices_expose_named_target_gacha_windows() {
+        let archive = load_archive().unwrap();
+        let windows = |post_id| {
+            let post = archive
+                .news
+                .iter()
+                .find(|post| post.post_id == post_id)
+                .unwrap();
+            extract_news_free_pull_target_windows(&archive_combined_text(post))
+        };
+
+        let anniversary = windows(901);
+        assert!(anniversary.iter().any(|window| {
+            window.banner_kind == "support"
+                && window.start == (8, 24, 12, 0)
+                && window.end == (8, 29, 11, 59)
+        }));
+        assert!(anniversary.iter().any(|window| {
+            window.banner_kind == "support"
+                && window.start == (8, 29, 12, 0)
+                && window.end == (9, 3, 4, 59)
+        }));
+
+        let year_end = windows(1124);
+        assert!(year_end.iter().any(|window| {
+            window.banner_kind == "support"
+                && window.start == (12, 29, 12, 0)
+                && window.end == (1, 2, 11, 59)
+        }));
+        assert!(
+            year_end
+                .iter()
+                .any(|window| window.banner_kind == "character"),
+            "{year_end:#?}"
+        );
+    }
+
+    #[test]
+    fn cited_single_target_notices_pin_the_named_support_gacha() {
+        let archive = load_archive().unwrap();
+        for post_id in [1462, 1994, 2079, 2197, 2606, 2869] {
+            let post = archive
+                .news
+                .iter()
+                .find(|post| post.post_id == post_id)
+                .unwrap();
+            let combined = archive_combined_text(post);
+            let windows = extract_news_free_pull_target_windows(&combined);
+            let pinned = extract_news_free_pull_pinned_banner_kinds(&combined, &windows);
+            assert!(pinned.contains("support"), "post {post_id}: {pinned:#?}");
+        }
+    }
+
+    #[test]
     fn archived_anniversary_support_post_is_one_hundred_pulls_not_note_fragments() {
         let archive = load_archive().unwrap();
         let post = archive
@@ -5849,15 +6243,145 @@ mod tests {
     }
 
     #[test]
-    fn archived_cross_kind_campaign_is_omitted_when_notice_ranges_are_not_parsed() {
+    fn archived_single_target_campaign_is_not_split_by_a_later_banner() {
+        let mut archive = load_archive().unwrap();
+        archive.news.retain(|post| post.post_id == 1462);
+        let links = BTreeMap::from([
+            (
+                30187,
+                TimelineLink {
+                    event_id: "support-banner-2023_30187".to_string(),
+                    banner_kind: "support".to_string(),
+                    start_date: "2027-04-11T22:00:00Z".to_string(),
+                    end_date: "2027-04-21T22:00:00Z".to_string(),
+                    jp_start_date: "2023-08-24T03:00:00Z".to_string(),
+                    pickup_card_ids: Vec::new(),
+                    gacha_type: 3,
+                    is_paid: false,
+                },
+            ),
+            (
+                30189,
+                TimelineLink {
+                    event_id: "support-banner-2023_30189".to_string(),
+                    banner_kind: "support".to_string(),
+                    start_date: "2027-04-18T22:00:00Z".to_string(),
+                    end_date: "2027-04-28T22:00:00Z".to_string(),
+                    jp_start_date: "2023-08-31T03:00:00Z".to_string(),
+                    pickup_card_ids: Vec::new(),
+                    gacha_type: 3,
+                    is_paid: false,
+                },
+            ),
+        ]);
+        let mut gachas = BTreeMap::from([
+            (
+                30187,
+                GachaAccumulator {
+                    gacha_type: 3,
+                    ..GachaAccumulator::default()
+                },
+            ),
+            (
+                30189,
+                GachaAccumulator {
+                    gacha_type: 3,
+                    ..GachaAccumulator::default()
+                },
+            ),
+        ]);
+
+        let campaigns = apply_news_free_pulls(&archive, &links, &mut gachas);
+
+        assert_eq!(campaigns.len(), 1, "{campaigns:#?}");
+        assert_eq!(campaigns[0].total_pulls, 100);
+        assert_eq!(
+            campaigns[0].default_allocations,
+            vec![PlannerFreePullAllocation {
+                event_id: "support-banner-2023_30187".to_string(),
+                gacha_id: 30187,
+                pulls: 100,
+            }]
+        );
+        assert_eq!(gachas[&30187].free_pulls, 100);
+        assert_eq!(gachas[&30189].free_pulls, 0);
+    }
+
+    #[test]
+    fn dedicated_notice_outranks_ambiguous_preview_claims() {
+        let mut archive = load_archive().unwrap();
+        archive
+            .news
+            .retain(|post| matches!(post.post_id, 2712 | 2727));
+        let links = BTreeMap::from([
+            (
+                30363,
+                TimelineLink {
+                    event_id: "support-banner-2025_30363".to_string(),
+                    banner_kind: "support".to_string(),
+                    start_date: "2028-08-30T22:00:00Z".to_string(),
+                    end_date: "2028-09-09T22:00:00Z".to_string(),
+                    jp_start_date: "2025-08-24T03:00:00Z".to_string(),
+                    pickup_card_ids: Vec::new(),
+                    gacha_type: 3,
+                    is_paid: false,
+                },
+            ),
+            (
+                30365,
+                TimelineLink {
+                    event_id: "support-banner-2025_30365".to_string(),
+                    banner_kind: "support".to_string(),
+                    start_date: "2028-09-04T22:00:00Z".to_string(),
+                    end_date: "2028-09-14T22:00:00Z".to_string(),
+                    jp_start_date: "2025-08-29T03:00:00Z".to_string(),
+                    pickup_card_ids: Vec::new(),
+                    gacha_type: 3,
+                    is_paid: false,
+                },
+            ),
+        ]);
+        let mut gachas = BTreeMap::from([
+            (
+                30363,
+                GachaAccumulator {
+                    gacha_type: 3,
+                    ..GachaAccumulator::default()
+                },
+            ),
+            (
+                30365,
+                GachaAccumulator {
+                    gacha_type: 3,
+                    ..GachaAccumulator::default()
+                },
+            ),
+        ]);
+
+        let campaigns = apply_news_free_pulls(&archive, &links, &mut gachas);
+
+        assert_eq!(campaigns.len(), 1, "{campaigns:#?}");
+        assert_eq!(campaigns[0].total_pulls, 100);
+        assert_eq!(campaigns[0].pulls_per_day, 10);
+        assert_eq!(campaigns[0].entitlement_days, 10);
+        assert_eq!(
+            campaigns[0].source_url,
+            "https://umapyoi.net/news/2712?lang=jp"
+        );
+        assert_eq!(gachas[&30363].free_pulls, 100);
+        assert_eq!(gachas[&30365].free_pulls, 0);
+    }
+
+    #[test]
+    fn archived_cross_kind_campaign_uses_notice_target_ranges() {
         let mut archive = load_archive().unwrap();
         archive.news.retain(|post| post.post_id == 1124);
         let links = BTreeMap::from([
             (
                 30138,
                 TimelineLink {
-                    event_id: "support-banner-2022_30138".to_string(),
-                    banner_kind: "support".to_string(),
+                    event_id: "banner-2022_30138".to_string(),
+                    banner_kind: "character".to_string(),
                     start_date: "2026-12-29T03:00:00Z".to_string(),
                     end_date: "2027-01-08T03:00:00Z".to_string(),
                     jp_start_date: "2022-12-29T03:00:00Z".to_string(),
@@ -5869,8 +6393,8 @@ mod tests {
             (
                 30139,
                 TimelineLink {
-                    event_id: "banner-2022_30139".to_string(),
-                    banner_kind: "character".to_string(),
+                    event_id: "support-banner-2022_30139".to_string(),
+                    banner_kind: "support".to_string(),
                     start_date: "2026-12-29T03:00:00Z".to_string(),
                     end_date: "2027-01-08T03:00:00Z".to_string(),
                     // Both gachas share the master-data start. Their distinct
@@ -5901,8 +6425,25 @@ mod tests {
 
         let campaigns = apply_news_free_pulls(&archive, &links, &mut gachas);
 
-        assert!(campaigns.is_empty(), "{campaigns:#?}");
-        assert!(gachas.values().all(|gacha| gacha.free_pulls == 0));
+        assert_eq!(campaigns.len(), 1, "{campaigns:#?}");
+        assert_eq!(campaigns[0].total_pulls, 100);
+        assert_eq!(
+            campaigns[0].default_allocations,
+            vec![
+                PlannerFreePullAllocation {
+                    event_id: "banner-2022_30138".to_string(),
+                    gacha_id: 30138,
+                    pulls: 50,
+                },
+                PlannerFreePullAllocation {
+                    event_id: "support-banner-2022_30139".to_string(),
+                    gacha_id: 30139,
+                    pulls: 50,
+                },
+            ]
+        );
+        assert_eq!(gachas[&30138].free_pulls, 50);
+        assert_eq!(gachas[&30139].free_pulls, 50);
     }
 
     #[test]
