@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 22;
+const ALGORITHM_VERSION: u8 = 23;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -23,6 +23,11 @@ const SUPPORT_SELECTOR_CATEGORY: i64 = 42;
 const ITEM_NAME_TEXT_CATEGORY: i64 = 23;
 const DEFAULT_JEWEL_COST_PER_PULL: i64 = 150;
 const DEFAULT_SPARK_PULLS: i64 = 200;
+const GLOBAL_LAUNCH_TIMESTAMP: i64 = 1_750_896_000;
+const FRIEND_POINT_EXCHANGE_ID: i64 = 2_000;
+const CLOVER_EXCHANGE_ID: i64 = 4_000;
+const TRAINER_SKILLS_TEST_CURRENCY_CATEGORY: i64 = 165;
+const RACING_CARNIVAL_CURRENCY_CATEGORY: i64 = 166;
 const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
 const GLOBAL_NEWS_ARCHIVE: &[u8] = include_bytes!("../global_data/official_news_archive.json");
 const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_social_archive.json");
@@ -64,6 +69,8 @@ pub struct PlannerIncomeRule {
     pub amount: i64,
     pub cadence: &'static str,
     pub start_date: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub day_of_month: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_date: Option<String>,
     pub default_enabled: bool,
@@ -602,6 +609,20 @@ pub fn generate(
     remove_global_news_login_bonuses_covered_by_master(&mut rewards);
     prefer_global_news_over_jp_news(&mut rewards);
     project_missing_story_rewards(timeline, &mut rewards);
+    project_missing_event_exchange_rewards(
+        timeline,
+        &mut rewards,
+        "trainer_skills_test",
+        "Trainer Skills Test exchange rewards",
+        "Trainer Skills Test exchange rewards (projected Global parity)",
+    );
+    project_missing_event_exchange_rewards(
+        timeline,
+        &mut rewards,
+        "racing_carnival",
+        "Racing Carnival exchange rewards",
+        "Racing Carnival exchange rewards (projected Global parity)",
+    );
     deduplicate_rewards(&mut rewards);
     let event_benefits = build_event_benefits(connection, &rewards, &gacha_shards)?;
     let competitive_variants =
@@ -663,9 +684,9 @@ fn project_missing_story_rewards(timeline: &Value, rewards: &mut Vec<PlannerRewa
     let mut dates = BTreeMap::<String, String>::new();
     let mut confirmed_event_ids = BTreeSet::<String>::new();
     let mut missing_event_ids = Vec::new();
-    let existing_event_ids = rewards
+    let existing_event_currencies = rewards
         .iter()
-        .filter_map(|reward| reward.event_id.clone())
+        .filter_map(|reward| Some((reward.event_id.clone()?, reward.currency.to_string())))
         .collect::<BTreeSet<_>>();
 
     for event in timeline
@@ -686,53 +707,152 @@ fn project_missing_story_rewards(timeline: &Value, rewards: &mut Vec<PlannerRewa
         dates.insert(event_id.to_string(), date.to_string());
         if event.get("is_confirmed").and_then(Value::as_bool) == Some(true) {
             confirmed_event_ids.insert(event_id.to_string());
-        } else if !existing_event_ids.contains(event_id) {
+        } else {
             missing_event_ids.push(event_id.to_string());
         }
     }
 
-    let Some(template) = rewards
-        .iter()
-        .filter(|reward| {
-            reward.event_id.as_ref().is_some_and(|event_id| {
-                confirmed_event_ids.contains(event_id)
-                    && reward.currency == "free_jewels"
-                    && reward.amount.is_some_and(|amount| amount > 0)
-            })
+    let mut templates = BTreeMap::<&'static str, PlannerReward>::new();
+    for reward in rewards.iter().filter(|reward| {
+        reward.event_id.as_ref().is_some_and(|event_id| {
+            confirmed_event_ids.contains(event_id)
+                && matches!(
+                    reward.currency,
+                    "free_jewels" | "uma_ticket" | "support_ticket"
+                )
+                && reward.amount.is_some_and(|amount| amount > 0)
         })
-        .max_by_key(|reward| {
-            reward
+    }) {
+        let replace = templates.get(reward.currency).is_none_or(|existing| {
+            let reward_date = reward
                 .event_id
                 .as_ref()
-                .and_then(|event_id| dates.get(event_id))
-                .cloned()
-        })
-        .cloned()
-    else {
+                .and_then(|event_id| dates.get(event_id));
+            let existing_date = existing
+                .event_id
+                .as_ref()
+                .and_then(|event_id| dates.get(event_id));
+            reward_date > existing_date
+        });
+        if replace {
+            templates.insert(reward.currency, reward.clone());
+        }
+    }
+    if templates.is_empty() {
         return;
-    };
+    }
 
     missing_event_ids.sort_by_key(|event_id| dates.get(event_id).cloned());
     for event_id in missing_event_ids {
         let Some(available_at) = dates.get(&event_id) else {
             continue;
         };
-        rewards.push(PlannerReward {
-            id: format!("projected-story-{event_id}-{}", template.id),
-            label: "Story event rewards (projected Global parity)".to_string(),
-            event_id: Some(event_id),
-            gacha_id: None,
-            currency: template.currency,
-            amount: template.amount,
-            available_at: available_at.clone(),
-            provenance: "global_story_reward_parity",
-            assumption: template.assumption,
-            default_enabled: true,
-            source_url: None,
-            source_items: template.source_items.clone(),
-            confidence: "projected_global_parity",
-            evidence: None,
-        });
+        for template in templates.values() {
+            if existing_event_currencies
+                .contains(&(event_id.clone(), template.currency.to_string()))
+            {
+                continue;
+            }
+            rewards.push(PlannerReward {
+                id: format!("projected-story-{event_id}-{}", template.id),
+                label: "Story event rewards (projected Global parity)".to_string(),
+                event_id: Some(event_id.clone()),
+                gacha_id: None,
+                currency: template.currency,
+                amount: template.amount,
+                available_at: available_at.clone(),
+                provenance: "global_story_reward_parity",
+                assumption: template.assumption,
+                default_enabled: true,
+                source_url: None,
+                source_items: template.source_items.clone(),
+                confidence: "projected_global_parity",
+                evidence: Some(
+                    "Latest confirmed Global story-event reward table; replaced automatically when exact event data is available"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+}
+
+fn project_missing_event_exchange_rewards(
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    event_type: &str,
+    exact_label: &str,
+    projected_label: &str,
+) {
+    let templates = ["uma_ticket", "support_ticket"]
+        .into_iter()
+        .filter_map(|currency| {
+            rewards
+                .iter()
+                .filter(|reward| {
+                    reward.label == exact_label
+                        && reward.provenance == "global_master"
+                        && reward.currency == currency
+                        && reward.confidence == "exact_source"
+                })
+                .max_by_key(|reward| reward.available_at.as_str())
+                .cloned()
+                .map(|reward| (currency, reward))
+        })
+        .collect::<BTreeMap<_, _>>();
+    if templates.is_empty() {
+        return;
+    }
+
+    let existing_event_currencies = rewards
+        .iter()
+        .filter_map(|reward| Some((reward.event_id.clone()?, reward.currency.to_string())))
+        .collect::<BTreeSet<_>>();
+    for event in timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|event| event.get("type").and_then(Value::as_str) == Some(event_type))
+        .filter(|event| event.get("is_confirmed").and_then(Value::as_bool) != Some(true))
+    {
+        let (Some(event_id), Some(available_at)) = (
+            event.get("id").and_then(Value::as_str),
+            event
+                .get("estimated_end_date")
+                .and_then(Value::as_str)
+                .or_else(|| event.get("global_release_date").and_then(Value::as_str)),
+        ) else {
+            continue;
+        };
+        for template in templates.values() {
+            if existing_event_currencies
+                .contains(&(event_id.to_string(), template.currency.to_string()))
+            {
+                continue;
+            }
+            rewards.push(PlannerReward {
+                id: format!(
+                    "projected-exchange-{event_type}-{event_id}-{}",
+                    template.currency
+                ),
+                label: projected_label.to_string(),
+                event_id: Some(event_id.to_string()),
+                gacha_id: None,
+                currency: template.currency,
+                amount: template.amount,
+                available_at: available_at.to_string(),
+                provenance: "global_exchange_reward_parity",
+                assumption: "full_exchange",
+                default_enabled: true,
+                source_url: None,
+                source_items: template.source_items.clone(),
+                confidence: "projected_global_parity",
+                evidence: Some(
+                    "Projected from exact recurring ticket stock in the Global master exchange tables"
+                        .to_string(),
+                ),
+            });
+        }
     }
 }
 fn planner_reward_event_ids(rewards: &[PlannerReward]) -> BTreeSet<String> {
@@ -2305,6 +2425,7 @@ fn load_income_rules(connection: &Connection) -> Result<Vec<PlannerIncomeRule>> 
                 amount,
                 cadence: "weekly",
                 start_date: "2025-06-26T00:00:00Z".to_string(),
+                day_of_month: None,
                 end_date: None,
                 default_enabled: false,
                 provenance: "global_master",
@@ -2352,6 +2473,7 @@ fn load_income_rules(connection: &Connection) -> Result<Vec<PlannerIncomeRule>> 
             amount,
             cadence: "monthly",
             start_date: "2025-06-26T00:00:00Z".to_string(),
+            day_of_month: None,
             end_date: None,
             default_enabled: false,
             provenance: "global_master",
@@ -2363,8 +2485,84 @@ fn load_income_rules(connection: &Connection) -> Result<Vec<PlannerIncomeRule>> 
     }
 
     load_daily_pack_rules(connection, &mut rules)?;
+    load_monthly_ticket_exchange_rules(connection, &mut rules)?;
 
     Ok(rules)
+}
+
+fn load_monthly_ticket_exchange_rules(
+    connection: &Connection,
+    rules: &mut Vec<PlannerIncomeRule>,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "item_exchange")? {
+        return Ok(());
+    }
+    let mut statement = connection.prepare(
+        r#"
+        SELECT item_exchange_top_id,
+               change_item_id,
+               SUM(change_item_num * change_item_limit_num),
+               MIN(start_date)
+        FROM item_exchange
+        WHERE item_exchange_top_id IN (?1, ?2)
+          AND change_item_limit_type = 4
+          AND change_item_category = ?3
+          AND change_item_id IN (?4, ?5)
+          AND change_item_num > 0
+          AND change_item_limit_num > 0
+        GROUP BY item_exchange_top_id, change_item_id
+        ORDER BY item_exchange_top_id, change_item_id
+        "#,
+    )?;
+    let rows = statement.query_map(
+        [
+            FRIEND_POINT_EXCHANGE_ID,
+            CLOVER_EXCHANGE_ID,
+            GACHA_TICKET_CATEGORY,
+            UMA_TICKET_ITEM_ID,
+            SUPPORT_TICKET_ITEM_ID,
+        ],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        },
+    )?;
+    for row in rows {
+        let (exchange_id, item_id, amount, start) = row?;
+        let (exchange_slug, exchange_label) = match exchange_id {
+            FRIEND_POINT_EXCHANGE_ID => ("friend-points", "Friend Point Exchange"),
+            CLOVER_EXCHANGE_ID => ("clovers", "Clover Exchange"),
+            _ => continue,
+        };
+        let currency = match item_id {
+            UMA_TICKET_ITEM_ID => "uma_ticket",
+            SUPPORT_TICKET_ITEM_ID => "support_ticket",
+            _ => continue,
+        };
+        rules.push(PlannerIncomeRule {
+            id: format!("monthly-shop-{exchange_slug}-{currency}"),
+            label: format!("{exchange_label} tickets"),
+            currency,
+            amount,
+            cadence: "monthly",
+            start_date: timestamp_to_rfc3339(start.max(GLOBAL_LAUNCH_TIMESTAMP)),
+            day_of_month: Some(1),
+            end_date: None,
+            default_enabled: false,
+            provenance: "global_master",
+            description: Some(format!(
+                "Monthly ticket stock from the {exchange_label}; requires enough exchange currency"
+            )),
+            category: Some("shop"),
+            scenario_group: Some("monthly_shop_tickets"),
+            scenario_option: Some("include".to_string()),
+        });
+    }
+    Ok(())
 }
 
 fn load_daily_pack_rules(
@@ -2402,6 +2600,7 @@ fn load_daily_pack_rules(
             amount,
             cadence: "daily",
             start_date: master_date_to_rfc3339(&start)?,
+            day_of_month: None,
             end_date: Some(master_date_to_rfc3339(&end)?),
             default_enabled: false,
             provenance: "global_master",
@@ -2450,6 +2649,7 @@ fn load_paid_news_income_rules(archive: &Archive) -> Vec<PlannerIncomeRule> {
         amount,
         cadence: "monthly",
         start_date: latest_start,
+        day_of_month: None,
         end_date: None,
         default_enabled: false,
         provenance: "jp_fallback",
@@ -2479,6 +2679,7 @@ fn income_rule(
         amount,
         cadence,
         start_date: master_date_to_rfc3339(start)?,
+        day_of_month: None,
         end_date: end.map(master_date_to_rfc3339).transpose()?,
         default_enabled,
         provenance: "global_master",
@@ -2505,6 +2706,30 @@ fn load_master_rewards(
         "full_completion",
         "exact_source",
     )?;
+    load_event_exchange_rewards(
+        connection,
+        timeline,
+        &mut rewards,
+        "global_release_date",
+        "trainer_skills_test",
+        TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
+        "Trainer Skills Test exchange rewards",
+        "global_master",
+        "full_exchange",
+        "exact_source",
+    )?;
+    load_event_exchange_rewards(
+        connection,
+        timeline,
+        &mut rewards,
+        "global_release_date",
+        "racing_carnival",
+        RACING_CARNIVAL_CURRENCY_CATEGORY,
+        "Racing Carnival exchange rewards",
+        "global_master",
+        "full_exchange",
+        "exact_source",
+    )?;
     if let Some(jp_connection) = jp_connection {
         load_story_rewards(
             jp_connection,
@@ -2513,6 +2738,30 @@ fn load_master_rewards(
             "jp_release_date",
             "jp_master",
             "jp_reward_parity_full_completion",
+            "projected_parity",
+        )?;
+        load_event_exchange_rewards(
+            jp_connection,
+            timeline,
+            &mut rewards,
+            "jp_release_date",
+            "trainer_skills_test",
+            TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
+            "Trainer Skills Test exchange rewards (projected JP parity)",
+            "jp_master",
+            "jp_reward_parity_full_exchange",
+            "projected_parity",
+        )?;
+        load_event_exchange_rewards(
+            jp_connection,
+            timeline,
+            &mut rewards,
+            "jp_release_date",
+            "racing_carnival",
+            RACING_CARNIVAL_CURRENCY_CATEGORY,
+            "Racing Carnival exchange rewards (projected JP parity)",
+            "jp_master",
+            "jp_reward_parity_full_exchange",
             "projected_parity",
         )?;
     }
@@ -3617,43 +3866,54 @@ fn load_story_rewards(
     confidence: &'static str,
 ) -> Result<()> {
     let story_links = timeline_story_links(timeline, timeline_date_field);
-    let mut totals: BTreeMap<i64, i64> = BTreeMap::new();
-    for query in [
-        "SELECT story_event_id, SUM(item_num) FROM story_event_point_reward WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
-        "SELECT story_event_id, SUM(item_num) FROM story_event_mission WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
-        "SELECT story_event_id, SUM(CASE WHEN add_reward_category_1 = ?1 AND add_reward_id_1 = ?2 THEN add_reward_num_1 ELSE 0 END + CASE WHEN add_reward_category_2 = ?1 AND add_reward_id_2 = ?2 THEN add_reward_num_2 ELSE 0 END) FROM story_event_story_data GROUP BY story_event_id",
-    ] {
-        let mut statement = connection.prepare(query)?;
-        let rows = statement.query_map([JEWEL_CATEGORY, JEWEL_ITEM_ID], |row| {
+    let tracked_items = [
+        (JEWEL_CATEGORY, JEWEL_ITEM_ID),
+        (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID),
+        (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID),
+    ];
+    let mut totals: BTreeMap<(i64, i64, i64), i64> = BTreeMap::new();
+    for (item_category, item_id) in tracked_items {
+        for query in [
+            "SELECT story_event_id, SUM(item_num) FROM story_event_point_reward WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
+            "SELECT story_event_id, SUM(item_num) FROM story_event_mission WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
+            "SELECT story_event_id, SUM(CASE WHEN add_reward_category_1 = ?1 AND add_reward_id_1 = ?2 THEN add_reward_num_1 ELSE 0 END + CASE WHEN add_reward_category_2 = ?1 AND add_reward_id_2 = ?2 THEN add_reward_num_2 ELSE 0 END) FROM story_event_story_data GROUP BY story_event_id",
+        ] {
+            let mut statement = connection.prepare(query)?;
+            let rows = statement.query_map([item_category, item_id], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+            })?;
+            for row in rows {
+                let (event_id, amount) = row?;
+                *totals
+                    .entry((event_id, item_category, item_id))
+                    .or_default() += amount;
+            }
+        }
+
+        let mut statement = connection.prepare(
+            r#"
+            SELECT finite.story_event_id, SUM(reward.item_num)
+            FROM (
+                SELECT DISTINCT story_event_id, reward_set_id
+                FROM story_event_roulette_bingo
+                WHERE can_loop = 0
+            ) AS finite
+            JOIN story_event_bingo_reward AS reward
+              ON reward.reward_set_id = finite.reward_set_id
+            WHERE reward.item_category = ?1
+              AND reward.item_id = ?2
+            GROUP BY finite.story_event_id
+            "#,
+        )?;
+        let rows = statement.query_map([item_category, item_id], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
         })?;
         for row in rows {
             let (event_id, amount) = row?;
-            *totals.entry(event_id).or_default() += amount;
+            *totals
+                .entry((event_id, item_category, item_id))
+                .or_default() += amount;
         }
-    }
-
-    let mut statement = connection.prepare(
-        r#"
-        SELECT finite.story_event_id, SUM(reward.item_num)
-        FROM (
-            SELECT DISTINCT story_event_id, reward_set_id
-            FROM story_event_roulette_bingo
-            WHERE can_loop = 0
-        ) AS finite
-        JOIN story_event_bingo_reward AS reward
-          ON reward.reward_set_id = finite.reward_set_id
-        WHERE reward.item_category = ?1
-          AND reward.item_id = ?2
-        GROUP BY finite.story_event_id
-        "#,
-    )?;
-    let rows = statement.query_map([JEWEL_CATEGORY, JEWEL_ITEM_ID], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (event_id, amount) = row?;
-        *totals.entry(event_id).or_default() += amount;
     }
 
     let mut schedule =
@@ -3667,38 +3927,165 @@ fn load_story_rewards(
     })?;
     for row in rows {
         let (story_event_id, start, end) = row?;
-        let amount = totals.remove(&story_event_id).unwrap_or_default();
-        if amount <= 0 {
+        let source_items = tracked_items
+            .into_iter()
+            .filter_map(|(item_category, item_id)| {
+                let amount = totals
+                    .remove(&(story_event_id, item_category, item_id))
+                    .unwrap_or_default();
+                (amount > 0).then_some(PlannerSourceItem {
+                    item_category,
+                    item_id,
+                    amount,
+                    mission_count: None,
+                    odds: None,
+                    order_min: None,
+                    order_max: None,
+                    bonus: None,
+                })
+            })
+            .collect::<Vec<_>>();
+        if source_items.is_empty() {
             continue;
         }
         let link = timeline_link_near_start(&story_links, start);
-        rewards.push(PlannerReward {
-            id: format!("{provenance}-story-event-{story_event_id}"),
-            label: "Story event rewards".to_string(),
-            event_id: link.map(|link| link.0.clone()),
-            gacha_id: None,
-            currency: "free_jewels",
-            amount: Some(amount),
-            available_at: link
-                .map(|link| link.1.clone())
-                .unwrap_or_else(|| timestamp_to_rfc3339(end)),
-            provenance,
-            assumption,
-            default_enabled: true,
-            source_url: None,
-            source_items: vec![PlannerSourceItem {
-                item_category: JEWEL_CATEGORY,
-                item_id: JEWEL_ITEM_ID,
-                amount,
-                mission_count: None,
-                odds: None,
-                order_min: None,
-                order_max: None,
-                bonus: None,
-            }],
-            confidence,
-            evidence: None,
-        });
+        let event_id = link.map(|link| link.0.clone());
+        let available_at = link
+            .map(|link| link.1.clone())
+            .unwrap_or_else(|| timestamp_to_rfc3339(end));
+        for (currency, amount) in planner_equivalents(&source_items) {
+            let id = if currency == "free_jewels" {
+                format!("{provenance}-story-event-{story_event_id}")
+            } else {
+                format!("{provenance}-story-event-{story_event_id}-{currency}")
+            };
+            rewards.push(PlannerReward {
+                id,
+                label: "Story event rewards".to_string(),
+                event_id: event_id.clone(),
+                gacha_id: None,
+                currency,
+                amount: Some(amount),
+                available_at: available_at.clone(),
+                provenance,
+                assumption,
+                default_enabled: true,
+                source_url: None,
+                source_items: source_items
+                    .iter()
+                    .filter(|item| planner_currency_for_item(item) == Some(currency))
+                    .cloned()
+                    .collect(),
+                confidence,
+                evidence: Some(
+                    "Exact point, mission, story, and finite bingo reward tables from master data"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_event_exchange_rewards(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    event_type: &str,
+    payment_item_category: i64,
+    label: &str,
+    provenance: &'static str,
+    assumption: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "item_exchange")? {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, event_type, timeline_date_field);
+    let mut statement = connection.prepare(
+        r#"
+        SELECT item_exchange_top_id,
+               MIN(start_date),
+               MAX(end_date),
+               change_item_category,
+               change_item_id,
+               SUM(change_item_num * change_item_limit_num)
+        FROM item_exchange
+        WHERE pay_item_category = ?1
+          AND change_item_category = ?2
+          AND change_item_id IN (?3, ?4)
+          AND change_item_num > 0
+          AND change_item_limit_num > 0
+        GROUP BY item_exchange_top_id, change_item_category, change_item_id
+        ORDER BY item_exchange_top_id, change_item_id
+        "#,
+    )?;
+    let rows = statement.query_map(
+        [
+            payment_item_category,
+            GACHA_TICKET_CATEGORY,
+            UMA_TICKET_ITEM_ID,
+            SUPPORT_TICKET_ITEM_ID,
+        ],
+        |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                PlannerSourceItem {
+                    item_category: row.get(3)?,
+                    item_id: row.get(4)?,
+                    amount: row.get(5)?,
+                    mission_count: None,
+                    odds: None,
+                    order_min: None,
+                    order_max: None,
+                    bonus: None,
+                },
+            ))
+        },
+    )?;
+    let mut groups = BTreeMap::<i64, (i64, i64, Vec<PlannerSourceItem>)>::new();
+    for row in rows {
+        let (exchange_id, start, end, item) = row?;
+        groups
+            .entry(exchange_id)
+            .or_insert_with(|| (start, end, Vec::new()))
+            .2
+            .push(item);
+    }
+    for (exchange_id, (start, end, source_items)) in groups {
+        let link = timeline_link_near_start(&links, start);
+        let event_id = link.map(|link| link.0.clone());
+        let available_at = link
+            .map(|link| link.1.clone())
+            .unwrap_or_else(|| timestamp_to_rfc3339(end));
+        for (currency, amount) in planner_equivalents(&source_items) {
+            rewards.push(PlannerReward {
+                id: format!("{provenance}-{event_type}-{exchange_id}-{currency}"),
+                label: label.to_string(),
+                event_id: event_id.clone(),
+                gacha_id: None,
+                currency,
+                amount: Some(amount),
+                available_at: available_at.clone(),
+                provenance,
+                assumption,
+                default_enabled: true,
+                source_url: None,
+                source_items: source_items
+                    .iter()
+                    .filter(|item| planner_currency_for_item(item) == Some(currency))
+                    .cloned()
+                    .collect(),
+                confidence,
+                evidence: Some(
+                    "Exact ticket stock and exchange limits from master data".to_string(),
+                ),
+            });
+        }
     }
     Ok(())
 }
@@ -5364,16 +5751,17 @@ mod tests {
         extract_news_free_pull_target_windows, has_cost_context, has_sales_context, html_to_text,
         is_global_correction_notice, jewel_amounts_from_line, load_archive,
         load_competitive_reward_metadata, load_competitive_variants, load_daily_pack_rules,
-        load_gachas, load_global_news_rewards, load_global_social_rewards,
-        load_mission_campaign_rewards, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, match_news_event, partition_news_free_pull_campaign_days,
-        partition_news_free_pull_days, planner_reward_event_ids,
-        remove_global_social_rewards_covered_by_news, reward_sections,
+        load_event_exchange_rewards, load_gachas, load_global_news_rewards,
+        load_global_social_rewards, load_mission_campaign_rewards,
+        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
+        load_paid_news_income_rules, load_story_rewards, match_news_event,
+        partition_news_free_pull_campaign_days, partition_news_free_pull_days,
+        planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
         seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
         ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
         GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
         PlannerFreePullAllocation, PlannerGacha, PlannerGachaShard, PlannerReward,
-        PlannerSourceItem, TimelineLink,
+        PlannerSourceItem, TimelineLink, TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
     };
     use chrono::NaiveDate;
     use rusqlite::Connection;
@@ -7738,5 +8126,239 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn projects_exact_global_exchange_stock_to_future_matching_events() {
+        let timeline = json!({"events": [
+            {
+                "id":"skills-confirmed",
+                "type":"trainer_skills_test",
+                "global_release_date":"2026-01-01T00:00:00Z",
+                "estimated_end_date":"2026-01-08T00:00:00Z",
+                "is_confirmed":true
+            },
+            {
+                "id":"skills-future",
+                "type":"trainer_skills_test",
+                "global_release_date":"2026-02-01T00:00:00Z",
+                "estimated_end_date":"2026-02-08T00:00:00Z",
+                "is_confirmed":false
+            }
+        ]});
+        let reward = |currency, item_id| PlannerReward {
+            id: format!("exact-{currency}"),
+            label: "Trainer Skills Test exchange rewards".to_string(),
+            event_id: None,
+            gacha_id: None,
+            currency,
+            amount: Some(3),
+            available_at: "2026-01-08T00:00:00Z".to_string(),
+            provenance: "global_master",
+            assumption: "full_exchange",
+            default_enabled: true,
+            source_url: None,
+            source_items: vec![PlannerSourceItem {
+                item_category: 40,
+                item_id,
+                amount: 3,
+                mission_count: None,
+                odds: None,
+                order_min: None,
+                order_max: None,
+                bonus: None,
+            }],
+            confidence: "exact_source",
+            evidence: None,
+        };
+        let mut rewards = vec![reward("uma_ticket", 41), reward("support_ticket", 111)];
+
+        super::project_missing_event_exchange_rewards(
+            &timeline,
+            &mut rewards,
+            "trainer_skills_test",
+            "Trainer Skills Test exchange rewards",
+            "Trainer Skills Test exchange rewards (projected Global parity)",
+        );
+
+        let projected = rewards
+            .iter()
+            .filter(|reward| reward.event_id.as_deref() == Some("skills-future"))
+            .collect::<Vec<_>>();
+        assert_eq!(projected.len(), 2);
+        assert!(projected.iter().all(|reward| {
+            reward.amount == Some(3)
+                && reward.available_at == "2026-02-08T00:00:00Z"
+                && reward.provenance == "global_exchange_reward_parity"
+                && reward.confidence == "projected_global_parity"
+        }));
+        assert!(!rewards
+            .iter()
+            .any(|reward| reward.event_id.as_deref() == Some("skills-confirmed")));
+    }
+
+    #[test]
+    fn extracts_story_tickets_from_exact_master_tables() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE story_event_point_reward (
+                    story_event_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER
+                );
+                CREATE TABLE story_event_mission (
+                    story_event_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER
+                );
+                CREATE TABLE story_event_story_data (
+                    story_event_id INTEGER,
+                    add_reward_category_1 INTEGER, add_reward_id_1 INTEGER, add_reward_num_1 INTEGER,
+                    add_reward_category_2 INTEGER, add_reward_id_2 INTEGER, add_reward_num_2 INTEGER
+                );
+                CREATE TABLE story_event_roulette_bingo (
+                    story_event_id INTEGER, reward_set_id INTEGER, can_loop INTEGER
+                );
+                CREATE TABLE story_event_bingo_reward (
+                    reward_set_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER
+                );
+                CREATE TABLE story_event_data (
+                    story_event_id INTEGER, start_date INTEGER, end_date INTEGER
+                );
+                INSERT INTO story_event_point_reward VALUES
+                    (1001, 90, 43, 1500),
+                    (1001, 40, 41, 2),
+                    (1001, 40, 111, 2);
+                INSERT INTO story_event_data VALUES (1001, 1755468000, 1756072800);
+                "#,
+            )
+            .unwrap();
+        let timeline = json!({"events": [{
+            "id": "story-event-0",
+            "type": "story_event",
+            "global_release_date": "2025-08-17T22:00:00Z",
+            "estimated_end_date": "2025-08-24T22:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+        load_story_rewards(
+            &connection,
+            &timeline,
+            &mut rewards,
+            "global_release_date",
+            "global_master",
+            "full_completion",
+            "exact_source",
+        )
+        .unwrap();
+
+        assert_eq!(rewards.len(), 3);
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "free_jewels" && reward.amount == Some(1500)));
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "uma_ticket" && reward.amount == Some(2)));
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "support_ticket" && reward.amount == Some(2)));
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.event_id.as_deref() == Some("story-event-0")));
+    }
+
+    #[test]
+    fn extracts_ticket_event_exchanges_from_master_limits() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE item_exchange (
+                    item_exchange_top_id INTEGER, change_item_limit_type INTEGER,
+                    change_item_limit_num INTEGER, change_item_category INTEGER,
+                    change_item_id INTEGER, change_item_num INTEGER,
+                    pay_item_category INTEGER, start_date INTEGER, end_date INTEGER
+                );
+                INSERT INTO item_exchange VALUES
+                    (11000, 1, 3, 40, 41, 1, 165, 1755468000, 1756072800),
+                    (11000, 1, 3, 40, 111, 1, 165, 1755468000, 1756072800);
+                "#,
+            )
+            .unwrap();
+        let timeline = json!({"events": [{
+            "id": "trainer-skills-test-0",
+            "type": "trainer_skills_test",
+            "global_release_date": "2025-08-17T22:00:00Z",
+            "estimated_end_date": "2025-08-24T22:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+        load_event_exchange_rewards(
+            &connection,
+            &timeline,
+            &mut rewards,
+            "global_release_date",
+            "trainer_skills_test",
+            TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
+            "Trainer Skills Test exchange rewards",
+            "global_master",
+            "full_exchange",
+            "exact_source",
+        )
+        .unwrap();
+
+        assert_eq!(rewards.len(), 2);
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.amount == Some(3) && reward.default_enabled));
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.event_id.as_deref() == Some("trainer-skills-test-0")));
+    }
+
+    #[test]
+    fn exposes_conservative_monthly_shop_ticket_toggle_from_master() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE item_exchange (
+                    item_exchange_top_id INTEGER, change_item_limit_type INTEGER,
+                    change_item_limit_num INTEGER, change_item_category INTEGER,
+                    change_item_id INTEGER, change_item_num INTEGER,
+                    pay_item_category INTEGER, start_date INTEGER, end_date INTEGER
+                );
+                INSERT INTO item_exchange VALUES
+                    (2000, 4, 1, 40, 41, 1, 103, 1767650400, 2543011199),
+                    (2000, 4, 1, 40, 111, 1, 103, 1767650400, 2543011199),
+                    (4000, 4, 2, 40, 41, 1, 99, 1496275200, 2543011199),
+                    (4000, 4, 2, 40, 111, 1, 99, 1496275200, 2543011199),
+                    (7000, 4, 2, 40, 41, 1, 160, 1496275200, 2543011199);
+                "#,
+            )
+            .unwrap();
+        let mut rules = Vec::new();
+        load_monthly_ticket_exchange_rules(&connection, &mut rules).unwrap();
+
+        assert_eq!(rules.len(), 4);
+        assert_eq!(
+            rules
+                .iter()
+                .filter(|rule| rule.currency == "uma_ticket")
+                .map(|rule| rule.amount)
+                .sum::<i64>(),
+            3
+        );
+        assert_eq!(
+            rules
+                .iter()
+                .filter(|rule| rule.currency == "support_ticket")
+                .map(|rule| rule.amount)
+                .sum::<i64>(),
+            3
+        );
+        assert!(rules.iter().all(|rule| {
+            rule.scenario_group == Some("monthly_shop_tickets")
+                && rule.scenario_option.as_deref() == Some("include")
+                && rule.day_of_month == Some(1)
+                && !rule.default_enabled
+        }));
+        assert!(!rules.iter().any(|rule| rule.id.contains("7000")));
     }
 }
