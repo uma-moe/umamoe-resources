@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 23;
+const ALGORITHM_VERSION: u8 = 24;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -238,6 +238,8 @@ pub struct PlannerCompetitiveVariant {
     pub competition: &'static str,
     pub event_id: String,
     pub master_event_id: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_at: Option<String>,
     pub label: String,
     pub source_items: Vec<PlannerSourceItem>,
     pub provenance: &'static str,
@@ -2765,6 +2767,13 @@ fn load_master_rewards(
             "projected_parity",
         )?;
     }
+    load_temporary_character_story_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_scenario_record_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_training_challenge_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_racing_carnival_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_factor_research_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_masters_challenge_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_main_story_rewards(connection, jp_connection, timeline, &mut rewards)?;
     load_login_bonus_rewards(connection, &mut rewards)?;
     load_competitive_reward_metadata(connection, timeline, &mut rewards)?;
     Ok(rewards)
@@ -2807,7 +2816,11 @@ fn load_competitive_variants_with_jp(
         )?);
     }
     let mut seen = BTreeSet::new();
+    let mut seen_legend_ids = BTreeSet::new();
     variants.retain(|variant| {
+        if variant.competition == "legend_race" {
+            return seen_legend_ids.insert(variant.id.clone());
+        }
         seen.insert((
             variant.event_id.clone(),
             variant.competition,
@@ -2902,6 +2915,7 @@ fn project_missing_competitive_variants(
                         competition,
                         event_id: event_id.clone(),
                         master_event_id: template.master_event_id,
+                        available_at: None,
                         label: template.label.clone(),
                         source_items: template.source_items.clone(),
                         provenance: "global_reward_parity",
@@ -2920,6 +2934,7 @@ fn project_missing_competitive_variants(
                     competition,
                     event_id: event_id.clone(),
                     master_event_id: template.master_event_id,
+                    available_at: None,
                     label: template.label.to_string(),
                     source_items: projected_source_items(template.items),
                     provenance: "jp_reward_parity_template",
@@ -3246,6 +3261,7 @@ fn load_competitive_variants_for(
             competition: "champions_meeting",
             event_id: event_id.clone(),
             master_event_id: champions_id,
+            available_at: None,
             label: format!("League {league}, round {round}, {wins} wins, rank {ranking} (rate {rate}, reward set {set_id})"),
             source_items: items,
             provenance,
@@ -3308,6 +3324,7 @@ fn load_competitive_variants_for(
             competition: "league_of_heroes",
             event_id: event_id.clone(),
             master_event_id: heroes_id,
+            available_at: None,
             label: format!("League rank type {rank_type}, rank {rank} ({min}-{max})"),
             source_items: items,
             provenance,
@@ -3373,6 +3390,7 @@ fn load_competitive_variants_for(
                 competition: "strongest_team",
                 event_id: event_id.clone(),
                 master_event_id: team_id,
+                available_at: None,
                 label: format!("Team rank {rank} ({min}-{max} evaluation points)"),
                 source_items: items,
                 provenance,
@@ -3426,6 +3444,7 @@ fn load_competitive_variants_for(
                 competition: "strongest_team",
                 event_id: event_id.clone(),
                 master_event_id: team_id,
+                available_at: None,
                 label: "Event missions (full completion)".to_string(),
                 source_items: items,
                 provenance,
@@ -3437,9 +3456,11 @@ fn load_competitive_variants_for(
 
     if sqlite_table_exists(connection, "legend_race")? {
         let legend_links = timeline_competitive_links(timeline, "legend_race", timeline_date_field);
+        let fallback_links =
+            timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
         let mut statement = connection.prepare(
             r#"
-            SELECT id, start_date, image_id,
+            SELECT id, start_date, image_id, race_instance_id,
                    first_clear_item_category_1, first_clear_item_id_1, first_clear_item_num_1,
                    first_clear_item_category_2, first_clear_item_id_2, first_clear_item_num_2,
                    first_clear_item_category_3, first_clear_item_id_3, first_clear_item_num_3
@@ -3449,7 +3470,7 @@ fn load_competitive_variants_for(
         )?;
         let rows = statement.query_map([], |row| {
             let mut items = Vec::new();
-            for offset in [3usize, 6, 9] {
+            for offset in [4usize, 7, 10] {
                 let item_category = row.get::<_, i64>(offset)?;
                 let item_id = row.get::<_, i64>(offset + 1)?;
                 let amount = row.get::<_, i64>(offset + 2)?;
@@ -3470,25 +3491,51 @@ fn load_competitive_variants_for(
                 row.get::<_, i64>(0)?,
                 row.get::<_, i64>(1)?,
                 row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
                 items,
             ))
         })?;
+        let mut legend_events =
+            BTreeMap::<i64, (i64, Vec<(i64, i64, Vec<PlannerSourceItem>)>)>::new();
         for row in rows {
-            let (legend_id, start, image_id, items) = row?;
-            let Some((event_id, _)) = timeline_link_near_start(&legend_links, start) else {
+            let (legend_id, start, image_id, race_instance_id, items) = row?;
+            let event_key = race_instance_id / 10;
+            let entry = legend_events
+                .entry(event_key)
+                .or_insert_with(|| (start, Vec::new()));
+            entry.1.push((legend_id, image_id, items));
+        }
+        for (event_key, (start, mut opponents)) in legend_events {
+            let exact_link = timeline_link_near_start(&legend_links, start);
+            if exact_link.is_none() && provenance == "global_master" {
+                // Global masters retain unreleased JP rows. Only exact Global
+                // timeline matches are evidence that a stored row went live.
                 continue;
-            };
-            variants.push(PlannerCompetitiveVariant {
-                id: format!("legend-race-{legend_id}-first-clear"),
-                competition: "legend_race",
-                event_id: event_id.clone(),
-                master_event_id: legend_id,
-                label: format!("First clear vs Character {image_id}"),
-                source_items: items,
-                provenance,
-                confidence,
-                default_enabled: false,
-            });
+            }
+            let projected_link =
+                exact_link.or_else(|| timeline_closest_link(&fallback_links, start));
+            let event_id = exact_link
+                .map(|link| link.0.clone())
+                .unwrap_or_else(|| format!("master-legend-race-{event_key}"));
+            let available_at = exact_link
+                .is_none()
+                .then(|| projected_link.map(|link| link.1.clone()))
+                .flatten();
+            opponents.sort_by_key(|(legend_id, _, _)| *legend_id);
+            for (legend_id, image_id, items) in opponents {
+                variants.push(PlannerCompetitiveVariant {
+                    id: format!("legend-race-{legend_id}-first-clear"),
+                    competition: "legend_race",
+                    event_id: event_id.clone(),
+                    master_event_id: legend_id,
+                    available_at: available_at.clone(),
+                    label: format!("First clear vs Character {image_id}"),
+                    source_items: items,
+                    provenance,
+                    confidence,
+                    default_enabled: false,
+                });
+            }
         }
     }
     Ok(variants)
@@ -3870,6 +3917,8 @@ fn load_story_rewards(
         (JEWEL_CATEGORY, JEWEL_ITEM_ID),
         (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID),
         (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_ITEM_ID),
     ];
     let mut totals: BTreeMap<(i64, i64, i64), i64> = BTreeMap::new();
     for (item_category, item_id) in tracked_items {
@@ -3893,14 +3942,11 @@ fn load_story_rewards(
         let mut statement = connection.prepare(
             r#"
             SELECT finite.story_event_id, SUM(reward.item_num)
-            FROM (
-                SELECT DISTINCT story_event_id, reward_set_id
-                FROM story_event_roulette_bingo
-                WHERE can_loop = 0
-            ) AS finite
+            FROM story_event_roulette_bingo AS finite
             JOIN story_event_bingo_reward AS reward
               ON reward.reward_set_id = finite.reward_set_id
-            WHERE reward.item_category = ?1
+            WHERE finite.can_loop = 0
+              AND reward.item_category = ?1
               AND reward.item_id = ?2
             GROUP BY finite.story_event_id
             "#,
@@ -3985,6 +4031,447 @@ fn load_story_rewards(
         }
     }
     Ok(())
+}
+
+fn timeline_typed_links(
+    timeline: &Value,
+    event_type: &str,
+    date_field: &str,
+    target_field: &str,
+) -> BTreeMap<i64, (String, String)> {
+    timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|event| event.get("type").and_then(Value::as_str) == Some(event_type))
+        .filter_map(|event| {
+            let timestamp = DateTime::parse_from_rfc3339(event.get(date_field)?.as_str()?)
+                .ok()?
+                .timestamp();
+            Some((
+                timestamp,
+                (
+                    event.get("id")?.as_str()?.to_string(),
+                    event.get(target_field)?.as_str()?.to_string(),
+                ),
+            ))
+        })
+        .collect()
+}
+
+fn timeline_all_links(
+    timeline: &Value,
+    date_field: &str,
+    target_field: &str,
+) -> BTreeMap<i64, (String, String)> {
+    timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|event| {
+            let timestamp = DateTime::parse_from_rfc3339(event.get(date_field)?.as_str()?)
+                .ok()?
+                .timestamp();
+            Some((
+                timestamp,
+                (
+                    event.get("id")?.as_str()?.to_string(),
+                    event.get(target_field)?.as_str()?.to_string(),
+                ),
+            ))
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_master_event_component(
+    rewards: &mut Vec<PlannerReward>,
+    links: &BTreeMap<i64, (String, String)>,
+    fallback_links: &BTreeMap<i64, (String, String)>,
+    master_start: i64,
+    master_end: i64,
+    synthetic_event_id: String,
+    reward_id: String,
+    label: &str,
+    provenance: &'static str,
+    assumption: &'static str,
+    confidence: &'static str,
+    default_enabled: bool,
+    items: Vec<PlannerSourceItem>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let exact_link = timeline_link_near_start(links, master_start);
+    let projected_link =
+        exact_link.or_else(|| timeline_link_near_start(fallback_links, master_start));
+    let event_id = exact_link
+        .map(|link| link.0.clone())
+        .or(Some(synthetic_event_id));
+    let available_at = projected_link
+        .map(|link| link.1.clone())
+        .unwrap_or_else(|| timestamp_to_rfc3339(master_end));
+    let reward_start = rewards.len();
+    push_structured_rewards(
+        rewards,
+        &reward_id,
+        label,
+        event_id,
+        &available_at,
+        provenance,
+        assumption,
+        default_enabled,
+        items,
+        None,
+    );
+    for reward in &mut rewards[reward_start..] {
+        reward.confidence = confidence;
+    }
+}
+
+fn load_scenario_record_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_scenario_record_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "scenario_evaluation_thresholds",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_scenario_record_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "jp_reward_parity_scenario_evaluation_thresholds",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn load_scenario_record_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    assumption: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "single_mode_scenario_record")? {
+        return Ok(());
+    }
+    let links = timeline_typed_links(
+        timeline,
+        "scenario_release",
+        timeline_date_field,
+        "global_release_date",
+    );
+    let ordered_links = links.values().cloned().collect::<Vec<_>>();
+    let mut grouped = BTreeMap::<i64, Vec<PlannerSourceItem>>::new();
+    let mut statement = connection.prepare(
+        r#"
+        SELECT scenario_id, reward_item_category, reward_item_id, reward_num
+        FROM single_mode_scenario_record
+        ORDER BY scenario_id, id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (scenario_id, category, item_id, amount) = row?;
+        add_source_item(
+            grouped.entry(scenario_id).or_default(),
+            category,
+            item_id,
+            amount,
+        );
+    }
+    for (scenario_id, items) in grouped {
+        if scenario_id < 4 {
+            continue;
+        }
+        let Some((event_id, available_at)) = ordered_links.get((scenario_id - 4) as usize) else {
+            continue;
+        };
+        let reward_start = rewards.len();
+        push_structured_rewards(
+            rewards,
+            &format!("{provenance}-scenario-record-{scenario_id}"),
+            "Training scenario evaluation rewards",
+            Some(event_id.clone()),
+            available_at,
+            provenance,
+            assumption,
+            true,
+            items,
+            None,
+        );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
+    }
+    Ok(())
+}
+
+fn load_temporary_character_story_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    let mut seen_chara_ids = BTreeSet::new();
+    load_temporary_character_story_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+        &mut seen_chara_ids,
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_temporary_character_story_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+            &mut seen_chara_ids,
+        )?;
+    }
+    Ok(())
+}
+
+fn load_temporary_character_story_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+    seen_chara_ids: &mut BTreeSet<i64>,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "campaign_chara_story_schedule")?
+        || !sqlite_table_exists(connection, "campaign_data")?
+        || !sqlite_table_exists(connection, "chara_story_data")?
+    {
+        return Ok(());
+    }
+
+    // Anniversary campaigns re-open many old stories. Only the earliest
+    // temporary unlock for each trainee is new claimable income.
+    let mut statement = connection.prepare(
+        r#"
+        WITH campaign_characters AS (
+            SELECT DISTINCT schedule.campaign_id, schedule.chara_id,
+                            campaign.start_time, campaign.end_time
+            FROM campaign_chara_story_schedule AS schedule
+            JOIN campaign_data AS campaign
+              ON campaign.campaign_id = schedule.campaign_id
+        ), ranked AS (
+            SELECT campaign_id, chara_id, start_time, end_time,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY chara_id
+                       ORDER BY start_time, campaign_id
+                   ) AS occurrence
+            FROM campaign_characters
+        )
+        SELECT ranked.campaign_id, ranked.chara_id,
+               ranked.start_time, ranked.end_time,
+               story.add_reward_category_1, story.add_reward_id_1,
+               SUM(story.add_reward_num_1)
+        FROM ranked
+        JOIN campaign_chara_story_schedule AS schedule
+          ON schedule.campaign_id = ranked.campaign_id
+         AND schedule.chara_id = ranked.chara_id
+        JOIN chara_story_data AS story
+          ON story.story_id = schedule.story_id
+        WHERE ranked.occurrence = 1
+          AND story.episode_index BETWEEN 1 AND 4
+          AND story.add_reward_category_1 > 0
+          AND story.add_reward_id_1 > 0
+          AND story.add_reward_num_1 > 0
+        GROUP BY ranked.campaign_id, ranked.chara_id,
+                 ranked.start_time, ranked.end_time,
+                 story.add_reward_category_1, story.add_reward_id_1
+        ORDER BY ranked.start_time, ranked.campaign_id, ranked.chara_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            PlannerSourceItem {
+                item_category: row.get(4)?,
+                item_id: row.get(5)?,
+                amount: row.get(6)?,
+                mission_count: Some(4),
+                odds: None,
+                order_min: None,
+                order_max: None,
+                bonus: None,
+            },
+        ))
+    })?;
+    let mut grouped = BTreeMap::<(i64, i64), (i64, i64, Vec<PlannerSourceItem>)>::new();
+    for row in rows {
+        let (campaign_id, chara_id, start, end, item) = row?;
+        grouped
+            .entry((campaign_id, chara_id))
+            .or_insert_with(|| (start, end, Vec::new()))
+            .2
+            .push(item);
+    }
+
+    let links = timeline_all_links(timeline, timeline_date_field, "global_release_date");
+    for ((campaign_id, chara_id), (start, end, items)) in grouped {
+        let projected = timeline_link_near_start(&links, start);
+        if projected.is_none() && provenance == "global_master" {
+            // The Global database also carries dormant JP campaign rows.
+            // A nearby Global timeline date is required before treating one
+            // as released; JP rows below provide the future projection.
+            continue;
+        }
+        if !seen_chara_ids.insert(chara_id) {
+            continue;
+        }
+        let projected = projected.or_else(|| timeline_closest_link(&links, start));
+        let event_id = projected
+            .map(|link| link.0.clone())
+            .unwrap_or_else(|| format!("temporary-character-stories-{campaign_id}"));
+        let available_at = projected
+            .map(|link| link.1.clone())
+            .unwrap_or_else(|| timestamp_to_rfc3339(end));
+        let reward_start = rewards.len();
+        push_structured_rewards(
+            rewards,
+            &format!("{provenance}-temporary-character-stories-{campaign_id}-{chara_id}"),
+            &format!("Temporary trainee stories: Character {chara_id} chapters 1-4"),
+            Some(event_id),
+            &available_at,
+            provenance,
+            "temporary_character_story_read",
+            true,
+            items,
+            Some(
+                "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+                    .to_string(),
+            ),
+        );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
+    }
+    Ok(())
+}
+
+fn add_source_item(
+    items: &mut Vec<PlannerSourceItem>,
+    item_category: i64,
+    item_id: i64,
+    amount: i64,
+) {
+    if item_category <= 0 || item_id <= 0 || amount <= 0 {
+        return;
+    }
+    if let Some(existing) = items
+        .iter_mut()
+        .find(|item| item.item_category == item_category && item.item_id == item_id)
+    {
+        existing.amount += amount;
+        return;
+    }
+    items.push(PlannerSourceItem {
+        item_category,
+        item_id,
+        amount,
+        mission_count: None,
+        odds: None,
+        order_min: None,
+        order_max: None,
+        bonus: None,
+    });
+}
+
+fn load_slotted_items(
+    connection: &Connection,
+    table: &str,
+    event_column: &str,
+    event_id: i64,
+    prefix: &str,
+    slot_count: usize,
+) -> Result<Vec<PlannerSourceItem>> {
+    let mut items = Vec::new();
+    for slot in 1..=slot_count {
+        let query = format!(
+            "SELECT {prefix}category_{slot}, {prefix}id_{slot}, \
+             {prefix}num_{slot} FROM {table} WHERE {event_column} = ?1"
+        );
+        let mut statement = connection.prepare(&query)?;
+        let rows = statement.query_map([event_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (category, item_id, amount) = row?;
+            add_source_item(&mut items, category, item_id, amount);
+        }
+    }
+    Ok(items)
+}
+
+fn load_exchange_items(
+    connection: &Connection,
+    item_exchange_top_id: i64,
+) -> Result<Vec<PlannerSourceItem>> {
+    let mut items = Vec::new();
+    let mut statement = connection.prepare(
+        r#"
+        SELECT change_item_category, change_item_id,
+               change_item_num * change_item_limit_num
+        FROM item_exchange
+        WHERE item_exchange_top_id = ?1
+          AND change_item_limit_num > 0
+          AND change_item_num > 0
+        "#,
+    )?;
+    let rows = statement.query_map([item_exchange_top_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (category, item_id, amount) = row?;
+        add_source_item(&mut items, category, item_id, amount);
+    }
+    Ok(items)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -4088,6 +4575,517 @@ fn load_event_exchange_rewards(
         }
     }
     Ok(())
+}
+
+fn load_training_challenge_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_training_challenge_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_training_challenge_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_training_challenge_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "training_challenge_master")? {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "trainer_skills_test", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        r#"
+        SELECT id, start_date, end_date, shop_id,
+               exam_id_1, exam_id_2, exam_id_3, exam_id_4, exam_id_5,
+               ex_exam_id, free_exam_id
+        FROM training_challenge_master
+        ORDER BY start_date, id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            (4..=10)
+                .map(|column| row.get::<_, i64>(column))
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end, shop_id, exam_ids) = row?;
+        let mut score_items = Vec::new();
+        for exam_id in exam_ids.into_iter().filter(|id| *id > 0) {
+            for item in load_slotted_items(
+                connection,
+                "training_challenge_exam",
+                "id",
+                exam_id,
+                "item_",
+                5,
+            )? {
+                add_source_item(
+                    &mut score_items,
+                    item.item_category,
+                    item.item_id,
+                    item.amount,
+                );
+            }
+        }
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("trainer-skills-test-master-{event_id}"),
+            format!("{provenance}-trainer-skills-test-{event_id}-scores"),
+            "Trainer Skills Test score rewards",
+            provenance,
+            "full_score_completion",
+            confidence,
+            true,
+            score_items,
+        );
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("trainer-skills-test-master-{event_id}"),
+            format!("{provenance}-trainer-skills-test-{event_id}-shop"),
+            "Trainer Skills Test shop exchanges",
+            provenance,
+            "all_limited_shop_exchanges",
+            confidence,
+            true,
+            load_exchange_items(connection, shop_id)?,
+        );
+    }
+    Ok(())
+}
+
+fn load_racing_carnival_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    let mut seen_event_ids = BTreeSet::new();
+    load_racing_carnival_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+        &mut seen_event_ids,
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_racing_carnival_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+            &mut seen_event_ids,
+        )?;
+    }
+    Ok(())
+}
+
+fn load_racing_carnival_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+    seen_event_ids: &mut BTreeSet<i64>,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "challenge_match_data")? {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "racing_carnival", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        "SELECT challenge_match_id, start_date, end_date, item_exchange_top_id FROM challenge_match_data ORDER BY start_date",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end, shop_id) = row?;
+        if !seen_event_ids.insert(event_id) {
+            continue;
+        }
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("racing-carnival-master-{event_id}"),
+            format!("{provenance}-racing-carnival-{event_id}-first-clear"),
+            "Racing Carnival first-clear rewards",
+            provenance,
+            "all_first_clears",
+            confidence,
+            true,
+            load_slotted_items(
+                connection,
+                "challenge_match_race",
+                "challenge_match_id",
+                event_id,
+                "first_clear_item_",
+                3,
+            )?,
+        );
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("racing-carnival-master-{event_id}"),
+            format!("{provenance}-racing-carnival-{event_id}-shop"),
+            "Racing Carnival shop exchanges",
+            provenance,
+            "all_limited_shop_exchanges",
+            confidence,
+            true,
+            load_exchange_items(connection, shop_id)?,
+        );
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("racing-carnival-master-{event_id}"),
+            format!("{provenance}-racing-carnival-{event_id}-bonus-skill-mission"),
+            "Racing Carnival bonus-skill Career mission",
+            provenance,
+            "racing_carnival_bonus_skill_mission",
+            confidence,
+            true,
+            vec![PlannerSourceItem {
+                item_category: JEWEL_CATEGORY,
+                item_id: JEWEL_ITEM_ID,
+                amount: 100,
+                mission_count: Some(1),
+                odds: None,
+                order_min: None,
+                order_max: None,
+                bonus: None,
+            }],
+        );
+    }
+    Ok(())
+}
+
+fn load_factor_research_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_factor_research_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_factor_research_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_factor_research_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "factor_research_data")?
+        || !sqlite_table_exists(connection, "factor_research_box")?
+    {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "factor_research", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        r#"
+        SELECT data.factor_research_event_id, data.start_date, data.end_date,
+               reward.item_category, reward.item_id,
+               SUM(reward.item_num * reward.box_num)
+        FROM factor_research_data AS data
+        JOIN factor_research_box AS box
+          ON box.factor_research_event_id = data.factor_research_event_id
+        JOIN factor_research_box_reward AS reward
+          ON reward.box_id = box.box_id
+        GROUP BY data.factor_research_event_id, data.start_date, data.end_date,
+                 reward.item_category, reward.item_id
+        ORDER BY data.start_date, data.factor_research_event_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
+    let mut grouped = BTreeMap::<i64, (i64, i64, Vec<PlannerSourceItem>)>::new();
+    for row in rows {
+        let (event_id, start, end, category, item_id, amount) = row?;
+        let entry = grouped
+            .entry(event_id)
+            .or_insert_with(|| (start, end, Vec::new()));
+        add_source_item(&mut entry.2, category, item_id, amount);
+    }
+    for (event_id, (start, end, items)) in grouped {
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("factor-research-master-{event_id}"),
+            format!("{provenance}-factor-research-{event_id}"),
+            "Agnes Tachyon's Factor Research box rewards",
+            provenance,
+            "all_reward_boxes",
+            confidence,
+            true,
+            items,
+        );
+    }
+    Ok(())
+}
+
+fn load_masters_challenge_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_masters_challenge_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_masters_challenge_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_masters_challenge_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "ultimate_race_data")?
+        || !sqlite_table_exists(connection, "ultimate_race_contents")?
+    {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "masters_challenge", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection
+        .prepare("SELECT id, start_date, end_date FROM ultimate_race_data ORDER BY start_date")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end) = row?;
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("masters-challenge-master-{event_id}"),
+            format!("{provenance}-masters-challenge-{event_id}"),
+            "Masters Challenge first-clear rewards",
+            provenance,
+            "all_first_clears_high_difficulty",
+            confidence,
+            false,
+            load_slotted_items(
+                connection,
+                "ultimate_race_contents",
+                "event_id",
+                event_id,
+                "first_clear_item_",
+                5,
+            )?,
+        );
+    }
+    Ok(())
+}
+
+fn load_main_story_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_main_story_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_main_story_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_main_story_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "main_story_part")?
+        || !sqlite_table_exists(connection, "main_story_data")?
+    {
+        return Ok(());
+    }
+    let projection_links = timeline_all_links(timeline, timeline_date_field, "global_release_date");
+    let has_second_reward =
+        sqlite_column_exists(connection, "main_story_data", "add_reward_category_2")?;
+    let mut statement =
+        connection.prepare("SELECT id, start_date FROM main_story_part ORDER BY id")?;
+    let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+    for row in rows {
+        let (part_id, start) = row?;
+        let mut items = load_slotted_items(
+            connection,
+            "main_story_data",
+            "part_id",
+            part_id,
+            "add_reward_",
+            if has_second_reward { 2 } else { 1 },
+        )?;
+        items.retain(|item| item.amount > 0);
+        if items.is_empty() {
+            continue;
+        }
+        let available_at = if timeline_date_field == "global_release_date" {
+            timestamp_to_rfc3339(start)
+        } else {
+            timeline_link_near_start(&projection_links, start)
+                .map(|link| link.1.clone())
+                .unwrap_or_else(|| timestamp_to_rfc3339(start))
+        };
+        let reward_start = rewards.len();
+        push_structured_rewards(
+            rewards,
+            &format!("{provenance}-main-story-part-{part_id}"),
+            &format!("Main Story part {part_id} episode rewards"),
+            Some(format!("main-story-part-{part_id}")),
+            &available_at,
+            provenance,
+            "all_story_episodes_viewed",
+            true,
+            items,
+            None,
+        );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
+    }
+    Ok(())
+}
+
+fn sqlite_column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for item in columns {
+        if item? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn load_login_bonus_rewards(
@@ -5709,6 +6707,16 @@ fn timeline_link_near_start(
         .map(|(_, link)| link)
 }
 
+fn timeline_closest_link(
+    links: &BTreeMap<i64, (String, String)>,
+    master_start: i64,
+) -> Option<&(String, String)> {
+    links
+        .iter()
+        .min_by_key(|(timeline_start, _)| (*timeline_start - master_start).abs())
+        .map(|(_, link)| link)
+}
+
 fn master_date_to_rfc3339(value: &str) -> Result<String> {
     for pattern in [
         "%Y/%m/%d %H:%M:%S",
@@ -5750,11 +6758,12 @@ mod tests {
         extract_news_free_pull_claims, extract_news_free_pull_pinned_banner_kinds,
         extract_news_free_pull_target_windows, has_cost_context, has_sales_context, html_to_text,
         is_global_correction_notice, jewel_amounts_from_line, load_archive,
-        load_competitive_reward_metadata, load_competitive_variants, load_daily_pack_rules,
-        load_event_exchange_rewards, load_gachas, load_global_news_rewards,
-        load_global_social_rewards, load_mission_campaign_rewards,
-        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, load_story_rewards, match_news_event,
+        load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
+        load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
+        load_gachas, load_global_news_rewards, load_global_social_rewards,
+        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
+        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
+        load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
         seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
@@ -7959,6 +8968,7 @@ mod tests {
                     competition,
                     event_id: event_id.to_string(),
                     master_event_id,
+                    available_at: None,
                     label: "Published reward table".to_string(),
                     source_items: vec![PlannerSourceItem {
                         item_category: 90,
@@ -8198,7 +9208,173 @@ mod tests {
     }
 
     #[test]
-    fn extracts_story_tickets_from_exact_master_tables() {
+    fn legend_races_without_manual_timeline_rows_include_first_clear_rewards() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(r#"
+            CREATE TABLE champions_schedule (id INTEGER, start_date INTEGER);
+            CREATE TABLE champions_reward_rate (
+                id INTEGER, champions_id INTEGER, league_type INTEGER, round_id INTEGER,
+                win_count INTEGER, ranking INTEGER, rate INTEGER, reward_set_id INTEGER
+            );
+            CREATE TABLE single_mode_reward_set (
+                id INTEGER, reward_set_id INTEGER, order_min INTEGER, order_max INTEGER,
+                reward_type INTEGER, bonus INTEGER, odds INTEGER,
+                item_category INTEGER, item_id INTEGER, item_num INTEGER
+            );
+            CREATE TABLE heroes_data (heroes_id INTEGER, start_date INTEGER);
+            CREATE TABLE heroes_league_rank (
+                id INTEGER, league_rank_type INTEGER, league_rank INTEGER,
+                league_min_value INTEGER, league_max_value INTEGER, reward_group_id INTEGER
+            );
+            CREATE TABLE heroes_league_rank_reward_group (
+                id INTEGER, reward_group_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER
+            );
+            CREATE TABLE legend_race (
+                id INTEGER, start_date INTEGER, image_id INTEGER, race_instance_id INTEGER,
+                first_clear_item_category_1 INTEGER, first_clear_item_id_1 INTEGER, first_clear_item_num_1 INTEGER,
+                first_clear_item_category_2 INTEGER, first_clear_item_id_2 INTEGER, first_clear_item_num_2 INTEGER,
+                first_clear_item_category_3 INTEGER, first_clear_item_id_3 INTEGER, first_clear_item_num_3 INTEGER
+            );
+            INSERT INTO legend_race VALUES
+                (130,1893456000,1130,1204201,90,43,150,102,1130,10,0,0,0),
+                (131,1893715200,1131,1204202,90,43,150,102,1131,10,0,0,0);
+        "#).unwrap();
+        let timeline = json!({"events":[{
+            "id":"nearby-campaign", "type":"campaign",
+            "global_release_date":"2030-01-01T00:00:00Z",
+            "jp_release_date":"2030-01-01T00:00:00Z",
+            "estimated_end_date":"2030-01-10T00:00:00Z"
+        }]});
+
+        let variants = load_competitive_variants_for(
+            &connection,
+            &timeline,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity_variant",
+        )
+        .unwrap();
+
+        assert_eq!(variants.len(), 2);
+        assert!(variants.iter().all(|variant| {
+            variant.event_id == "master-legend-race-120420"
+                && variant.available_at.as_deref() == Some("2030-01-10T00:00:00Z")
+        }));
+        let mut carat_amounts = variants
+            .iter()
+            .map(|variant| {
+                variant
+                    .source_items
+                    .iter()
+                    .find(|item| item.item_category == 90 && item.item_id == 43)
+                    .map(|item| item.amount)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        carat_amounts.sort_unstable();
+        assert_eq!(carat_amounts, vec![150, 150]);
+    }
+
+    #[test]
+    fn temporary_story_rewards_count_only_the_first_unlock_for_each_trainee() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+            CREATE TABLE campaign_chara_story_schedule (
+                campaign_id INTEGER, chara_id INTEGER, story_id INTEGER
+            );
+            CREATE TABLE campaign_data (
+                campaign_id INTEGER, start_time INTEGER, end_time INTEGER
+            );
+            CREATE TABLE chara_story_data (
+                story_id INTEGER, episode_index INTEGER,
+                add_reward_category_1 INTEGER, add_reward_id_1 INTEGER,
+                add_reward_num_1 INTEGER
+            );
+            INSERT INTO campaign_data VALUES
+                (10,1893456000,1893542400),
+                (20,1896048000,1896134400);
+            INSERT INTO campaign_chara_story_schedule VALUES
+                (10,1001,1),(10,1001,2),(10,1001,3),(10,1001,4),
+                (20,1001,1),(20,1001,2),(20,1001,3),(20,1001,4);
+            INSERT INTO chara_story_data VALUES
+                (1,1,90,43,20),(2,2,90,43,20),
+                (3,3,90,43,20),(4,4,90,43,20);
+        "#,
+            )
+            .unwrap();
+        let timeline = json!({"events":[{
+            "id":"trainee-release", "type":"campaign",
+            "global_release_date":"2030-01-01T00:00:00Z",
+            "estimated_end_date":"2030-01-02T00:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+        let mut seen_chara_ids = BTreeSet::new();
+
+        load_temporary_character_story_rewards_for(
+            &connection,
+            &timeline,
+            &mut rewards,
+            "global_release_date",
+            "global_master",
+            "exact_source",
+            &mut seen_chara_ids,
+        )
+        .unwrap();
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(80));
+        assert_eq!(rewards[0].assumption, "temporary_character_story_read");
+        assert_eq!(seen_chara_ids, BTreeSet::from([1001]));
+    }
+
+    #[test]
+    fn factor_research_multiplies_each_reward_by_its_box_count() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+            CREATE TABLE factor_research_data (
+                factor_research_event_id INTEGER, start_date INTEGER, end_date INTEGER
+            );
+            CREATE TABLE factor_research_box (
+                factor_research_event_id INTEGER, box_id INTEGER
+            );
+            CREATE TABLE factor_research_box_reward (
+                box_id INTEGER, item_category INTEGER, item_id INTEGER,
+                item_num INTEGER, box_num INTEGER
+            );
+            INSERT INTO factor_research_data VALUES (1,1893456000,1893542400);
+            INSERT INTO factor_research_box VALUES (1,10);
+            INSERT INTO factor_research_box_reward VALUES (10,90,43,300,2);
+        "#,
+            )
+            .unwrap();
+        let timeline = json!({"events":[{
+            "id":"factor-research-test", "type":"factor_research",
+            "global_release_date":"2030-01-01T00:00:00Z",
+            "estimated_end_date":"2030-01-02T00:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+
+        load_factor_research_rewards_for(
+            &connection,
+            &timeline,
+            &mut rewards,
+            "global_release_date",
+            "global_master",
+            "exact_source",
+        )
+        .unwrap();
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(600));
+        assert_eq!(rewards[0].event_id.as_deref(), Some("factor-research-test"));
+    }
+
+    #[test]
+    fn story_rewards_expose_components_tickets_crystals_and_only_finite_bingo() {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -8226,7 +9402,14 @@ mod tests {
                 INSERT INTO story_event_point_reward VALUES
                     (1001, 90, 43, 1500),
                     (1001, 40, 41, 2),
-                    (1001, 40, 111, 2);
+                    (1001, 40, 111, 2),
+                    (1001, 164, 149, 3);
+                INSERT INTO story_event_mission VALUES (1001, 90, 43, 150);
+                INSERT INTO story_event_story_data VALUES (1001, 90, 43, 210, 0, 0, 0);
+                INSERT INTO story_event_roulette_bingo VALUES
+                    (1001, 10, 0), (1001, 10, 0), (1001, 11, 1);
+                INSERT INTO story_event_bingo_reward VALUES
+                    (10, 90, 43, 300), (10, 164, 150, 3), (11, 90, 43, 999);
                 INSERT INTO story_event_data VALUES (1001, 1755468000, 1756072800);
                 "#,
             )
@@ -8249,16 +9432,22 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(rewards.len(), 3);
+        assert_eq!(rewards.len(), 5);
         assert!(rewards
             .iter()
-            .any(|reward| reward.currency == "free_jewels" && reward.amount == Some(1500)));
+            .any(|reward| reward.currency == "free_jewels" && reward.amount == Some(2460)));
         assert!(rewards
             .iter()
             .any(|reward| reward.currency == "uma_ticket" && reward.amount == Some(2)));
         assert!(rewards
             .iter()
             .any(|reward| reward.currency == "support_ticket" && reward.amount == Some(2)));
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "rainbow_crystal" && reward.amount == Some(3)));
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "gold_crystal" && reward.amount == Some(6)));
         assert!(rewards
             .iter()
             .all(|reward| reward.event_id.as_deref() == Some("story-event-0")));
