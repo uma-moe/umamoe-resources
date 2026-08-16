@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 18;
+const ALGORITHM_VERSION: u8 = 19;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -15,6 +15,9 @@ const JEWEL_ITEM_ID: i64 = 43;
 const GACHA_TICKET_CATEGORY: i64 = 40;
 const UMA_TICKET_ITEM_ID: i64 = 41;
 const SUPPORT_TICKET_ITEM_ID: i64 = 111;
+const CRYSTAL_CATEGORY: i64 = 164;
+const RAINBOW_CRYSTAL_ITEM_ID: i64 = 149;
+const GOLD_CRYSTAL_ITEM_ID: i64 = 150;
 const TRAINEE_SELECTOR_CATEGORY: i64 = 41;
 const SUPPORT_SELECTOR_CATEGORY: i64 = 42;
 const ITEM_NAME_TEXT_CATEGORY: i64 = 23;
@@ -2367,7 +2370,7 @@ fn load_master_rewards(
     timeline: &Value,
 ) -> Result<Vec<PlannerReward>> {
     let mut rewards = Vec::new();
-    load_mission_campaign_rewards(connection, timeline, &mut rewards)?;
+    load_mission_campaign_rewards(connection, jp_connection, timeline, &mut rewards)?;
     load_story_rewards(
         connection,
         timeline,
@@ -2388,6 +2391,12 @@ fn load_master_rewards(
             "projected_parity",
         )?;
     }
+    load_scenario_record_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_training_challenge_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_racing_carnival_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_factor_research_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_masters_challenge_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    load_main_story_rewards(connection, jp_connection, timeline, &mut rewards)?;
     load_login_bonus_rewards(connection, &mut rewards)?;
     load_competitive_reward_metadata(connection, timeline, &mut rewards)?;
     Ok(rewards)
@@ -2846,13 +2855,18 @@ fn load_competitive_reward_metadata(
 
 fn load_mission_campaign_rewards(
     connection: &Connection,
+    jp_connection: Option<&Connection>,
     timeline: &Value,
     rewards: &mut Vec<PlannerReward>,
 ) -> Result<()> {
     let campaign_links: Vec<CampaignLink> = serde_json::from_slice(TIMELINE_CAMPAIGNS)
         .context("failed to parse timeline campaign links for planner")?;
-    let jp_reward_groups: Vec<JpMissionRewardGroup> = serde_json::from_slice(JP_MISSION_REWARDS)
-        .context("failed to parse planner JP mission reward catalogue")?;
+    let jp_reward_groups = if let Some(jp_connection) = jp_connection {
+        load_jp_mission_reward_groups(jp_connection)?
+    } else {
+        serde_json::from_slice(JP_MISSION_REWARDS)
+            .context("failed to parse planner JP mission reward catalogue")?
+    };
     let campaign_by_mission = campaign_links
         .iter()
         .filter_map(|campaign| {
@@ -3002,6 +3016,7 @@ fn load_mission_campaign_rewards(
                 .map(|fingerprint| (fingerprint.clone(), campaign.campaign_id))
         })
         .collect::<BTreeMap<_, _>>();
+    let jp_projection_links = timeline_all_links(timeline, "jp_release_date", "estimated_end_date");
     for group in jp_reward_groups {
         if group.rewards.is_empty() {
             continue;
@@ -3026,10 +3041,15 @@ fn load_mission_campaign_rewards(
         if campaign_id.is_some_and(|id| global_campaign_ids.contains(&id)) {
             continue;
         }
-        let event_id = campaign_id.map(|id| format!("campaign-{id}"));
+        let event_id = campaign_id
+            .map(|id| format!("campaign-{id}"))
+            .or_else(|| Some(format!("jp-mission-event-{}", group.jp_mission_event_id)));
+        let projected_link = planner_timestamp(&planner_catalog_date(&group.start_date))
+            .and_then(|start| timeline_link_near_start(&jp_projection_links, start));
         let available_at = event_id
             .as_ref()
             .and_then(|id| timeline_events.get(id).map(|dates| dates.1.clone()))
+            .or_else(|| projected_link.map(|link| link.1.clone()))
             .unwrap_or_else(|| planner_catalog_date(&group.end_date));
         let label = group
             .jp_title
@@ -3052,6 +3072,62 @@ fn load_mission_campaign_rewards(
         );
     }
     Ok(())
+}
+
+fn load_jp_mission_reward_groups(connection: &Connection) -> Result<Vec<JpMissionRewardGroup>> {
+    let mut statement = connection.prepare(
+        r#"
+        SELECT event_id, MIN(start_date), MAX(end_date), item_category, item_id,
+               SUM(item_num), COUNT(*)
+        FROM mission_data
+        WHERE mission_type = 4
+          AND event_id > 0
+        GROUP BY event_id, item_category, item_id
+        ORDER BY event_id, item_category, item_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            PlannerSourceItem {
+                item_category: row.get(3)?,
+                item_id: row.get(4)?,
+                amount: row.get(5)?,
+                mission_count: Some(row.get(6)?),
+                odds: None,
+                order_min: None,
+                order_max: None,
+                bonus: None,
+            },
+        ))
+    })?;
+    let mut groups = BTreeMap::<i64, (String, String, i64, Vec<PlannerSourceItem>)>::new();
+    for row in rows {
+        let (event_id, start, end, item) = row?;
+        let entry = groups
+            .entry(event_id)
+            .or_insert_with(|| (start, end, 0, Vec::new()));
+        entry.2 += item.mission_count.unwrap_or_default();
+        entry.3.push(item);
+    }
+    Ok(groups
+        .into_iter()
+        .map(
+            |(jp_mission_event_id, (start_date, end_date, mission_count, rewards))| {
+                JpMissionRewardGroup {
+                    jp_mission_event_id,
+                    jp_title: None,
+                    start_date,
+                    end_date,
+                    mission_count,
+                    mission_fingerprint: String::new(),
+                    rewards,
+                }
+            },
+        )
+        .collect())
 }
 
 fn planner_catalog_date(value: &str) -> String {
@@ -3137,6 +3213,8 @@ fn planner_currency_for_item(item: &PlannerSourceItem) -> Option<&'static str> {
         (JEWEL_CATEGORY, JEWEL_ITEM_ID) => Some("free_jewels"),
         (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID) => Some("uma_ticket"),
         (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID) => Some("support_ticket"),
+        (CRYSTAL_CATEGORY, RAINBOW_CRYSTAL_ITEM_ID) => Some("rainbow_crystal"),
+        (CRYSTAL_CATEGORY, GOLD_CRYSTAL_ITEM_ID) => Some("gold_crystal"),
         _ => None,
     }
 }
@@ -3151,43 +3229,76 @@ fn load_story_rewards(
     confidence: &'static str,
 ) -> Result<()> {
     let story_links = timeline_story_links(timeline, timeline_date_field);
-    let mut totals: BTreeMap<i64, i64> = BTreeMap::new();
-    for query in [
-        "SELECT story_event_id, SUM(item_num) FROM story_event_point_reward WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
-        "SELECT story_event_id, SUM(item_num) FROM story_event_mission WHERE item_category = ?1 AND item_id = ?2 GROUP BY story_event_id",
-        "SELECT story_event_id, SUM(CASE WHEN add_reward_category_1 = ?1 AND add_reward_id_1 = ?2 THEN add_reward_num_1 ELSE 0 END + CASE WHEN add_reward_category_2 = ?1 AND add_reward_id_2 = ?2 THEN add_reward_num_2 ELSE 0 END) FROM story_event_story_data GROUP BY story_event_id",
-    ] {
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let component_queries = [
+        (
+            "event-points",
+            "Story event point rewards",
+            "SELECT story_event_id, item_category, item_id, SUM(item_num), COUNT(*) FROM story_event_point_reward GROUP BY story_event_id, item_category, item_id",
+        ),
+        (
+            "missions",
+            "Story event mission rewards",
+            "SELECT story_event_id, item_category, item_id, SUM(item_num), COUNT(*) FROM story_event_mission GROUP BY story_event_id, item_category, item_id",
+        ),
+        (
+            "chapters",
+            "Story event chapter rewards",
+            r#"
+            SELECT story_event_id, item_category, item_id, SUM(item_num), COUNT(*)
+            FROM (
+                SELECT story_event_id, add_reward_category_1 AS item_category,
+                       add_reward_id_1 AS item_id, add_reward_num_1 AS item_num
+                FROM story_event_story_data
+                UNION ALL
+                SELECT story_event_id, add_reward_category_2, add_reward_id_2, add_reward_num_2
+                FROM story_event_story_data
+            )
+            WHERE item_category > 0 AND item_id > 0 AND item_num > 0
+            GROUP BY story_event_id, item_category, item_id
+            "#,
+        ),
+        (
+            "finite-bingo",
+            "Bingo rewards (finite sheets)",
+            r#"
+            SELECT finite.story_event_id, reward.item_category, reward.item_id,
+                   SUM(reward.item_num), COUNT(*)
+            FROM (
+                SELECT DISTINCT story_event_id, reward_set_id
+                FROM story_event_roulette_bingo
+                WHERE can_loop = 0
+            ) AS finite
+            JOIN story_event_bingo_reward AS reward
+              ON reward.reward_set_id = finite.reward_set_id
+            GROUP BY finite.story_event_id, reward.item_category, reward.item_id
+            "#,
+        ),
+    ];
+    let mut components = Vec::new();
+    for (component_id, label, query) in component_queries {
         let mut statement = connection.prepare(query)?;
-        let rows = statement.query_map([JEWEL_CATEGORY, JEWEL_ITEM_ID], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                PlannerSourceItem {
+                    item_category: row.get(1)?,
+                    item_id: row.get(2)?,
+                    amount: row.get(3)?,
+                    mission_count: Some(row.get(4)?),
+                    odds: None,
+                    order_min: None,
+                    order_max: None,
+                    bonus: None,
+                },
+            ))
         })?;
+        let mut grouped = BTreeMap::<i64, Vec<PlannerSourceItem>>::new();
         for row in rows {
-            let (event_id, amount) = row?;
-            *totals.entry(event_id).or_default() += amount;
+            let (event_id, item) = row?;
+            grouped.entry(event_id).or_default().push(item);
         }
-    }
-
-    let mut statement = connection.prepare(
-        r#"
-        SELECT finite.story_event_id, SUM(reward.item_num)
-        FROM (
-            SELECT DISTINCT story_event_id, reward_set_id
-            FROM story_event_roulette_bingo
-            WHERE can_loop = 0
-        ) AS finite
-        JOIN story_event_bingo_reward AS reward
-          ON reward.reward_set_id = finite.reward_set_id
-        WHERE reward.item_category = ?1
-          AND reward.item_id = ?2
-        GROUP BY finite.story_event_id
-        "#,
-    )?;
-    let rows = statement.query_map([JEWEL_CATEGORY, JEWEL_ITEM_ID], |row| {
-        Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (event_id, amount) = row?;
-        *totals.entry(event_id).or_default() += amount;
+        components.push((component_id, label, grouped));
     }
 
     let mut schedule =
@@ -3201,40 +3312,749 @@ fn load_story_rewards(
     })?;
     for row in rows {
         let (story_event_id, start, end) = row?;
-        let amount = totals.remove(&story_event_id).unwrap_or_default();
-        if amount <= 0 {
-            continue;
-        }
         let link = timeline_link_near_start(&story_links, start);
-        rewards.push(PlannerReward {
-            id: format!("{provenance}-story-event-{story_event_id}"),
-            label: "Story event rewards".to_string(),
-            event_id: link.map(|link| link.0.clone()),
-            gacha_id: None,
-            currency: "free_jewels",
-            amount: Some(amount),
-            available_at: link
-                .map(|link| link.1.clone())
-                .unwrap_or_else(|| timestamp_to_rfc3339(end)),
-            provenance,
-            assumption,
-            default_enabled: true,
-            source_url: None,
-            source_items: vec![PlannerSourceItem {
-                item_category: JEWEL_CATEGORY,
-                item_id: JEWEL_ITEM_ID,
-                amount,
-                mission_count: None,
-                odds: None,
-                order_min: None,
-                order_max: None,
-                bonus: None,
-            }],
-            confidence,
-            evidence: None,
-        });
+        let projected = link.or_else(|| timeline_link_near_start(&fallback_links, start));
+        let event_id = link
+            .map(|link| link.0.clone())
+            .or_else(|| Some(format!("master-story-event-{story_event_id}")));
+        let available_at = projected
+            .map(|link| link.1.clone())
+            .unwrap_or_else(|| timestamp_to_rfc3339(end));
+        for (component_id, label, grouped) in &components {
+            let Some(items) = grouped.get(&story_event_id) else {
+                continue;
+            };
+            let reward_start = rewards.len();
+            push_structured_rewards(
+                rewards,
+                &format!("{provenance}-story-event-{story_event_id}-{component_id}"),
+                label,
+                event_id.clone(),
+                &available_at,
+                provenance,
+                assumption,
+                true,
+                items.clone(),
+                None,
+            );
+            for reward in &mut rewards[reward_start..] {
+                reward.confidence = confidence;
+            }
+        }
     }
     Ok(())
+}
+
+fn add_source_item(
+    items: &mut Vec<PlannerSourceItem>,
+    item_category: i64,
+    item_id: i64,
+    amount: i64,
+) {
+    if item_category <= 0 || item_id <= 0 || amount <= 0 {
+        return;
+    }
+    if let Some(existing) = items
+        .iter_mut()
+        .find(|item| item.item_category == item_category && item.item_id == item_id)
+    {
+        existing.amount += amount;
+        return;
+    }
+    items.push(PlannerSourceItem {
+        item_category,
+        item_id,
+        amount,
+        mission_count: None,
+        odds: None,
+        order_min: None,
+        order_max: None,
+        bonus: None,
+    });
+}
+
+fn load_slotted_items(
+    connection: &Connection,
+    table: &str,
+    event_column: &str,
+    event_id: i64,
+    prefix: &str,
+    slot_count: usize,
+) -> Result<Vec<PlannerSourceItem>> {
+    let mut items = Vec::new();
+    for slot in 1..=slot_count {
+        let query = format!(
+            "SELECT {prefix}category_{slot}, {prefix}id_{slot}, \
+             {prefix}num_{slot} FROM {table} WHERE {event_column} = ?1"
+        );
+        let mut statement = connection.prepare(&query)?;
+        let rows = statement.query_map([event_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (category, item_id, amount) = row?;
+            add_source_item(&mut items, category, item_id, amount);
+        }
+    }
+    Ok(items)
+}
+
+fn load_exchange_items(
+    connection: &Connection,
+    item_exchange_top_id: i64,
+) -> Result<Vec<PlannerSourceItem>> {
+    let mut items = Vec::new();
+    let mut statement = connection.prepare(
+        r#"
+        SELECT change_item_category, change_item_id,
+               change_item_num * change_item_limit_num
+        FROM item_exchange
+        WHERE item_exchange_top_id = ?1
+          AND change_item_limit_num > 0
+          AND change_item_num > 0
+        "#,
+    )?;
+    let rows = statement.query_map([item_exchange_top_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (category, item_id, amount) = row?;
+        add_source_item(&mut items, category, item_id, amount);
+    }
+    Ok(items)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_master_event_component(
+    rewards: &mut Vec<PlannerReward>,
+    links: &BTreeMap<i64, (String, String)>,
+    fallback_links: &BTreeMap<i64, (String, String)>,
+    master_start: i64,
+    master_end: i64,
+    synthetic_event_id: String,
+    reward_id: String,
+    label: &str,
+    provenance: &'static str,
+    assumption: &'static str,
+    confidence: &'static str,
+    default_enabled: bool,
+    items: Vec<PlannerSourceItem>,
+) {
+    if items.is_empty() {
+        return;
+    }
+    let exact_link = timeline_link_near_start(links, master_start);
+    let projected_link =
+        exact_link.or_else(|| timeline_link_near_start(fallback_links, master_start));
+    let event_id = exact_link
+        .map(|link| link.0.clone())
+        .or(Some(synthetic_event_id));
+    let available_at = projected_link
+        .map(|link| link.1.clone())
+        .unwrap_or_else(|| timestamp_to_rfc3339(master_end));
+    let reward_start = rewards.len();
+    push_structured_rewards(
+        rewards,
+        &reward_id,
+        label,
+        event_id,
+        &available_at,
+        provenance,
+        assumption,
+        default_enabled,
+        items,
+        None,
+    );
+    for reward in &mut rewards[reward_start..] {
+        reward.confidence = confidence;
+    }
+}
+
+fn load_scenario_record_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_scenario_record_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "scenario_evaluation_thresholds",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_scenario_record_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "jp_reward_parity_scenario_evaluation_thresholds",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_scenario_record_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    assumption: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "single_mode_scenario_record")? {
+        return Ok(());
+    }
+    let links = timeline_typed_links(
+        timeline,
+        "scenario_release",
+        timeline_date_field,
+        "global_release_date",
+    );
+    let ordered_links = links.values().cloned().collect::<Vec<_>>();
+    let mut grouped = BTreeMap::<i64, Vec<PlannerSourceItem>>::new();
+    let mut statement = connection.prepare(
+        r#"
+        SELECT scenario_id, reward_item_category, reward_item_id, reward_num
+        FROM single_mode_scenario_record
+        ORDER BY scenario_id, id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (scenario_id, category, item_id, amount) = row?;
+        add_source_item(
+            grouped.entry(scenario_id).or_default(),
+            category,
+            item_id,
+            amount,
+        );
+    }
+    for (scenario_id, items) in grouped {
+        if scenario_id < 4 {
+            continue;
+        }
+        let Some((event_id, available_at)) = ordered_links.get((scenario_id - 4) as usize) else {
+            continue;
+        };
+        let reward_start = rewards.len();
+        push_structured_rewards(
+            rewards,
+            &format!("{provenance}-scenario-record-{scenario_id}"),
+            "Training scenario evaluation rewards",
+            Some(event_id.clone()),
+            available_at,
+            provenance,
+            assumption,
+            true,
+            items,
+            None,
+        );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
+    }
+    Ok(())
+}
+
+fn load_training_challenge_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_training_challenge_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_training_challenge_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_training_challenge_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "training_challenge_master")? {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "trainer_skills_test", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        r#"
+        SELECT id, start_date, end_date, shop_id,
+               exam_id_1, exam_id_2, exam_id_3, exam_id_4, exam_id_5,
+               ex_exam_id, free_exam_id
+        FROM training_challenge_master
+        ORDER BY start_date, id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            (4..=10)
+                .map(|column| row.get::<_, i64>(column))
+                .collect::<rusqlite::Result<Vec<_>>>()?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end, shop_id, exam_ids) = row?;
+        let mut score_items = Vec::new();
+        for exam_id in exam_ids.into_iter().filter(|id| *id > 0) {
+            for item in load_slotted_items(
+                connection,
+                "training_challenge_exam",
+                "id",
+                exam_id,
+                "item_",
+                5,
+            )? {
+                add_source_item(
+                    &mut score_items,
+                    item.item_category,
+                    item.item_id,
+                    item.amount,
+                );
+            }
+        }
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("trainer-skills-test-master-{event_id}"),
+            format!("{provenance}-trainer-skills-test-{event_id}-scores"),
+            "Trainer Skills Test score rewards",
+            provenance,
+            "full_score_completion",
+            confidence,
+            true,
+            score_items,
+        );
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("trainer-skills-test-master-{event_id}"),
+            format!("{provenance}-trainer-skills-test-{event_id}-shop"),
+            "Trainer Skills Test shop exchanges",
+            provenance,
+            "all_limited_shop_exchanges",
+            confidence,
+            true,
+            load_exchange_items(connection, shop_id)?,
+        );
+    }
+    Ok(())
+}
+
+fn load_racing_carnival_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_racing_carnival_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_racing_carnival_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_racing_carnival_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "challenge_match_data")? {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "racing_carnival", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        "SELECT challenge_match_id, start_date, end_date, item_exchange_top_id FROM challenge_match_data ORDER BY start_date",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end, shop_id) = row?;
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("racing-carnival-master-{event_id}"),
+            format!("{provenance}-racing-carnival-{event_id}-first-clear"),
+            "Racing Carnival first-clear rewards",
+            provenance,
+            "all_first_clears",
+            confidence,
+            true,
+            load_slotted_items(
+                connection,
+                "challenge_match_race",
+                "challenge_match_id",
+                event_id,
+                "first_clear_item_",
+                3,
+            )?,
+        );
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("racing-carnival-master-{event_id}"),
+            format!("{provenance}-racing-carnival-{event_id}-shop"),
+            "Racing Carnival shop exchanges",
+            provenance,
+            "all_limited_shop_exchanges",
+            confidence,
+            true,
+            load_exchange_items(connection, shop_id)?,
+        );
+    }
+    Ok(())
+}
+
+fn load_factor_research_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_factor_research_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_factor_research_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_factor_research_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "factor_research_data")?
+        || !sqlite_table_exists(connection, "factor_research_box")?
+    {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "factor_research", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection.prepare(
+        r#"
+        SELECT data.factor_research_event_id, data.start_date, data.end_date,
+               reward.item_category, reward.item_id, SUM(reward.item_num)
+        FROM factor_research_data AS data
+        JOIN factor_research_box AS box
+          ON box.factor_research_event_id = data.factor_research_event_id
+        JOIN factor_research_box_reward AS reward
+          ON reward.box_id = box.box_id
+        GROUP BY data.factor_research_event_id, data.start_date, data.end_date,
+                 reward.item_category, reward.item_id
+        ORDER BY data.start_date, data.factor_research_event_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
+    let mut grouped = BTreeMap::<i64, (i64, i64, Vec<PlannerSourceItem>)>::new();
+    for row in rows {
+        let (event_id, start, end, category, item_id, amount) = row?;
+        let entry = grouped
+            .entry(event_id)
+            .or_insert_with(|| (start, end, Vec::new()));
+        add_source_item(&mut entry.2, category, item_id, amount);
+    }
+    for (event_id, (start, end, items)) in grouped {
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("factor-research-master-{event_id}"),
+            format!("{provenance}-factor-research-{event_id}"),
+            "Agnes Tachyon's Factor Research box rewards",
+            provenance,
+            "all_reward_boxes",
+            confidence,
+            true,
+            items,
+        );
+    }
+    Ok(())
+}
+
+fn load_masters_challenge_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_masters_challenge_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_masters_challenge_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_masters_challenge_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "ultimate_race_data")?
+        || !sqlite_table_exists(connection, "ultimate_race_contents")?
+    {
+        return Ok(());
+    }
+    let links = timeline_competitive_links(timeline, "masters_challenge", timeline_date_field);
+    let fallback_links = timeline_all_links(timeline, timeline_date_field, "estimated_end_date");
+    let mut statement = connection
+        .prepare("SELECT id, start_date, end_date FROM ultimate_race_data ORDER BY start_date")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end) = row?;
+        push_master_event_component(
+            rewards,
+            &links,
+            &fallback_links,
+            start,
+            end,
+            format!("masters-challenge-master-{event_id}"),
+            format!("{provenance}-masters-challenge-{event_id}"),
+            "Masters Challenge first-clear rewards",
+            provenance,
+            "all_first_clears_high_difficulty",
+            confidence,
+            false,
+            load_slotted_items(
+                connection,
+                "ultimate_race_contents",
+                "event_id",
+                event_id,
+                "first_clear_item_",
+                5,
+            )?,
+        );
+    }
+    Ok(())
+}
+
+fn load_main_story_rewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    load_main_story_rewards_for(
+        connection,
+        timeline,
+        rewards,
+        "global_release_date",
+        "global_master",
+        "exact_source",
+    )?;
+    if let Some(jp_connection) = jp_connection {
+        load_main_story_rewards_for(
+            jp_connection,
+            timeline,
+            rewards,
+            "jp_release_date",
+            "jp_master",
+            "projected_parity",
+        )?;
+    }
+    Ok(())
+}
+
+fn load_main_story_rewards_for(
+    connection: &Connection,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: &str,
+    provenance: &'static str,
+    confidence: &'static str,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "main_story_part")?
+        || !sqlite_table_exists(connection, "main_story_data")?
+    {
+        return Ok(());
+    }
+    let projection_links = timeline_all_links(timeline, timeline_date_field, "global_release_date");
+    let has_second_reward =
+        sqlite_column_exists(connection, "main_story_data", "add_reward_category_2")?;
+    let mut statement =
+        connection.prepare("SELECT id, start_date FROM main_story_part ORDER BY id")?;
+    let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+    for row in rows {
+        let (part_id, start) = row?;
+        let mut items = load_slotted_items(
+            connection,
+            "main_story_data",
+            "part_id",
+            part_id,
+            "add_reward_",
+            if has_second_reward { 2 } else { 1 },
+        )?;
+        items.retain(|item| item.amount > 0);
+        if items.is_empty() {
+            continue;
+        }
+        let available_at = if timeline_date_field == "global_release_date" {
+            timestamp_to_rfc3339(start)
+        } else {
+            timeline_link_near_start(&projection_links, start)
+                .map(|link| link.1.clone())
+                .unwrap_or_else(|| timestamp_to_rfc3339(start))
+        };
+        let reward_start = rewards.len();
+        push_structured_rewards(
+            rewards,
+            &format!("{provenance}-main-story-part-{part_id}"),
+            &format!("Main Story part {part_id} episode rewards"),
+            Some(format!("main-story-part-{part_id}")),
+            &available_at,
+            provenance,
+            "all_story_episodes_viewed",
+            true,
+            items,
+            None,
+        );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
+    }
+    Ok(())
+}
+
+fn sqlite_column_exists(connection: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut statement = connection.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+    for item in columns {
+        if item? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn load_login_bonus_rewards(
@@ -4728,6 +5548,15 @@ fn timeline_competitive_links(
     event_type: &str,
     date_field: &str,
 ) -> BTreeMap<i64, (String, String)> {
+    timeline_typed_links(timeline, event_type, date_field, "estimated_end_date")
+}
+
+fn timeline_typed_links(
+    timeline: &Value,
+    event_type: &str,
+    date_field: &str,
+    target_field: &str,
+) -> BTreeMap<i64, (String, String)> {
     timeline
         .get("events")
         .and_then(Value::as_array)
@@ -4742,7 +5571,32 @@ fn timeline_competitive_links(
                 timestamp,
                 (
                     event.get("id")?.as_str()?.to_string(),
-                    event.get("estimated_end_date")?.as_str()?.to_string(),
+                    event.get(target_field)?.as_str()?.to_string(),
+                ),
+            ))
+        })
+        .collect()
+}
+
+fn timeline_all_links(
+    timeline: &Value,
+    date_field: &str,
+    target_field: &str,
+) -> BTreeMap<i64, (String, String)> {
+    timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|event| {
+            let timestamp = DateTime::parse_from_rfc3339(event.get(date_field)?.as_str()?)
+                .ok()?
+                .timestamp();
+            Some((
+                timestamp,
+                (
+                    event.get("id")?.as_str()?.to_string(),
+                    event.get(target_field)?.as_str()?.to_string(),
                 ),
             ))
         })
@@ -4808,9 +5662,9 @@ mod tests {
         load_competitive_reward_metadata, load_competitive_variants, load_daily_pack_rules,
         load_gachas, load_global_news_rewards, load_global_social_rewards,
         load_mission_campaign_rewards, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, match_news_event, partition_news_free_pull_campaign_days,
-        partition_news_free_pull_days, planner_reward_event_ids,
-        remove_global_social_rewards_covered_by_news, reward_sections,
+        load_paid_news_income_rules, load_story_rewards, match_news_event,
+        partition_news_free_pull_campaign_days, partition_news_free_pull_days,
+        planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
         seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
         ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
         GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
@@ -6714,7 +7568,7 @@ mod tests {
             "estimated_end_date":"2025-08-10T00:00:00+00:00"
         }]});
         let mut rewards = Vec::new();
-        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+        load_mission_campaign_rewards(&connection, None, &timeline, &mut rewards).unwrap();
         assert!(rewards
             .iter()
             .any(|reward| reward.currency == "free_jewels" && reward.amount == Some(300)));
@@ -6748,7 +7602,7 @@ mod tests {
             {"id":"campaign-218","type":"mission_campaign","global_release_date":"2026-08-10T00:00:00Z","estimated_end_date":"2026-10-10T22:00:00Z"}
         ]});
         let mut rewards = Vec::new();
-        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+        load_mission_campaign_rewards(&connection, None, &timeline, &mut rewards).unwrap();
         for campaign in [217, 218] {
             let expected_event_id = format!("campaign-{campaign}");
             let reward = rewards
@@ -6787,7 +7641,7 @@ mod tests {
             "estimated_end_date":"2049-12-31T19:59:59Z"
         }]});
         let mut rewards = Vec::new();
-        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+        load_mission_campaign_rewards(&connection, None, &timeline, &mut rewards).unwrap();
         assert!(!rewards
             .iter()
             .any(|reward| reward.id.starts_with("jp-master-mission-28-")));
@@ -6824,7 +7678,7 @@ mod tests {
             }
         ]});
         let mut rewards = Vec::new();
-        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+        load_mission_campaign_rewards(&connection, None, &timeline, &mut rewards).unwrap();
         let global = rewards
             .iter()
             .find(|reward| reward.id == "mission-campaign-217-free_jewels")
@@ -6865,7 +7719,7 @@ mod tests {
             }
         ]});
         let mut rewards = Vec::new();
-        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+        load_mission_campaign_rewards(&connection, None, &timeline, &mut rewards).unwrap();
         let reward = rewards
             .iter()
             .find(|reward| reward.id == "mission-campaign-9999-free_jewels")
@@ -6993,5 +7847,89 @@ mod tests {
         assert_eq!(variants[0].source_items[0].amount, 50);
         assert_eq!(variants[0].source_items[0].odds, Some(1_000_000));
         assert!(!variants[0].default_enabled);
+    }
+
+    #[test]
+    fn story_rewards_expose_components_tickets_crystals_and_only_finite_bingo() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE story_event_data (story_event_id INTEGER, start_date INTEGER, end_date INTEGER);
+                CREATE TABLE story_event_point_reward (story_event_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER);
+                CREATE TABLE story_event_mission (story_event_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER);
+                CREATE TABLE story_event_story_data (
+                    story_event_id INTEGER,
+                    add_reward_category_1 INTEGER, add_reward_id_1 INTEGER, add_reward_num_1 INTEGER,
+                    add_reward_category_2 INTEGER, add_reward_id_2 INTEGER, add_reward_num_2 INTEGER
+                );
+                CREATE TABLE story_event_roulette_bingo (story_event_id INTEGER, reward_set_id INTEGER, can_loop INTEGER);
+                CREATE TABLE story_event_bingo_reward (reward_set_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER);
+                INSERT INTO story_event_data VALUES (1001, 1893456000, 1894320000);
+                INSERT INTO story_event_point_reward VALUES
+                    (1001, 90, 43, 1500), (1001, 40, 111, 2), (1001, 164, 149, 3);
+                INSERT INTO story_event_mission VALUES (1001, 90, 43, 150);
+                INSERT INTO story_event_story_data VALUES (1001, 90, 43, 210, 0, 0, 0);
+                INSERT INTO story_event_roulette_bingo VALUES (1001, 10, 0), (1001, 11, 1);
+                INSERT INTO story_event_bingo_reward VALUES
+                    (10, 90, 43, 300), (10, 164, 150, 3), (11, 90, 43, 999);
+                "#,
+            )
+            .unwrap();
+        let timeline = json!({"events":[{
+            "id":"story-event-test", "type":"story_event",
+            "global_release_date":"2030-01-01T00:00:00Z",
+            "estimated_end_date":"2030-01-10T00:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+        load_story_rewards(
+            &connection,
+            &timeline,
+            &mut rewards,
+            "global_release_date",
+            "global_master",
+            "full_completion",
+            "exact_source",
+        )
+        .unwrap();
+
+        let amount = |label: &str, currency: &str| {
+            rewards
+                .iter()
+                .find(|reward| reward.label == label && reward.currency == currency)
+                .and_then(|reward| reward.amount)
+        };
+        assert_eq!(
+            amount("Story event point rewards", "free_jewels"),
+            Some(1500)
+        );
+        assert_eq!(
+            amount("Story event point rewards", "support_ticket"),
+            Some(2)
+        );
+        assert_eq!(
+            amount("Story event point rewards", "rainbow_crystal"),
+            Some(3)
+        );
+        assert_eq!(
+            amount("Story event mission rewards", "free_jewels"),
+            Some(150)
+        );
+        assert_eq!(
+            amount("Story event chapter rewards", "free_jewels"),
+            Some(210)
+        );
+        assert_eq!(
+            amount("Bingo rewards (finite sheets)", "free_jewels"),
+            Some(300)
+        );
+        assert_eq!(
+            amount("Bingo rewards (finite sheets)", "gold_crystal"),
+            Some(3)
+        );
+        assert!(rewards.iter().all(|reward| reward.amount != Some(999)));
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.event_id.as_deref() == Some("story-event-test")));
     }
 }
