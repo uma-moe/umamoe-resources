@@ -47,7 +47,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 26;
+const TIMELINE_ALGORITHM_VERSION: u8 = 27;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -531,6 +531,7 @@ struct CalendarLikelihoodModel {
 
 pub fn generate(
     connection: &Connection,
+    jp_connection: Option<&Connection>,
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
@@ -540,7 +541,7 @@ pub fn generate(
     let timeline_paid_banners = load_timeline_paid_banners()?;
     let timeline_story_events = load_timeline_story_events()?;
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
-    let mut timeline_legend_races = load_timeline_legend_races()?;
+    let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
     let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
     merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
@@ -3723,7 +3724,9 @@ fn merge_legend_race_news(
     }
 }
 
-fn load_timeline_legend_races() -> Result<Vec<TimelineLegendRace>> {
+fn load_timeline_legend_races(
+    jp_connection: Option<&Connection>,
+) -> Result<Vec<TimelineLegendRace>> {
     let raw_events: Vec<RawTimelineLegendRace> =
         serde_json::from_slice(BUNDLED_TIMELINE_LEGEND_RACES_JSON)
             .context("failed to parse bundled timeline_legend_races.json")?;
@@ -3763,12 +3766,213 @@ fn load_timeline_legend_races() -> Result<Vec<TimelineLegendRace>> {
         })
         .collect::<Result<Vec<_>>>()?;
 
+    if let Some(jp_connection) = jp_connection {
+        append_master_legend_races(jp_connection, &mut events)?;
+    }
+
     events.sort_by_key(|event| (event.start_at, event.race_name.clone()));
     for (index, event) in events.iter_mut().enumerate() {
         event.index = index;
     }
 
     Ok(events)
+}
+
+fn append_master_legend_races(
+    connection: &Connection,
+    events: &mut Vec<TimelineLegendRace>,
+) -> Result<()> {
+    for table in [
+        "legend_race",
+        "race_instance",
+        "race",
+        "race_course_set",
+        "text_data",
+    ] {
+        if !timeline_table_exists(connection, table)? {
+            return Ok(());
+        }
+    }
+
+    let Some(latest_bundled_day) = events
+        .iter()
+        .map(|event| normalize_to_midnight_utc(event.start_at))
+        .max()
+    else {
+        return Ok(());
+    };
+    let character_names = common::read_character_names()?;
+    let mut statement = connection.prepare(
+        r#"
+        SELECT legend.race_instance_id,
+               legend.image_id,
+               legend.start_date,
+               legend.end_date,
+               course.distance,
+               course.ground,
+               race_name.text
+        FROM legend_race AS legend
+        JOIN race_instance AS instance
+          ON instance.id = legend.race_instance_id
+        JOIN race
+          ON race.id = instance.race_id
+        JOIN race_course_set AS course
+          ON course.id = race.course_set
+        LEFT JOIN text_data AS race_name
+          ON race_name.category = 28
+         AND race_name."index" = legend.race_instance_id
+        ORDER BY legend.start_date, legend.id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, Option<String>>(6)?,
+        ))
+    })?;
+
+    let mut master_events = BTreeMap::<i64, TimelineLegendRace>::new();
+    for row in rows {
+        let (race_instance_id, image_id, start, end, distance, ground, race_name) = row?;
+        let start_at = master_timestamp(start)?;
+        let end_at = master_timestamp(end)?;
+        let event_key = race_instance_id / 10;
+        let card_id = normalize_master_legend_card_id(image_id);
+        let boss = TimelineLegendBoss {
+            name: bundled_legend_boss_name(&character_names, card_id),
+            image: format!("chara_stand_{card_id}.webp"),
+            card_id: Some(card_id),
+        };
+
+        match master_events.entry(event_key) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(TimelineLegendRace {
+                    index: 0,
+                    race_name: master_legend_race_title(race_name.as_deref(), event_key),
+                    start_at,
+                    end_at,
+                    course: Some(master_legend_course(distance, ground)),
+                    bosses: vec![boss],
+                    image_url: None,
+                    image_path: None,
+                    source_post_id: None,
+                });
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let event = entry.get_mut();
+                event.start_at = event.start_at.min(start_at);
+                event.end_at = event.end_at.max(end_at);
+                if !event
+                    .bosses
+                    .iter()
+                    .any(|existing| existing.card_id == boss.card_id)
+                {
+                    event.bosses.push(boss);
+                }
+            }
+        }
+    }
+
+    events.extend(
+        master_events
+            .into_values()
+            .filter(|event| normalize_to_midnight_utc(event.start_at) > latest_bundled_day),
+    );
+    Ok(())
+}
+
+fn timeline_table_exists(connection: &Connection, table: &str) -> Result<bool> {
+    let count = connection.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        [table],
+        |row| row.get::<_, i64>(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn master_timestamp(timestamp: i64) -> Result<DateTime<Utc>> {
+    Utc.timestamp_opt(timestamp, 0)
+        .single()
+        .with_context(|| format!("invalid legend_race master timestamp {timestamp}"))
+}
+
+fn normalize_master_legend_card_id(image_id: i64) -> i64 {
+    if image_id >= 10_000_000 {
+        image_id / 100
+    } else {
+        image_id
+    }
+}
+
+fn bundled_legend_boss_name(character_names: &serde_json::Value, card_id: i64) -> String {
+    let chara_id = card_id / 100;
+    let skin_id = format!("{:02}", card_id % 100);
+    let Some(entry) = character_names.get(chara_id.to_string()) else {
+        return format!("Character {card_id}");
+    };
+    let Some(name) = entry.get("name").and_then(serde_json::Value::as_str) else {
+        return format!("Character {card_id}");
+    };
+    entry
+        .get("skins")
+        .and_then(|skins| skins.get(&skin_id))
+        .and_then(serde_json::Value::as_str)
+        .map(|skin| format!("{name} ({skin})"))
+        .unwrap_or_else(|| name.to_string())
+}
+
+fn master_legend_race_title(jp_title: Option<&str>, event_key: i64) -> String {
+    let raw_title = jp_title.unwrap_or_default().trim();
+    let jp_title = raw_title
+        .strip_suffix(" HARD")
+        .or_else(|| raw_title.strip_suffix("（HARD）"))
+        .or_else(|| raw_title.strip_suffix("(HARD)"))
+        .unwrap_or(raw_title);
+    let race_name = match jp_title {
+        "東京優駿（日本ダービー）" | "日本ダービー" => {
+            "Tokyo Yushun (Japan Derby)"
+        }
+        "安田記念" => "Yasuda Kinen",
+        "宝塚記念" => "Takarazuka Kinen",
+        "帝王賞" => "Teio Sho",
+        "スプリンターズステークス" | "スプリンターズS" => "Sprinters Stakes",
+        "菊花賞" => "Kikka Sho",
+        "ジャパンカップ" | "ジャパンC" => "Japan Cup",
+        "有馬記念" => "Arima Kinen",
+        "アメリカJCC" => "American JCC",
+        "大阪杯" => "Osaka Hai",
+        "桜花賞" => "Oka Sho",
+        "皐月賞" => "Satsuki Sho",
+        "天皇賞（春）" => "Tenno Sho (Spring)",
+        "秋華賞" => "Shuuka Sho",
+        "朝日杯フューチュリティステークス" | "朝日杯FS" => {
+            "Asahi Hai Futurity Stakes"
+        }
+        "フェブラリーステークス" | "フェブラリーS" => "February Stakes",
+        title if !title.is_empty() => title,
+        _ => return format!("Legend Race {event_key}"),
+    };
+    format!("{race_name} Legend Race")
+}
+
+fn master_legend_course(distance: i64, ground: i64) -> String {
+    let distance_type = match distance {
+        ..=1_400 => "Short",
+        1_401..=1_800 => "Mile",
+        1_801..=2_400 => "Medium",
+        _ => "Long",
+    };
+    let ground = match ground {
+        1 => "Turf",
+        2 => "Dirt",
+        _ => "Unknown",
+    };
+    format!("{distance}m - {distance_type} - {ground}")
 }
 
 fn load_timeline_campaigns(connection: &Connection) -> Result<Vec<TimelineCampaign>> {
@@ -4522,7 +4726,7 @@ mod tests {
         }
 
         let legend_events =
-            load_timeline_legend_races().expect("legend timeline data should parse");
+            load_timeline_legend_races(None).expect("legend timeline data should parse");
         let (first_names, first_card_ids, _) = legend_boss_metadata(&legend_events[0]);
         assert_eq!(
             first_names,
@@ -4554,7 +4758,8 @@ mod tests {
 
     #[test]
     fn legend_race_news_adds_event_media_without_reusing_boss_portraits() {
-        let mut races = load_timeline_legend_races().expect("legend timeline data should parse");
+        let mut races =
+            load_timeline_legend_races(None).expect("legend timeline data should parse");
         let first_start = races[0].start_at;
         let boss_images = races[0]
             .bosses
@@ -4594,8 +4799,113 @@ mod tests {
     }
 
     #[test]
+    fn jp_master_extends_legend_races_after_bundled_horizon() {
+        let connection = Connection::open_in_memory().expect("in-memory database should open");
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE legend_race (
+                    id INTEGER, image_id INTEGER, race_instance_id INTEGER,
+                    start_date INTEGER, end_date INTEGER
+                );
+                CREATE TABLE race_instance (id INTEGER, race_id INTEGER);
+                CREATE TABLE race (id INTEGER, course_set INTEGER);
+                CREATE TABLE race_course_set (id INTEGER, distance INTEGER, ground INTEGER);
+                CREATE TABLE text_data (category INTEGER, "index" INTEGER, text TEXT);
+                INSERT INTO race VALUES (12017, 10808), (12046, 10501);
+                INSERT INTO race_course_set VALUES (10808, 2400, 1), (10501, 1200, 1);
+                INSERT INTO race_instance VALUES (1204501, 12046), (1204502, 12046);
+                INSERT INTO race_instance VALUES (1201701, 12017), (1201702, 12017);
+                INSERT INTO text_data VALUES
+                    (28, 1201701, '東京優駿（日本ダービー） HARD'),
+                    (28, 1201702, '東京優駿（日本ダービー） HARD'),
+                    (28, 1204501, 'スプリンターズステークス HARD'),
+                    (28, 1204502, 'スプリンターズステークス HARD');
+                "#,
+            )
+            .expect("legend race test schema should build");
+        connection
+            .execute(
+                "INSERT INTO legend_race VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    136,
+                    10_690_102,
+                    1_204_501,
+                    utc_date(2026, 8, 9, 3).timestamp(),
+                    utc_date(2026, 8, 11, 19).timestamp()
+                ],
+            )
+            .expect("first legend opponent should insert");
+        connection
+            .execute(
+                "INSERT INTO legend_race VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    137,
+                    112_001,
+                    1_204_502,
+                    utc_date(2026, 8, 11, 20).timestamp(),
+                    utc_date(2026, 8, 14, 19).timestamp()
+                ],
+            )
+            .expect("second legend opponent should insert");
+        connection
+            .execute(
+                "INSERT INTO legend_race VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    80,
+                    103_101,
+                    1_201_701,
+                    utc_date(2024, 5, 5, 3).timestamp(),
+                    utc_date(2024, 5, 7, 19).timestamp()
+                ],
+            )
+            .expect("bundled-boundary first opponent should insert");
+        connection
+            .execute(
+                "INSERT INTO legend_race VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    81,
+                    103_301,
+                    1_201_702,
+                    utc_date(2024, 5, 7, 20).timestamp(),
+                    utc_date(2024, 5, 10, 19).timestamp()
+                ],
+            )
+            .expect("bundled-boundary second opponent should insert");
+
+        let bundled_count = load_timeline_legend_races(None)
+            .expect("bundled legend data should parse")
+            .len();
+        let races = load_timeline_legend_races(Some(&connection))
+            .expect("JP master legend data should merge");
+        let added = races.last().expect("master should append one race cycle");
+
+        assert_eq!(races.len(), bundled_count + 1);
+        assert_eq!(added.index, bundled_count);
+        assert_eq!(added.race_name, "Sprinters Stakes Legend Race");
+        assert_eq!(added.course.as_deref(), Some("1200m - Short - Turf"));
+        assert_eq!(
+            added
+                .bosses
+                .iter()
+                .filter_map(|boss| boss.card_id)
+                .collect::<Vec<_>>(),
+            [106_901, 112_001]
+        );
+        assert_eq!(
+            added
+                .bosses
+                .iter()
+                .map(|boss| boss.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Sakura Chiyono O (Original)", "Calstone Light O (Original)"]
+        );
+    }
+
+    #[test]
     fn bundled_legend_races_match_exact_live_news_days() {
-        let mut races = load_timeline_legend_races().expect("legend timeline data should parse");
+        let mut races =
+            load_timeline_legend_races(None).expect("legend timeline data should parse");
         let news = crate::generators::jp_events::legend_race_timeline_metadata()
             .expect("legend news metadata should parse");
         merge_legend_race_news(&mut races, &news);
