@@ -4025,7 +4025,9 @@ fn load_mission_campaign_rewards(
         })
         .collect::<BTreeMap<_, _>>();
     for group in jp_reward_groups {
-        if group.rewards.is_empty() {
+        if group.rewards.is_empty() || is_permanent_mission_end_date(&group.end_date) {
+            // The master uses far-future end dates for permanent missions.
+            // They are not a one-time reward at the projected campaign date.
             continue;
         }
         let campaign_id = campaign_by_mission
@@ -4065,7 +4067,7 @@ fn load_mission_campaign_rewards(
             &available_at,
             "jp_master_snapshot",
             "jp_reward_parity",
-            false,
+            true,
             group.rewards,
             Some(format!(
                 "{} JP master mission rows; JP period {} to {}",
@@ -4074,6 +4076,13 @@ fn load_mission_campaign_rewards(
         );
     }
     Ok(())
+}
+
+fn is_permanent_mission_end_date(value: &str) -> bool {
+    value
+        .get(..4)
+        .and_then(|year| year.parse::<i32>().ok())
+        .is_some_and(|year| year >= 2040)
 }
 
 fn planner_catalog_date(value: &str) -> String {
@@ -9066,12 +9075,55 @@ mod tests {
                 .unwrap()
                 .contains("15 JP master mission rows"));
             assert_eq!(reward.provenance, "jp_master_snapshot");
-            assert!(!reward.default_enabled);
+            assert!(reward.default_enabled);
         }
     }
 
     #[test]
-    fn incomplete_historical_snapshot_is_not_emitted_as_exact_campaign_rewards() {
+    fn bundled_jp_mission_snapshot_covers_2025_fall_g1_campaigns() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE mission_data (
+                    id INTEGER, mission_type INTEGER, event_id INTEGER,
+                    start_date TEXT, end_date TEXT, item_category INTEGER,
+                    item_id INTEGER, item_num INTEGER
+                );
+                "#,
+            )
+            .unwrap();
+        let timeline = json!({"events":[
+            {
+                "id":"campaign-917", "type":"mission_campaign",
+                "global_release_date":"2028-11-06T00:00:00Z",
+                "estimated_end_date":"2028-11-13T00:00:00Z"
+            },
+            {
+                "id":"campaign-918", "type":"mission_campaign",
+                "global_release_date":"2028-11-13T00:00:00Z",
+                "estimated_end_date":"2028-11-20T00:00:00Z"
+            }
+        ]});
+        let mut rewards = Vec::new();
+
+        load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
+
+        for campaign in [917, 918] {
+            let expected_event_id = format!("campaign-{campaign}");
+            let reward = rewards
+                .iter()
+                .find(|reward| reward.id == format!("jp-master-mission-{campaign}-free_jewels"))
+                .unwrap();
+            assert_eq!(reward.event_id.as_deref(), Some(expected_event_id.as_str()));
+            assert_eq!(reward.amount, Some(150));
+            assert_eq!(reward.provenance, "jp_master_snapshot");
+            assert!(reward.default_enabled);
+        }
+    }
+
+    #[test]
+    fn permanent_campaign_snapshot_is_not_emitted_as_dated_rewards() {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -9084,16 +9136,25 @@ mod tests {
         "#,
             )
             .unwrap();
-        let timeline = json!({"events":[{
-            "id":"campaign-28", "type":"campaign", "source":"campaign",
-            "global_release_date":"2027-01-01T00:00:00Z",
-            "estimated_end_date":"2049-12-31T19:59:59Z"
-        }]});
+        let timeline = json!({"events":[
+            {
+                "id":"campaign-28", "type":"campaign", "source":"campaign",
+                "global_release_date":"2027-01-01T00:00:00Z",
+                "estimated_end_date":"2049-12-31T19:59:59Z"
+            },
+            {
+                "id":"campaign-219", "type":"campaign", "source":"campaign",
+                "global_release_date":"2027-01-02T00:00:00Z",
+                "estimated_end_date":"2050-12-30T19:59:59Z"
+            }
+        ]});
         let mut rewards = Vec::new();
         load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
-        assert!(!rewards
-            .iter()
-            .any(|reward| reward.id.starts_with("jp-master-mission-28-")));
+        for campaign in [28, 219] {
+            assert!(!rewards.iter().any(|reward| reward
+                .id
+                .starts_with(&format!("jp-master-mission-{campaign}-"))));
+        }
     }
 
     #[test]

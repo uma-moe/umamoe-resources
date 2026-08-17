@@ -5,7 +5,7 @@
     "start_date": "2021-02-23T20:00:00",
     "end_date": "2050-12-30T19:59:59",
     "mission_count": 36,
-    "mission_fingerprint": "82b3be9041ba9adad6927c70b9b7c8585d31fd606409828e7a58562f4371692d",
+    "mission_fingerprint": "7b19fcfc4351b2e78d594797c860a7666510935af5332b3ee3be493c6637af83",
     "rewards": [
       {
         "item_category": 11,
@@ -40,20 +40,14 @@
       {
         "item_category": 20,
         "item_id": 32,
-        "amount": 6,
-        "mission_count": 3
-      },
-      {
-        "item_category": 30,
-        "item_id": 110,
-        "amount": 105000,
-        "mission_count": 7
+        "amount": 12,
+        "mission_count": 6
       },
       {
         "item_category": 34,
         "item_id": 95,
-        "amount": 15,
-        "mission_count": 3
+        "amount": 35,
+        "mission_count": 7
       },
       {
         "item_category": 40,
@@ -99,13 +93,13 @@
     "start_date": "2021-03-11T03:00:00",
     "end_date": "2050-12-30T19:59:59",
     "mission_count": 36,
-    "mission_fingerprint": "ab4d57f5afcfb172df97a88da90ce81e56fce3e05fbad609f3f7975edfb99a17",
+    "mission_fingerprint": "260190cd95471e05223c21127c20be8a19f5f74237f64573416b91f20e1bddee",
     "rewards": [
       {
         "item_category": 20,
         "item_id": 32,
-        "amount": 2,
-        "mission_count": 1
+        "amount": 8,
+        "mission_count": 4
       },
       {
         "item_category": 21,
@@ -114,10 +108,10 @@
         "mission_count": 5
       },
       {
-        "item_category": 30,
-        "item_id": 110,
-        "amount": 105000,
-        "mission_count": 7
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 20,
+        "mission_count": 4
       },
       {
         "item_category": 40,
@@ -615,25 +609,25 @@
     "start_date": "2021-07-12T03:00:00",
     "end_date": "2050-05-14T19:59:59",
     "mission_count": 40,
-    "mission_fingerprint": "a42a93881303311d87eaf1f1549fa2b1ac0b1dd46357e3f95b233249b196bb23",
+    "mission_fingerprint": "5bd95dbee218671a216fdbea59fcc8b818ff948640c7de51596836fe5d3bad17",
     "rewards": [
       {
         "item_category": 20,
         "item_id": 32,
-        "amount": 6,
-        "mission_count": 2
+        "amount": 12,
+        "mission_count": 4
       },
       {
         "item_category": 21,
         "item_id": 34,
-        "amount": 6,
-        "mission_count": 2
+        "amount": 12,
+        "mission_count": 4
       },
       {
-        "item_category": 30,
-        "item_id": 110,
-        "amount": 130000,
-        "mission_count": 13
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 2
       },
       {
         "item_category": 40,
@@ -656,18 +650,24 @@
       {
         "item_category": 91,
         "item_id": 59,
-        "amount": 300000,
-        "mission_count": 15
+        "amount": 400000,
+        "mission_count": 20
       },
       {
         "item_category": 150,
         "item_id": 116,
+        "amount": 10,
+        "mission_count": 2
+      },
+      {
+        "item_category": 150,
+        "item_id": 117,
         "amount": 5,
         "mission_count": 1
       },
       {
         "item_category": 150,
-        "item_id": 117,
+        "item_id": 118,
         "amount": 5,
         "mission_count": 1
       },
@@ -1621,19 +1621,19 @@
     "start_date": "2022-03-18T03:00:00",
     "end_date": "2050-12-30T19:59:59",
     "mission_count": 26,
-    "mission_fingerprint": "989fcc450625c41e31584215fd661db7d50e2a348502f176c19ae70b7569ae56",
+    "mission_fingerprint": "97bbca5f4fa5e6fef5bae43942de788624ee72621413ed88fd1c1d6e615e0665",
     "rewards": [
       {
-        "item_category": 30,
-        "item_id": 110,
-        "amount": 60000,
-        "mission_count": 6
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 8,
+        "mission_count": 4
       },
       {
         "item_category": 34,
         "item_id": 95,
-        "amount": 5,
-        "mission_count": 1
+        "amount": 15,
+        "mission_count": 3
       },
       {
         "item_category": 40,
@@ -2243,7 +2243,7 @@
     "start_date": "2022-09-02T03:00:00",
     "end_date": "2050-12-30T19:59:59",
     "mission_count": 15,
-    "mission_fingerprint": "68a20cd1478a453960d67e91e68569b4b17d5c9a48b0c1f23105647356e92495",
+    "mission_fingerprint": "5f1272c09c305b74c1a8d69ffb5eb903cbd624ab3002b9eaf8b85777222c7f3a",
     "rewards": [
       {
         "item_category": 11,
@@ -2256,12 +2256,6 @@
         "item_id": 163,
         "amount": 1,
         "mission_count": 1
-      },
-      {
-        "item_category": 30,
-        "item_id": 110,
-        "amount": 50000,
-        "mission_count": 2
       },
       {
         "item_category": 40,
@@ -2290,8 +2284,8 @@
       {
         "item_category": 91,
         "item_id": 59,
-        "amount": 120000,
-        "mission_count": 6
+        "amount": 160000,
+        "mission_count": 8
       },
       {
         "item_category": 164,
@@ -3750,8 +3744,8 @@
     "jp_title": "回想のしおり サポートカード獲得ミッション",
     "start_date": "2023-09-04T02:00:00",
     "end_date": "2049-12-31T19:59:59",
-    "mission_count": 132,
-    "mission_fingerprint": "58f99c8341ad7c2f1385cb4586f0d019ba994783501894afc3c2fbad352958b5",
+    "mission_count": 188,
+    "mission_fingerprint": "9c48e5db408461ceb7c2ee011056b33122d9a659c8127cd0db81d8ceb52f2b45",
     "rewards": [
       {
         "item_category": 51,
@@ -3948,6 +3942,90 @@
       {
         "item_category": 51,
         "item_id": 30176,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30180,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30181,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30185,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30197,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30200,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30205,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30212,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30220,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30225,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30231,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30235,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30239,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30247,
+        "amount": 4,
+        "mission_count": 4
+      },
+      {
+        "item_category": 51,
+        "item_id": 30251,
         "amount": 4,
         "mission_count": 4
       }
@@ -6212,6 +6290,2768 @@
         "item_id": 59,
         "amount": 80000,
         "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 692,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 有馬記念",
+    "start_date": "2024-12-15T20:00:00",
+    "end_date": "2024-12-22T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "28fcbf44c2fdab2744679c621243ae715aeab6892c10ae69dedcb3429bb25a01",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 693,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 ホープフルS",
+    "start_date": "2024-12-21T20:00:00",
+    "end_date": "2024-12-28T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "5c100b72ffd385509b95f9ca76b0ae0cfedb569d9ec83639a31a73664d55f9a4",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 694,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 東京大賞典",
+    "start_date": "2024-12-22T20:00:00",
+    "end_date": "2024-12-29T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "a768c06b6a7d4fafecd7d8e1fb609719e046d6d1a6624b77c0d4d7b812cadf57",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 808,
+    "jp_title": "4th Anniversary 記念ミッション 第1弾",
+    "start_date": "2025-02-14T03:00:00",
+    "end_date": "2025-03-31T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "a0bdd4e34bb243ac481e7388525a5e12682f5caadd41b899cfe2af42f780670f",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 24,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 161,
+        "amount": 12,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 21,
+        "item_id": 34,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 2500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 790,
+    "jp_title": "GⅠ記念ミッション フェブラリーステークス",
+    "start_date": "2025-02-17T03:00:00",
+    "end_date": "2025-02-23T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "271b24be6a0f5f923e29c533ff2c59e840a66d6fcc3abc669803bf3a29ed1286",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 809,
+    "jp_title": "4th Anniversary 記念ミッション 第2弾",
+    "start_date": "2025-02-24T03:00:00",
+    "end_date": "2025-03-31T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "1838b180f714c09f9241afe349c04cc56bf234ab2be76cee460bd94a4a9f8643",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 51,
+        "item_id": 30243,
+        "amount": 3,
+        "mission_count": 3
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 2500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 149,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 810,
+    "jp_title": "4th Anniversary 記念ミッション 第3弾",
+    "start_date": "2025-03-11T03:00:00",
+    "end_date": "2025-03-31T19:59:59",
+    "mission_count": 12,
+    "mission_fingerprint": "1540a0bd7837a8028332fe81e1c671b9b181e41e895dc1ff194a0f667b2bc06a",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 163,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 42,
+        "item_id": 271,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 150,
+        "item_id": 116,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 816,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 高松宮記念",
+    "start_date": "2025-03-24T03:00:00",
+    "end_date": "2025-03-30T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "69b2e6b3d30816d60b7bbcd0b63589e216729c818269c44122a997541b5e345b",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 817,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 大阪杯",
+    "start_date": "2025-03-30T20:00:00",
+    "end_date": "2025-04-06T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "286d3390c4e368efaecdd5d565fd309ac01b933f7b6a9345a76d42859eb1f955",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 818,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 川崎記念",
+    "start_date": "2025-04-02T20:00:00",
+    "end_date": "2025-04-09T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "2884a96f2a12a0ad5ed1b9cfab265b175008c91078a28f80bdd4e4991cd8dcc3",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 819,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 桜花賞",
+    "start_date": "2025-04-06T20:00:00",
+    "end_date": "2025-04-13T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "ea909ddf75ddb28aa11e5413440da06067bf29de4e4d0130dea3f82bbbef7629",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 820,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 皐月賞",
+    "start_date": "2025-04-13T20:00:00",
+    "end_date": "2025-04-20T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "d95dd84fb04bf2917489312c0356438e20469b6944097425e716ff541f518f0c",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 821,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 天皇賞（春）",
+    "start_date": "2025-04-28T03:00:00",
+    "end_date": "2025-05-04T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "820a7be3f002e398ac37b90063440265f4d36cc13165dcfd98ecdc357535b901",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 822,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 かしわ記念",
+    "start_date": "2025-04-28T20:00:00",
+    "end_date": "2025-05-05T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "1fa3aa8e34087d47620ad48dbc8250f79280f0da186c466a1dc1ebe4991f04aa",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 823,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 NHKマイルカップ",
+    "start_date": "2025-05-04T20:00:00",
+    "end_date": "2025-05-11T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "bed5f547e0934f8b89f1c7c02e946b987d0c187bdc8c7435c192585e2f4ebb42",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 824,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 ヴィクトリアマイル",
+    "start_date": "2025-05-11T20:00:00",
+    "end_date": "2025-05-18T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "a05b20bbdde8231f431cee4bb91d3f6f420d5e413ef8290ece19267e1222b390",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 825,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 オークス",
+    "start_date": "2025-05-18T20:00:00",
+    "end_date": "2025-05-25T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "47cf03542f896313a01a3210474ad31d6de46e8e70d9c8bb434e4a1ee99d6319",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 826,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 日本ダービー",
+    "start_date": "2025-05-26T03:00:00",
+    "end_date": "2025-06-01T19:59:59",
+    "mission_count": 7,
+    "mission_fingerprint": "452b04c3866b8b2077633c684e8a95c530ee836e595130018b81d84639eaefb9",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 3,
+        "mission_count": 3
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 827,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 安田記念",
+    "start_date": "2025-06-01T20:00:00",
+    "end_date": "2025-06-08T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "592fc929185552d3653f2fcb63bd82ece9ef9423fc71b3e32aa9bd32fd332df4",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 2
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 828,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 宝塚記念",
+    "start_date": "2025-06-08T20:00:00",
+    "end_date": "2025-06-15T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "4533995826ba906a8371c7e7e9aa67a76d2495c86d450a4dd3021856e9a59635",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 829,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 帝王賞",
+    "start_date": "2025-06-25T20:00:00",
+    "end_date": "2025-07-02T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "8444073d514f31981ea92a419a43d06a6d7a4e1c32e63dab1cd41bc02cd0c170",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 10000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 2
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 868,
+    "jp_title": "新育成シナリオ公開記念ミッション",
+    "start_date": "2025-06-27T03:00:00",
+    "end_date": "2025-07-30T19:59:59",
+    "mission_count": 12,
+    "mission_fingerprint": "c8e30bc28ef67f09b7eb40ad4c5a72333d99ec129a95bb2953a789e1322dc389",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 15,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 8,
+        "mission_count": 1
+      },
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 20,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 149,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 864,
+    "jp_title": "4.5th Anniversary 記念ミッション 第1弾",
+    "start_date": "2025-08-14T03:00:00",
+    "end_date": "2025-09-29T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "01c638f685b3292d26c4ecd2e94b0352a3d460ef0815de198437bbc969fab19a",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 24,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 161,
+        "amount": 12,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 21,
+        "item_id": 34,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 20,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 2500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 865,
+    "jp_title": "4.5th Anniversary 記念ミッション 第2弾",
+    "start_date": "2025-08-24T03:00:00",
+    "end_date": "2025-09-29T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "12dce183cdca2bbc0fa482742f981032d75569615d6e75dc99be79d7d9c95e7a",
+    "rewards": [
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 51,
+        "item_id": 30266,
+        "amount": 3,
+        "mission_count": 3
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 20,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 2500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 149,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 866,
+    "jp_title": "4.5th Anniversary 記念ミッション 第3弾",
+    "start_date": "2025-09-09T03:00:00",
+    "end_date": "2025-09-29T19:59:59",
+    "mission_count": 12,
+    "mission_fingerprint": "c8374308b1b083f2b5435157f58b247990632bc425e7175464a0cff7b162a1cb",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 163,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 50000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 42,
+        "item_id": 290,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 20,
+        "mission_count": 1
+      },
+      {
+        "item_category": 150,
+        "item_id": 116,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 910,
+    "jp_title": "秋のGⅠ記念ミッション 第1弾 スプリンターズS",
+    "start_date": "2025-09-22T03:00:00",
+    "end_date": "2025-09-28T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "e4313f92666fd8c406f6b9ab4b91aabf0b78776fcc5811edc318c3a71ac5b68b",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 911,
+    "jp_title": "秋のGⅠ記念ミッション 第1弾 JDダービー",
+    "start_date": "2025-10-01T20:00:00",
+    "end_date": "2025-10-08T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "fb5cf99b372188fc6db78f99f3456bef59257a26c44509a8440853d750789ca8",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 912,
+    "jp_title": "秋のGⅠ記念ミッション 第1弾 マイルCS南部杯",
+    "start_date": "2025-10-06T20:00:00",
+    "end_date": "2025-10-13T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "664389d4d800ab798874dfbb0022ff32217f70f5f338aba851e641fa7929194d",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 913,
+    "jp_title": "秋のGⅠ記念ミッション 第1弾 秋華賞",
+    "start_date": "2025-10-12T20:00:00",
+    "end_date": "2025-10-19T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "0f19970cdbe9f37732785061cd13efc7fd4a4edb8e797c173fd5ba7c6f12154d",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 914,
+    "jp_title": "秋のGⅠ記念ミッション 第1弾 菊花賞",
+    "start_date": "2025-10-19T20:00:00",
+    "end_date": "2025-10-26T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "ba573d929276ec895f06c70a20a6028c572feb3f41a9a70fdc3589af67edcacb",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 915,
+    "jp_title": "秋のGⅠ記念ミッション 第2弾 天皇賞（秋）",
+    "start_date": "2025-10-27T03:00:00",
+    "end_date": "2025-11-02T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "c6a9d5a57a9242d6eec21ae8a3c835b43b3033830bb0dea581384c850c87269e",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 916,
+    "jp_title": "秋のGⅠ記念ミッション 第2弾 JBC2025",
+    "start_date": "2025-10-27T20:00:00",
+    "end_date": "2025-11-03T19:59:59",
+    "mission_count": 7,
+    "mission_fingerprint": "8be582a554733a2f17cdc268efb2469aa99620cfb71a11c38ea1833f0fc409ba",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 30000,
+        "mission_count": 3
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 946,
+    "jp_title": "新育成シナリオ公開記念ミッション",
+    "start_date": "2025-10-29T03:00:00",
+    "end_date": "2025-11-27T19:59:59",
+    "mission_count": 12,
+    "mission_fingerprint": "9666eb256462a23ba185ecc69612234151f1dc8f48379c9797d3dde7ab8ea47f",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 15,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 8,
+        "mission_count": 1
+      },
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 20,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 2500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 149,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 917,
+    "jp_title": "秋のGⅠ記念ミッション 第2弾 エリザベス女王杯",
+    "start_date": "2025-11-09T20:00:00",
+    "end_date": "2025-11-16T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "9b2492b2d10ea5ac8cd6967c68d277d64e7866022bbaf085a6cde99ab3417b39",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 918,
+    "jp_title": "秋のGⅠ記念ミッション 第2弾 マイルCS",
+    "start_date": "2025-11-16T20:00:00",
+    "end_date": "2025-11-23T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "a2f625b202cb36880a5a21429accf2ef7bfc6d71237c2345d48f97f2842d8a1b",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 919,
+    "jp_title": "秋のGⅠ記念ミッション 第2弾 ジャパンカップ",
+    "start_date": "2025-11-23T20:00:00",
+    "end_date": "2025-11-30T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "0ad38dff37e685fbc15b3180549f3fd2526f3341378c0c15d0b2baa0f8a8d63e",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 920,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 チャンピオンズC",
+    "start_date": "2025-12-01T03:00:00",
+    "end_date": "2025-12-07T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "12e4ef1960f9315ec6a0a8c8cc3c32fc47267627de6b2e278bf77fe9956266d9",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 921,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 阪神JF",
+    "start_date": "2025-12-07T20:00:00",
+    "end_date": "2025-12-14T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "fabf85a558bb28c3e96365fc773fd4a1eb6c922e42ce44ccd39f313950991094",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 922,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 全日本ジュニア優駿",
+    "start_date": "2025-12-10T20:00:00",
+    "end_date": "2025-12-17T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "aedada1e2eb86d5cd9a0fce6093718456b0e5a0c0e2b5488febed1d92b412406",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 923,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 朝日杯FS",
+    "start_date": "2025-12-14T20:00:00",
+    "end_date": "2025-12-21T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "2b8b2a1ba8ee7b38276acee14b1cd52aa7798011d53f17c34b6d2f77968278a5",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 924,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 ホープフルS",
+    "start_date": "2025-12-20T20:00:00",
+    "end_date": "2025-12-27T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "84155c8d62b5b63fbe21e4493b034d8a2d342dbe4c2722e827fcc73bdfce2de8",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 925,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 有馬記念",
+    "start_date": "2025-12-21T20:00:00",
+    "end_date": "2025-12-28T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "f22f94dd791304a41753cbea715068ccad585bc3d150ffcacb28fabf245f0b47",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 926,
+    "jp_title": "秋のGⅠ記念ミッション 第3弾 東京大賞典",
+    "start_date": "2025-12-22T20:00:00",
+    "end_date": "2025-12-29T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "0e4cdb2cd656057f78f8dd8e14e75922074f469f464677504b5d2d0941c250f8",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1006,
+    "jp_title": "5th Anniversary 記念ミッション 第1弾",
+    "start_date": "2026-02-14T03:00:00",
+    "end_date": "2026-03-30T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "9261d44702dbc6a9e36de2001fe21b02ca058697280ff928df97ed9201e46f7e",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 24,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 161,
+        "amount": 12,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 21,
+        "item_id": 34,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 4000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 975,
+    "jp_title": "GⅠ記念ミッション フェブラリーステークス",
+    "start_date": "2026-02-16T03:00:00",
+    "end_date": "2026-02-22T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "467b3ce934dc312ea48ee04e77c3ca14585a7d3892bbe187b986a4b98788b4ef",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1007,
+    "jp_title": "5th Anniversary 記念ミッション 第2弾",
+    "start_date": "2026-02-24T03:00:00",
+    "end_date": "2026-03-30T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "b3d85e396309cf8a373be0be35e8f0b2fc3785629cc80871da1ebc359aa3a7b8",
+    "rewards": [
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 51,
+        "item_id": 30291,
+        "amount": 3,
+        "mission_count": 3
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 4000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 149,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1008,
+    "jp_title": "5th Anniversary 記念ミッション 第3弾",
+    "start_date": "2026-03-11T03:00:00",
+    "end_date": "2026-03-30T19:59:59",
+    "mission_count": 13,
+    "mission_fingerprint": "4824da790262e4590f61839879f2ff42469254725cd7ae36a1498048ba0dad03",
+    "rewards": [
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 163,
+        "amount": 6,
+        "mission_count": 1
+      },
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 2,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 41,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 40,
+        "item_id": 111,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 42,
+        "item_id": 327,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 500,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 200000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 50,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 4000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 150,
+        "item_id": 116,
+        "amount": 10,
+        "mission_count": 1
+      },
+      {
+        "item_category": 162,
+        "item_id": 133,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1036,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 高松宮記念",
+    "start_date": "2026-03-23T03:00:00",
+    "end_date": "2026-03-29T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "913041d3fc17fd150ddc1abbb136ad34b29230e0064a3edc0cd7517f57b77b17",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1037,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 大阪杯",
+    "start_date": "2026-03-29T20:00:00",
+    "end_date": "2026-04-05T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "2ba36cf6a9011c77860366b9edecb82884da2ad71a7854b6e26b6b9daaa4f654",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1038,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 川崎記念",
+    "start_date": "2026-04-01T20:00:00",
+    "end_date": "2026-04-08T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "ec4c2b296a1da294e50b9ddebcf2e34ef6482d75dcd9b97ec2efbd2a157a8cbc",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1039,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 桜花賞",
+    "start_date": "2026-04-05T20:00:00",
+    "end_date": "2026-04-12T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "b35c6e38656af586304dfcd1796f02010aeab7fe60d315665a296609a0da0302",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1040,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 皐月賞",
+    "start_date": "2026-04-12T20:00:00",
+    "end_date": "2026-04-19T19:59:59",
+    "mission_count": 5,
+    "mission_fingerprint": "424cd77f2b1c161d943d7eab6d71cb35d0db38d0d88c6fc22d92b6022abd5dbb",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1041,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 天皇賞（春）",
+    "start_date": "2026-04-27T03:00:00",
+    "end_date": "2026-05-03T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "de27d733b28004642852076f0be2e4c4f0a15d9f7ccfba34ffa76babf53eb2a0",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 102303,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1042,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 かしわ記念",
+    "start_date": "2026-04-28T20:00:00",
+    "end_date": "2026-05-05T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "b91cc10bbb77603171b92d5f0b6000f8dbde66f9201d51b26f43fc4916357807",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 110002,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1043,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 NHKマイルカップ",
+    "start_date": "2026-05-03T20:00:00",
+    "end_date": "2026-05-10T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "8eadd9acc370a022ece337f6c3898b46cc2b490193277cce326334d3cc1eab5a",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 110901,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1044,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 ヴィクトリアマイル",
+    "start_date": "2026-05-10T20:00:00",
+    "end_date": "2026-05-17T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "4299d83eb628193fed4cc199710b53556c5d891206758f615637fef83a3fdb2a",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 109001,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1045,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 オークス",
+    "start_date": "2026-05-17T20:00:00",
+    "end_date": "2026-05-24T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "845de81e1d2487a287d28fb7ef87ffe49be7727684713e99a34e49163d75028f",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 111001,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1046,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 日本ダービー",
+    "start_date": "2026-05-25T03:00:00",
+    "end_date": "2026-05-31T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "a7b5e6bc2c02ff86bf0698b94d29d527cc6daa585d7230ae9499aabf9039eead",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 110801,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
+      }
+    ]
+  },
+  {
+    "jp_mission_event_id": 1047,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 安田記念",
+    "start_date": "2026-05-31T20:00:00",
+    "end_date": "2026-06-07T19:59:59",
+    "mission_count": 6,
+    "mission_fingerprint": "2108a1b37486cea5c789d3602ff6802412aaaac1ef25d098949584785e7a90b6",
+    "rewards": [
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 1,
+        "mission_count": 1
+      },
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150,
+        "mission_count": 1
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 80000,
+        "mission_count": 1
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3,
+        "mission_count": 1
+      },
+      {
+        "item_category": 102,
+        "item_id": 108502,
+        "amount": 14,
+        "mission_count": 1
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 10000,
+        "mission_count": 1
       }
     ]
   }
