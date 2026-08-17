@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 25;
+const ALGORITHM_VERSION: u8 = 26;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -16,8 +16,10 @@ const GACHA_TICKET_CATEGORY: i64 = 40;
 const UMA_TICKET_ITEM_ID: i64 = 41;
 const SUPPORT_TICKET_ITEM_ID: i64 = 111;
 const LIMIT_BREAK_ITEM_CATEGORY: i64 = 164;
-const RAINBOW_CRYSTAL_ITEM_ID: i64 = 149;
-const GOLD_CRYSTAL_ITEM_ID: i64 = 150;
+const RAINBOW_FULL_CRYSTAL_ITEM_ID: i64 = 144;
+const GOLD_FULL_CRYSTAL_ITEM_ID: i64 = 145;
+const RAINBOW_CRYSTAL_SHARD_ITEM_ID: i64 = 149;
+const GOLD_CRYSTAL_SHARD_ITEM_ID: i64 = 150;
 const TRAINEE_SELECTOR_CATEGORY: i64 = 41;
 const SUPPORT_SELECTOR_CATEGORY: i64 = 42;
 const ITEM_NAME_TEXT_CATEGORY: i64 = 23;
@@ -985,6 +987,8 @@ fn planner_reward_event_ids(rewards: &[PlannerReward]) -> BTreeSet<String> {
                     | "support_ticket"
                     | "rainbow_crystal"
                     | "gold_crystal"
+                    | "rainbow_full_crystal"
+                    | "gold_full_crystal"
             ) && reward.amount.is_some_and(|amount| amount > 0))
                 || reward.source_items.iter().any(|item| {
                     matches!(
@@ -3025,6 +3029,8 @@ fn catalog_currency(value: &str) -> Result<&'static str> {
         "support_ticket" => Ok("support_ticket"),
         "rainbow_crystal" => Ok("rainbow_crystal"),
         "gold_crystal" => Ok("gold_crystal"),
+        "rainbow_full_crystal" => Ok("rainbow_full_crystal"),
+        "gold_full_crystal" => Ok("gold_full_crystal"),
         _ => bail!("unsupported JP planner reward catalogue currency: {value}"),
     }
 }
@@ -4176,8 +4182,10 @@ fn planner_currency_for_item(item: &PlannerSourceItem) -> Option<&'static str> {
         (JEWEL_CATEGORY, JEWEL_ITEM_ID) => Some("free_jewels"),
         (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID) => Some("uma_ticket"),
         (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID) => Some("support_ticket"),
-        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_ITEM_ID) => Some("rainbow_crystal"),
-        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_ITEM_ID) => Some("gold_crystal"),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_FULL_CRYSTAL_ITEM_ID) => Some("rainbow_full_crystal"),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_FULL_CRYSTAL_ITEM_ID) => Some("gold_full_crystal"),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_SHARD_ITEM_ID) => Some("rainbow_crystal"),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_SHARD_ITEM_ID) => Some("gold_crystal"),
         _ => None,
     }
 }
@@ -4196,8 +4204,10 @@ fn load_story_rewards(
         (JEWEL_CATEGORY, JEWEL_ITEM_ID),
         (GACHA_TICKET_CATEGORY, UMA_TICKET_ITEM_ID),
         (GACHA_TICKET_CATEGORY, SUPPORT_TICKET_ITEM_ID),
-        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_ITEM_ID),
-        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_FULL_CRYSTAL_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_FULL_CRYSTAL_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, RAINBOW_CRYSTAL_SHARD_ITEM_ID),
+        (LIMIT_BREAK_ITEM_CATEGORY, GOLD_CRYSTAL_SHARD_ITEM_ID),
     ];
     let mut totals: BTreeMap<(i64, i64, i64), i64> = BTreeMap::new();
     for (item_category, item_id) in tracked_items {
@@ -5499,6 +5509,28 @@ fn load_global_news_rewards(
                 evidence,
             ));
         }
+
+        for (occurrence, (currency, item_id, amount, evidence)) in
+            extract_global_uncap_crystal_gifts(&text, false)
+                .into_iter()
+                .enumerate()
+        {
+            rewards.push(global_uncap_crystal_reward(
+                format!(
+                    "global-news-{}-gift-{currency}-{amount}-{occurrence}",
+                    post.announce_id
+                ),
+                title,
+                event_id.clone(),
+                currency,
+                item_id,
+                amount,
+                posted_at.clone(),
+                "global_news",
+                &post.page_url,
+                evidence,
+            ));
+        }
     }
     rewards
 }
@@ -5536,6 +5568,27 @@ fn load_global_social_rewards(archive: &GlobalSocialArchive) -> Vec<PlannerRewar
                 evidence,
             ));
         }
+        for (occurrence, (currency, item_id, amount, evidence)) in
+            extract_global_uncap_crystal_gifts(text, true)
+                .into_iter()
+                .enumerate()
+        {
+            rewards.push(global_uncap_crystal_reward(
+                format!(
+                    "global-social-{}-gift-{currency}-{amount}-{occurrence}",
+                    post.status_id
+                ),
+                &label,
+                None,
+                currency,
+                item_id,
+                amount,
+                posted_at.clone(),
+                "global_social",
+                &post.status_url,
+                evidence,
+            ));
+        }
     }
     rewards
 }
@@ -5557,6 +5610,8 @@ fn is_confirmed_social_distribution(text: &str) -> bool {
         "we are giving everyone",
         "we've sent everyone",
         "we have sent everyone",
+        "we've sent a gift",
+        "we have sent a gift",
         "we're sending a gift",
         "we are sending a gift",
         "sent a gift to all trainers",
@@ -5574,6 +5629,20 @@ fn social_reward_label(text: &str) -> String {
             if !quoted.is_empty() {
                 return quoted.to_string();
             }
+        }
+    }
+    if let Some(giveaway) = text
+        .lines()
+        .skip(1)
+        .find(|line| line.to_ascii_lowercase().contains("giveaway"))
+    {
+        let giveaway = giveaway
+            .find(|character: char| character.is_ascii_alphanumeric())
+            .map(|index| &giveaway[index..])
+            .unwrap_or(giveaway)
+            .trim();
+        if !giveaway.is_empty() {
+            return giveaway.chars().take(140).collect();
         }
     }
     first_line.chars().take(140).collect()
@@ -5629,6 +5698,46 @@ fn global_social_reward(
         default_enabled: true,
         source_url: Some(source_url.to_string()),
         source_items: Vec::new(),
+        confidence: "exact_source_text",
+        evidence: Some(evidence),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn global_uncap_crystal_reward(
+    id: String,
+    title: &str,
+    event_id: Option<String>,
+    currency: &'static str,
+    item_id: i64,
+    amount: i64,
+    available_at: String,
+    provenance: &'static str,
+    source_url: &str,
+    evidence: String,
+) -> PlannerReward {
+    PlannerReward {
+        id,
+        label: title.to_string(),
+        event_id,
+        gacha_id: None,
+        currency,
+        amount: Some(amount),
+        available_at,
+        provenance,
+        assumption: "official_global_item_gift",
+        default_enabled: true,
+        source_url: Some(source_url.to_string()),
+        source_items: vec![PlannerSourceItem {
+            item_category: LIMIT_BREAK_ITEM_CATEGORY,
+            item_id,
+            amount,
+            mission_count: None,
+            odds: None,
+            order_min: None,
+            order_max: None,
+            bonus: None,
+        }],
         confidence: "exact_source_text",
         evidence: Some(evidence),
     }
@@ -5707,6 +5816,75 @@ fn extract_global_direct_gifts(text: &str) -> Vec<(i64, String)> {
     }
 
     amounts.into_iter().collect()
+}
+
+fn extract_global_uncap_crystal_gifts(
+    text: &str,
+    allow_any_line: bool,
+) -> Vec<(&'static str, i64, i64, String)> {
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    let mut amounts = BTreeMap::<&'static str, (i64, i64, String)>::new();
+
+    if allow_any_line {
+        for line in &lines {
+            collect_global_uncap_crystal_line(line, &mut amounts);
+        }
+    } else {
+        for (index, line) in lines.iter().enumerate() {
+            if !is_global_gift_heading(line) {
+                continue;
+            }
+            for candidate in lines.iter().skip(index + 1).take(10) {
+                if is_global_gift_section_end(candidate) {
+                    break;
+                }
+                collect_global_uncap_crystal_line(candidate, &mut amounts);
+            }
+        }
+    }
+
+    amounts
+        .into_iter()
+        .map(|(currency, (item_id, amount, evidence))| (currency, item_id, amount, evidence))
+        .collect()
+}
+
+fn collect_global_uncap_crystal_line(
+    line: &str,
+    amounts: &mut BTreeMap<&'static str, (i64, i64, String)>,
+) {
+    let lower = line.to_ascii_lowercase();
+    if lower.contains("shard") {
+        return;
+    }
+    for (phrase, currency, item_id) in [
+        (
+            "rainbow uncap crystal",
+            "rainbow_full_crystal",
+            RAINBOW_FULL_CRYSTAL_ITEM_ID,
+        ),
+        (
+            "gold uncap crystal",
+            "gold_full_crystal",
+            GOLD_FULL_CRYSTAL_ITEM_ID,
+        ),
+    ] {
+        if !lower.contains(phrase) {
+            continue;
+        }
+        let amount = amount_after_phrase(&lower, phrase)
+            .or_else(|| {
+                amounts_immediately_before_word(&lower, phrase)
+                    .into_iter()
+                    .next()
+            })
+            .filter(|amount| (1..=100).contains(amount))
+            .unwrap_or(1);
+        let entry = amounts
+            .entry(currency)
+            .or_insert_with(|| (item_id, 0, line.chars().take(320).collect()));
+        entry.1 += amount;
+    }
 }
 
 fn collect_global_gift_line(
@@ -5880,7 +6058,9 @@ fn remove_global_social_rewards_covered_by_news(
         );
         if covered_by_news {
             result.reward_items_removed += 1;
-            result.carats_removed += amount.max(0);
+            if reward.currency == "free_jewels" {
+                result.carats_removed += amount.max(0);
+            }
         }
         !covered_by_news
     });
@@ -7313,6 +7493,34 @@ mod tests {
     }
 
     #[test]
+    fn global_social_rewards_distinguish_full_uncap_crystals_from_shards() {
+        let archive = GlobalSocialArchive {
+            posts: vec![global_social_post(
+                "1988369919977894262",
+                "To celebrate the debut of Support Card uncap items, we've sent a gift with the following items to all Trainers!\n🎁 Uncap Crystals Celebration Giveaway\n- Rainbow Uncap Crystal\n- Gold Uncap Crystal\n- Rainbow Crystal Shard ×20",
+            )],
+        };
+
+        let rewards = load_global_social_rewards(&archive);
+        assert_eq!(rewards.len(), 2);
+        let rainbow = rewards
+            .iter()
+            .find(|reward| reward.currency == "rainbow_full_crystal")
+            .unwrap();
+        assert_eq!(rainbow.amount, Some(1));
+        assert_eq!(rainbow.source_items[0].item_id, 144);
+        let gold = rewards
+            .iter()
+            .find(|reward| reward.currency == "gold_full_crystal")
+            .unwrap();
+        assert_eq!(gold.amount, Some(1));
+        assert_eq!(gold.source_items[0].item_id, 145);
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.assumption == "official_global_item_gift"));
+    }
+
+    #[test]
     fn correction_news_is_ignored_without_hiding_the_original_social_gift() {
         let news = GlobalNewsArchive {
             posts: vec![global_post(
@@ -7338,6 +7546,38 @@ mod tests {
         assert_eq!(rewards[0].amount, Some(1500));
         assert_eq!(rewards[0].provenance, "global_social");
         assert_eq!(deduplication.reward_items_removed, 0);
+        assert_eq!(deduplication.carats_removed, 0);
+    }
+
+    #[test]
+    fn full_crystal_news_and_social_duplicates_are_counted_once_without_carat_uplift() {
+        let news = GlobalNewsArchive {
+            posts: vec![global_post(
+                100_302,
+                "Uncap Crystals Celebration Giveaway",
+                "Gift Contents<br>- Rainbow Uncap Crystal<br>- Gold Uncap Crystal<br>How to Receive<br>Check your presents.",
+            )],
+        };
+        let mut social_post = global_social_post(
+            "1988369919977894262",
+            "We've sent a gift with the following items to all Trainers!\n🎁 Uncap Crystals Celebration Giveaway\n- Rainbow Uncap Crystal\n- Gold Uncap Crystal",
+        );
+        social_post.snapshots[0].raw["created_at"] = json!("2026-07-22T22:25:16.749+00:00");
+        let social = GlobalSocialArchive {
+            posts: vec![social_post],
+        };
+        let mut rewards =
+            load_global_news_rewards(&news, &Archive { news: Vec::new() }, &json!({"events": []}));
+        rewards.extend(load_global_social_rewards(&social));
+        assert_eq!(rewards.len(), 4);
+
+        let deduplication = remove_global_social_rewards_covered_by_news(&mut rewards);
+
+        assert_eq!(rewards.len(), 2);
+        assert!(rewards
+            .iter()
+            .all(|reward| reward.provenance == "global_news"));
+        assert_eq!(deduplication.reward_items_removed, 2);
         assert_eq!(deduplication.carats_removed, 0);
     }
 
@@ -9009,7 +9249,9 @@ mod tests {
                 (2,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',40,41,1),
                 (3,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',91,59,100),
                 (4,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,149,1),
-                (5,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,150,1);
+                (5,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,150,1),
+                (6,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,144,2),
+                (7,4,4,'2025/08/01 00:00:00','2025/08/10 00:00:00',164,145,3);
         "#,
             )
             .unwrap();
@@ -9032,6 +9274,12 @@ mod tests {
         assert!(rewards
             .iter()
             .any(|reward| reward.currency == "gold_crystal" && reward.amount == Some(1)));
+        assert!(rewards.iter().any(|reward| {
+            reward.currency == "rainbow_full_crystal" && reward.amount == Some(2)
+        }));
+        assert!(rewards
+            .iter()
+            .any(|reward| { reward.currency == "gold_full_crystal" && reward.amount == Some(3) }));
         let details = rewards
             .iter()
             .find(|reward| reward.id.ends_with("-items"))
