@@ -1,5 +1,5 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 24;
+const ALGORITHM_VERSION: u8 = 25;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -33,6 +33,7 @@ const GLOBAL_NEWS_ARCHIVE: &[u8] = include_bytes!("../global_data/official_news_
 const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_social_archive.json");
 const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
+const JP_MASTER_REWARDS: &[u8] = include_bytes!("../jp_data/planner_master_rewards.json");
 
 #[derive(Debug)]
 pub struct GeneratedPlanner {
@@ -213,6 +214,27 @@ pub struct PlannerReward {
     pub confidence: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidence: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PlannerRewardCatalogRow {
+    id: String,
+    label: String,
+    #[serde(default)]
+    event_id: Option<String>,
+    #[serde(default)]
+    gacha_id: Option<i64>,
+    currency: String,
+    amount: Option<i64>,
+    available_at: String,
+    assumption: String,
+    default_enabled: bool,
+    #[serde(default)]
+    source_url: Option<String>,
+    #[serde(default)]
+    source_items: Vec<PlannerSourceItem>,
+    #[serde(default)]
+    evidence: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -490,6 +512,7 @@ pub fn version_hash() -> String {
     digest.update(GLOBAL_SOCIAL_ARCHIVE);
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
+    digest.update(JP_MASTER_REWARDS);
     hex::encode(digest.finalize())
 }
 
@@ -611,6 +634,7 @@ pub fn generate(
     remove_global_news_login_bonuses_covered_by_master(&mut rewards);
     prefer_global_news_over_jp_news(&mut rewards);
     project_missing_story_rewards(timeline, &mut rewards);
+    project_missing_scenario_rewards(timeline, &mut rewards);
     project_missing_event_exchange_rewards(
         timeline,
         &mut rewards,
@@ -771,6 +795,98 @@ fn project_missing_story_rewards(timeline: &Value, rewards: &mut Vec<PlannerRewa
                 confidence: "projected_global_parity",
                 evidence: Some(
                     "Latest confirmed Global story-event reward table; replaced automatically when exact event data is available"
+                        .to_string(),
+                ),
+            });
+        }
+    }
+}
+
+/// A timeline can extend one scenario beyond the latest JP master snapshot.
+/// Carry the newest verified scenario evaluation table into that unconfirmed
+/// release, then let exact JP or Global rows replace it automatically.
+fn project_missing_scenario_rewards(timeline: &Value, rewards: &mut Vec<PlannerReward>) {
+    let scenario_dates = timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|event| event.get("type").and_then(Value::as_str) == Some("scenario_release"))
+        .filter_map(|event| {
+            Some((
+                event.get("id")?.as_str()?.to_string(),
+                event.get("global_release_date")?.as_str()?.to_string(),
+                event.get("is_confirmed").and_then(Value::as_bool) == Some(true),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let scenario_event_ids = scenario_dates
+        .iter()
+        .map(|(event_id, _, _)| event_id.clone())
+        .collect::<BTreeSet<_>>();
+    let latest_template_event_id = rewards
+        .iter()
+        .filter(|reward| {
+            reward
+                .event_id
+                .as_ref()
+                .is_some_and(|event_id| scenario_event_ids.contains(event_id))
+                && master_reward_family(&reward.label) == "Training scenario evaluation rewards"
+        })
+        .filter_map(|reward| {
+            let event_id = reward.event_id.as_ref()?;
+            let date = scenario_dates
+                .iter()
+                .find(|(candidate, _, _)| candidate == event_id)
+                .map(|(_, date, _)| date)?;
+            Some((date.clone(), event_id.clone()))
+        })
+        .max()
+        .map(|(_, event_id)| event_id);
+    let Some(latest_template_event_id) = latest_template_event_id else {
+        return;
+    };
+    let templates = rewards
+        .iter()
+        .filter(|reward| {
+            reward.event_id.as_deref() == Some(&latest_template_event_id)
+                && master_reward_family(&reward.label) == "Training scenario evaluation rewards"
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let existing_scenario_event_ids = rewards
+        .iter()
+        .filter_map(|reward| {
+            (master_reward_family(&reward.label) == "Training scenario evaluation rewards")
+                .then(|| reward.event_id.clone())
+                .flatten()
+        })
+        .collect::<BTreeSet<_>>();
+
+    for (event_id, available_at, is_confirmed) in scenario_dates {
+        if is_confirmed
+            || event_id == latest_template_event_id
+            || existing_scenario_event_ids.contains(&event_id)
+        {
+            continue;
+        }
+        for template in &templates {
+            rewards.push(PlannerReward {
+                id: format!("projected-scenario-{event_id}-{}", template.id),
+                label: "Training scenario evaluation rewards (projected JP parity)".to_string(),
+                event_id: Some(event_id.clone()),
+                gacha_id: None,
+                currency: template.currency,
+                amount: template.amount,
+                available_at: available_at.clone(),
+                provenance: "jp_master_catalog",
+                assumption: "jp_reward_parity_scenario_evaluation_thresholds",
+                default_enabled: template.default_enabled,
+                source_url: None,
+                source_items: template.source_items.clone(),
+                confidence: "projected_parity",
+                evidence: Some(
+                    "Latest verified JP scenario evaluation reward table; replaced automatically when exact event data is available"
                         .to_string(),
                 ),
             });
@@ -2774,9 +2890,163 @@ fn load_master_rewards(
     load_factor_research_rewards(connection, jp_connection, timeline, &mut rewards)?;
     load_masters_challenge_rewards(connection, jp_connection, timeline, &mut rewards)?;
     load_main_story_rewards(connection, jp_connection, timeline, &mut rewards)?;
+    if jp_connection.is_none() {
+        load_master_reward_catalog(timeline, &mut rewards)?;
+    }
     load_login_bonus_rewards(connection, &mut rewards)?;
     load_competitive_reward_metadata(connection, timeline, &mut rewards)?;
     Ok(rewards)
+}
+
+/// The deploy volume may not contain a JP `master.mdb`. Keep a compact,
+/// reviewable snapshot of the planner-relevant JP rows in the image so future
+/// timeline rewards do not silently disappear in that case. Released Global
+/// master rows always win over this projected catalogue.
+fn load_master_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>) -> Result<()> {
+    let rows: Vec<PlannerRewardCatalogRow> = serde_json::from_slice(JP_MASTER_REWARDS)
+        .context("failed to parse bundled JP planner reward catalogue")?;
+    append_master_reward_catalog_rows(timeline, rewards, rows)
+}
+
+fn append_master_reward_catalog_rows(
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+    rows: Vec<PlannerRewardCatalogRow>,
+) -> Result<()> {
+    let timeline_dates = timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|event| {
+            let event_id = event.get("id")?.as_str()?.to_string();
+            let event_type = event.get("type")?.as_str()?.to_string();
+            let start = event.get("global_release_date")?.as_str()?.to_string();
+            let end = event
+                .get("estimated_end_date")
+                .and_then(Value::as_str)
+                .unwrap_or(&start)
+                .to_string();
+            Some((event_id, (event_type, start, end)))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let exact_global_keys = rewards
+        .iter()
+        .filter(|reward| reward.provenance == "global_master")
+        .map(|reward| {
+            (
+                reward.event_id.clone(),
+                reward.gacha_id,
+                reward.currency.to_string(),
+                master_reward_family(&reward.label),
+                reward.amount.is_some(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    const CATALOG_EVIDENCE: &str = "Exact reward rows extracted from the May 2026 JP master snapshot; projected onto the Global timeline and replaced by Global master data when released";
+
+    for row in rows {
+        let currency = catalog_currency(&row.currency)?;
+        let assumption = catalog_assumption(&row.assumption)?;
+        let key = (
+            row.event_id.clone(),
+            row.gacha_id,
+            row.currency.clone(),
+            master_reward_family(&row.label),
+            row.amount.is_some(),
+        );
+        if exact_global_keys.contains(&key) {
+            continue;
+        }
+
+        let available_at = row
+            .event_id
+            .as_ref()
+            .and_then(|event_id| timeline_dates.get(event_id))
+            .map(|(_, start, end)| {
+                if row
+                    .label
+                    .starts_with("Training scenario evaluation rewards")
+                    || row.label.starts_with("Temporary trainee stories:")
+                {
+                    start.clone()
+                } else {
+                    end.clone()
+                }
+            })
+            .unwrap_or(row.available_at);
+        let evidence = Some(match row.evidence {
+            Some(evidence) => format!("{evidence}. {CATALOG_EVIDENCE}"),
+            None => CATALOG_EVIDENCE.to_string(),
+        });
+        rewards.push(PlannerReward {
+            id: format!("catalog-{}", row.id),
+            label: row.label,
+            event_id: row.event_id,
+            gacha_id: row.gacha_id,
+            currency,
+            amount: row.amount,
+            available_at,
+            provenance: "jp_master_catalog",
+            assumption,
+            default_enabled: row.default_enabled,
+            source_url: row.source_url,
+            source_items: row.source_items,
+            confidence: "projected_parity",
+            evidence,
+        });
+    }
+    Ok(())
+}
+
+fn master_reward_family(label: &str) -> String {
+    let mut family = label.to_string();
+    loop {
+        let previous = family.clone();
+        for suffix in [
+            " item details",
+            " (projected JP parity)",
+            " (projected Global parity)",
+        ] {
+            if let Some(stripped) = family.strip_suffix(suffix) {
+                family = stripped.to_string();
+            }
+        }
+        if family == previous {
+            return family;
+        }
+    }
+}
+
+fn catalog_currency(value: &str) -> Result<&'static str> {
+    match value {
+        "free_jewels" => Ok("free_jewels"),
+        "uma_ticket" => Ok("uma_ticket"),
+        "support_ticket" => Ok("support_ticket"),
+        "rainbow_crystal" => Ok("rainbow_crystal"),
+        "gold_crystal" => Ok("gold_crystal"),
+        _ => bail!("unsupported JP planner reward catalogue currency: {value}"),
+    }
+}
+
+fn catalog_assumption(value: &str) -> Result<&'static str> {
+    match value {
+        "all_first_clears" => Ok("all_first_clears"),
+        "all_first_clears_high_difficulty" => Ok("all_first_clears_high_difficulty"),
+        "all_limited_shop_exchanges" => Ok("all_limited_shop_exchanges"),
+        "all_reward_boxes" => Ok("all_reward_boxes"),
+        "all_story_episodes_viewed" => Ok("all_story_episodes_viewed"),
+        "full_score_completion" => Ok("full_score_completion"),
+        "jp_reward_parity_full_completion" => Ok("jp_reward_parity_full_completion"),
+        "jp_reward_parity_full_exchange" => Ok("jp_reward_parity_full_exchange"),
+        "jp_reward_parity_scenario_evaluation_thresholds" => {
+            Ok("jp_reward_parity_scenario_evaluation_thresholds")
+        }
+        "qualitative_only" => Ok("qualitative_only"),
+        "racing_carnival_bonus_skill_mission" => Ok("racing_carnival_bonus_skill_mission"),
+        "temporary_character_story_read" => Ok("temporary_character_story_read"),
+        _ => bail!("unsupported JP planner reward catalogue assumption: {value}"),
+    }
 }
 
 fn sqlite_table_exists(connection: &Connection, table: &str) -> Result<bool> {
@@ -6752,17 +7022,18 @@ fn mode(values: impl Iterator<Item = i64>) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::{
-        amounts_before_word, apply_news_free_pulls, archive_combined_text, build_event_benefits,
-        build_global_reward_comparison, extract_free_pull_total, extract_global_direct_gifts,
-        extract_global_login_bonus_total, extract_login_bonus_total, extract_month_day_time,
-        extract_news_free_pull_claims, extract_news_free_pull_pinned_banner_kinds,
-        extract_news_free_pull_target_windows, has_cost_context, has_sales_context, html_to_text,
-        is_global_correction_notice, jewel_amounts_from_line, load_archive,
-        load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
-        load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
-        load_gachas, load_global_news_rewards, load_global_social_rewards,
-        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
-        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
+        amounts_before_word, append_master_reward_catalog_rows, apply_news_free_pulls,
+        archive_combined_text, build_event_benefits, build_global_reward_comparison,
+        extract_free_pull_total, extract_global_direct_gifts, extract_global_login_bonus_total,
+        extract_login_bonus_total, extract_month_day_time, extract_news_free_pull_claims,
+        extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
+        has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
+        jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
+        load_competitive_variants, load_competitive_variants_for, load_daily_pack_rules,
+        load_event_exchange_rewards, load_factor_research_rewards_for, load_gachas,
+        load_global_news_rewards, load_global_social_rewards, load_mission_campaign_rewards,
+        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
+        load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
@@ -6770,12 +7041,91 @@ mod tests {
         ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
         GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
         PlannerFreePullAllocation, PlannerGacha, PlannerGachaShard, PlannerReward,
-        PlannerSourceItem, TimelineLink, TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
+        PlannerRewardCatalogRow, PlannerSourceItem, TimelineLink,
+        TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
     };
     use chrono::NaiveDate;
     use rusqlite::Connection;
     use serde_json::json;
     use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn bundled_master_catalog_uses_current_timeline_dates() {
+        let timeline = json!({"events": [{
+            "id": "scenario-future",
+            "type": "scenario_release",
+            "global_release_date": "2028-01-01T00:00:00Z",
+            "estimated_end_date": "2028-01-31T00:00:00Z"
+        }]});
+        let rows = vec![PlannerRewardCatalogRow {
+            id: "jp_master-scenario-record-10-free_jewels".to_string(),
+            label: "Training scenario evaluation rewards".to_string(),
+            event_id: Some("scenario-future".to_string()),
+            gacha_id: None,
+            currency: "free_jewels".to_string(),
+            amount: Some(300),
+            available_at: "2027-01-01T00:00:00Z".to_string(),
+            assumption: "jp_reward_parity_scenario_evaluation_thresholds".to_string(),
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            evidence: None,
+        }];
+        let mut rewards = Vec::new();
+
+        append_master_reward_catalog_rows(&timeline, &mut rewards, rows).unwrap();
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].available_at, "2028-01-01T00:00:00Z");
+        assert_eq!(rewards[0].provenance, "jp_master_catalog");
+        assert_eq!(rewards[0].confidence, "projected_parity");
+        assert!(rewards[0]
+            .evidence
+            .as_deref()
+            .unwrap()
+            .contains("May 2026 JP master snapshot"));
+    }
+
+    #[test]
+    fn exact_global_master_reward_replaces_catalog_family() {
+        let timeline = json!({"events": []});
+        let mut rewards = vec![PlannerReward {
+            id: "global_master-factor-research-1-boxes-free_jewels".to_string(),
+            label: "Agnes Tachyon's Factor Research box rewards".to_string(),
+            event_id: Some("factor-1".to_string()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(1200),
+            available_at: "2027-01-10T00:00:00Z".to_string(),
+            provenance: "global_master",
+            assumption: "all_reward_boxes",
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact_source",
+            evidence: None,
+        }];
+        let rows = vec![PlannerRewardCatalogRow {
+            id: "jp_master-factor-research-1-boxes-free_jewels".to_string(),
+            label: "Agnes Tachyon's Factor Research box rewards".to_string(),
+            event_id: Some("factor-1".to_string()),
+            gacha_id: None,
+            currency: "free_jewels".to_string(),
+            amount: Some(900),
+            available_at: "2027-01-10T00:00:00Z".to_string(),
+            assumption: "all_reward_boxes".to_string(),
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            evidence: None,
+        }];
+
+        append_master_reward_catalog_rows(&timeline, &mut rewards, rows).unwrap();
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(1200));
+        assert_eq!(rewards[0].provenance, "global_master");
+    }
 
     #[test]
     fn links_competitive_master_starts_only_to_the_nearest_event_in_one_week() {
@@ -9136,6 +9486,69 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn projects_latest_scenario_table_to_the_next_timeline_release() {
+        let timeline = json!({"events": [
+            {
+                "id":"scenario-partial",
+                "type":"scenario_release",
+                "global_release_date":"2027-07-01T00:00:00Z",
+                "is_confirmed":false
+            },
+            {
+                "id":"scenario-known",
+                "type":"scenario_release",
+                "global_release_date":"2028-01-01T00:00:00Z",
+                "is_confirmed":false
+            },
+            {
+                "id":"scenario-next",
+                "type":"scenario_release",
+                "global_release_date":"2028-07-01T00:00:00Z",
+                "is_confirmed":false
+            }
+        ]});
+        let scenario_reward = |event_id: &str, amount, available_at: &str| PlannerReward {
+            id: format!("jp_master-{event_id}-free_jewels"),
+            label: "Training scenario evaluation rewards".to_string(),
+            event_id: Some(event_id.to_string()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(amount),
+            available_at: available_at.to_string(),
+            provenance: "jp_master",
+            assumption: "jp_reward_parity_scenario_evaluation_thresholds",
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "projected_parity",
+            evidence: None,
+        };
+        let mut rewards = vec![
+            scenario_reward("scenario-partial", 100, "2027-07-01T00:00:00Z"),
+            scenario_reward("scenario-known", 300, "2028-01-01T00:00:00Z"),
+        ];
+
+        super::project_missing_scenario_rewards(&timeline, &mut rewards);
+
+        assert_eq!(rewards.len(), 3);
+        assert_eq!(
+            rewards
+                .iter()
+                .filter(|reward| reward.event_id.as_deref() == Some("scenario-partial"))
+                .count(),
+            1
+        );
+        let projected = rewards
+            .iter()
+            .find(|reward| reward.event_id.as_deref() == Some("scenario-next"))
+            .unwrap();
+        assert_eq!(projected.amount, Some(300));
+        assert_eq!(projected.available_at, "2028-07-01T00:00:00Z");
+        assert_eq!(projected.provenance, "jp_master_catalog");
+        assert_eq!(projected.confidence, "projected_parity");
     }
 
     #[test]
