@@ -42,6 +42,7 @@ pub fn generate_all(
     let paid_banners = banners::generate_paid_banners(connection)?;
     let mut timeline = serde_json::to_value(timeline::generate(
         connection,
+        jp_connection,
         &character_banners,
         &support_banners,
         &paid_banners,
