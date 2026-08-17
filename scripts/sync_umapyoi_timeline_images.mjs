@@ -14,7 +14,7 @@ const RECOVERED_CAMPAIGNS_PATH = path.join(
   'jp_data',
   'english_mission_campaign_assets.json'
 );
-const EN_NEWS_API = 'https://umamusume.com/api/ajax/pr_info_index?format=json';
+const EN_NEWS_API = 'https://news.tnnlb.dev/api/ajax/pr_info_index?format=json';
 const EN_ASSET_ROOT =
   'https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header';
 const USER_AGENT = 'umamoe-resources-image-sync/2.0 (+https://uma.moe)';

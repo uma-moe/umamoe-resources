@@ -41,7 +41,9 @@ jobs:
 
       - name: Archive official Global news
         shell: bash
-        run: cargo run --locked -- sync-global-news
+        run: >-
+          cargo run --locked -- sync-global-news
+          --endpoint 'https://news.tnnlb.dev/api/ajax/pr_info_index?format=json'
 
       - name: Archive official Global social posts
         shell: bash
