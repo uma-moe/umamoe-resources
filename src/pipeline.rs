@@ -1,5 +1,5 @@
 use crate::generators;
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -52,6 +52,13 @@ pub fn generate_resources(
     let connection = Connection::open(master_path)
         .with_context(|| format!("failed to open SQLite master at {}", master_path.display()))?;
     let jp_master_path = std::env::var_os("JP_MASTER_PATH").map(PathBuf::from);
+    if let Some(path) = &jp_master_path {
+        ensure!(
+            path.is_file(),
+            "JP_MASTER_PATH points to a missing file: {}",
+            path.display(),
+        );
+    }
     let jp_connection = jp_master_path
         .as_ref()
         .filter(|path| path.is_file())
@@ -75,10 +82,13 @@ pub fn generate_resources(
     let course_hash = generators::simulator_courses::version_hash();
     let planner_hash = generators::planner::version_hash();
     let geometry_hash = generators::simulator_course_geometry::version_hash()?;
-    let jp_master_version = jp_master_hash
-        .as_deref()
-        .map(|hash| format!("-jp-master-{}", &hash[..12]))
-        .unwrap_or_default();
+    let jp_reward_source_version = match jp_master_hash.as_deref() {
+        Some(hash) => format!("-jp-master-{}", &hash[..12]),
+        None => {
+            let hash = generators::planner::jp_master_reward_catalog_version_hash();
+            format!("-jp-catalog-{}", &hash[..12])
+        }
+    };
     let version = sanitize_version(&format!(
         "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}",
         marker,
@@ -87,7 +97,7 @@ pub fn generate_resources(
         &course_hash[..12],
         &planner_hash[..12],
         &geometry_hash[..12],
-        jp_master_version,
+        jp_reward_source_version,
     ));
     let version_dir = out_dir.join(&version);
     fs::create_dir_all(&version_dir)

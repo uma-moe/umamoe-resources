@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 28;
+const ALGORITHM_VERSION: u8 = 29;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -514,6 +514,12 @@ pub fn version_hash() -> String {
     digest.update(GLOBAL_SOCIAL_ARCHIVE);
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
+    digest.update(JP_MASTER_REWARDS);
+    hex::encode(digest.finalize())
+}
+
+pub fn jp_master_reward_catalog_version_hash() -> String {
+    let mut digest = Sha256::new();
     digest.update(JP_MASTER_REWARDS);
     hex::encode(digest.finalize())
 }
@@ -2947,7 +2953,11 @@ fn append_master_reward_catalog_rows(
             )
         })
         .collect::<BTreeSet<_>>();
-    const CATALOG_EVIDENCE: &str = "Exact reward rows extracted from the May 2026 JP master snapshot; projected onto the Global timeline and replaced by Global master data when released";
+    let catalog_hash = jp_master_reward_catalog_version_hash();
+    let catalog_evidence = format!(
+        "Exact reward row extracted from bundled JP master catalogue {}; projected onto the Global timeline and replaced by Global master data when released",
+        &catalog_hash[..12],
+    );
 
     for row in rows {
         let currency = catalog_currency(&row.currency)?;
@@ -2980,8 +2990,8 @@ fn append_master_reward_catalog_rows(
             })
             .unwrap_or(row.available_at);
         let evidence = Some(match row.evidence {
-            Some(evidence) => format!("{evidence}. {CATALOG_EVIDENCE}"),
-            None => CATALOG_EVIDENCE.to_string(),
+            Some(evidence) => format!("{evidence}. {catalog_evidence}"),
+            None => catalog_evidence.clone(),
         });
         rewards.push(PlannerReward {
             id: format!("catalog-{}", row.id),
@@ -7379,7 +7389,7 @@ mod tests {
             .evidence
             .as_deref()
             .unwrap()
-            .contains("May 2026 JP master snapshot"));
+            .contains("bundled JP master catalogue"));
     }
 
     #[test]
