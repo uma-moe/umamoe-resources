@@ -47,7 +47,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 27;
+const TIMELINE_ALGORITHM_VERSION: u8 = 28;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -324,6 +324,7 @@ struct TimelinePaidBanner {
 
 #[derive(Debug, Clone)]
 struct TimelineStoryEvent {
+    master_event_id: Option<i64>,
     event_name: String,
     image: String,
     start_at: DateTime<Utc>,
@@ -539,7 +540,7 @@ pub fn generate(
     let timeline_character_banners = load_timeline_character_banners()?;
     let timeline_support_banners = load_timeline_support_banners()?;
     let timeline_paid_banners = load_timeline_paid_banners()?;
-    let timeline_story_events = load_timeline_story_events()?;
+    let timeline_story_events = load_timeline_story_events(jp_connection)?;
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
@@ -1559,7 +1560,11 @@ fn story_event(
     observed_rate: f64,
 ) -> BannerTimelineEvent {
     let key = image_key(&event.image);
-    let confirmed_global_date = confirmed_dates.story.get(&key).copied();
+    let confirmed_global_date = event
+        .master_event_id
+        .is_none()
+        .then(|| confirmed_dates.story.get(&key).copied())
+        .flatten();
     let prediction = apply_family_adjustment(
         calculate_global_date(
             event.start_at,
@@ -1574,7 +1579,10 @@ fn story_event(
     let duration = banner_duration_days(event.start_at, event.end_at);
 
     BannerTimelineEvent {
-        id: format!("story-event-{}", image_stem(&event.image)),
+        id: event
+            .master_event_id
+            .map(|event_id| format!("story-event-master-{event_id}"))
+            .unwrap_or_else(|| format!("story-event-{}", image_stem(&event.image))),
         event_type: BannerTimelineEventType::StoryEvent,
         source: "story",
         gacha_id: None,
@@ -1584,7 +1592,8 @@ fn story_event(
         card_type: None,
         year: None,
         image: event.image.clone(),
-        image_path: Some(format!("assets/images/story/{}", event.image)),
+        image_path: (!event.image.is_empty())
+            .then(|| format!("assets/images/story/{}", event.image)),
         title: event.event_name.clone(),
         description: None,
         jp_release_date: event.start_at,
@@ -3566,22 +3575,89 @@ fn load_timeline_paid_banners() -> Result<Vec<TimelinePaidBanner>> {
         .collect()
 }
 
-fn load_timeline_story_events() -> Result<Vec<TimelineStoryEvent>> {
+fn load_timeline_story_events(
+    jp_connection: Option<&Connection>,
+) -> Result<Vec<TimelineStoryEvent>> {
     let raw_events: Vec<RawTimelineStoryEvent> =
         serde_json::from_slice(BUNDLED_TIMELINE_STORY_EVENTS_JSON)
             .context("failed to parse bundled timeline_story_events.json")?;
 
-    raw_events
+    let mut events = raw_events
         .into_iter()
         .map(|event| {
             Ok(TimelineStoryEvent {
+                master_event_id: None,
                 event_name: event.event_name,
                 image: webp_image_reference(&event.image),
                 start_at: parse_timeline_date(&event.start_date)?,
                 end_at: parse_timeline_date(&event.end_date)?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>>>()?;
+    append_master_story_events(jp_connection, &mut events)?;
+    events.sort_by_key(|event| (event.start_at, event.master_event_id));
+    Ok(events)
+}
+
+fn append_master_story_events(
+    jp_connection: Option<&Connection>,
+    events: &mut Vec<TimelineStoryEvent>,
+) -> Result<()> {
+    let Some(connection) = jp_connection else {
+        return Ok(());
+    };
+    if !timeline_table_exists(connection, "story_event_data")? {
+        return Ok(());
+    }
+    let latest_bundled_start = events
+        .iter()
+        .map(|event| event.start_at)
+        .max()
+        .unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+    let mut statement = connection.prepare(
+        r#"
+        SELECT story_event_id,
+               CASE typeof(start_date)
+                 WHEN 'integer' THEN start_date
+                 ELSE CAST(strftime('%s', replace(start_date, '/', '-')) AS INTEGER)
+               END,
+               CASE typeof(end_date)
+                 WHEN 'integer' THEN end_date
+                 ELSE CAST(strftime('%s', replace(end_date, '/', '-')) AS INTEGER)
+               END
+        FROM story_event_data
+        ORDER BY start_date, story_event_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    for row in rows {
+        let (event_id, start, end) = row?;
+        let start_at = Utc
+            .timestamp_opt(start, 0)
+            .single()
+            .with_context(|| format!("invalid story_event start timestamp {start}"))?;
+        if start_at <= latest_bundled_start {
+            continue;
+        }
+        let end_at = Utc
+            .timestamp_opt(end, 0)
+            .single()
+            .with_context(|| format!("invalid story_event end timestamp {end}"))?;
+        events.push(TimelineStoryEvent {
+            master_event_id: Some(event_id),
+            event_name: format!("Story Event #{event_id}"),
+            image: String::new(),
+            start_at,
+            end_at,
+        });
+    }
+    Ok(())
 }
 
 fn load_timeline_champions_meetings() -> Result<Vec<TimelineChampionsMeeting>> {
@@ -4721,7 +4797,7 @@ mod tests {
             assert_webp_reference(&banner.image);
         }
 
-        for event in load_timeline_story_events().expect("story timeline data should parse") {
+        for event in load_timeline_story_events(None).expect("story timeline data should parse") {
             assert_webp_reference(&event.image);
         }
 
@@ -4796,6 +4872,37 @@ mod tests {
             race.image_url.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_URL)
                 && race.image_path.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_PATH)
         }));
+    }
+
+    #[test]
+    fn jp_master_extends_story_events_after_bundled_horizon() {
+        let connection = Connection::open_in_memory().expect("in-memory database should open");
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE story_event_data (
+                    story_event_id INTEGER,
+                    start_date INTEGER,
+                    end_date INTEGER
+                );
+                INSERT INTO story_event_data VALUES
+                    (999, 1577836800, 1579046400),
+                    (1055, 1785380400, 1786935599);
+                "#,
+            )
+            .expect("story event test schema should build");
+
+        let events = load_timeline_story_events(Some(&connection))
+            .expect("JP master story events should load");
+        let projected = events
+            .iter()
+            .find(|event| event.master_event_id == Some(1055))
+            .expect("new JP master event should extend the bundled timeline");
+        assert_eq!(projected.event_name, "Story Event #1055");
+        assert!(projected.image.is_empty());
+        assert!(!events
+            .iter()
+            .any(|event| event.master_event_id == Some(999)));
     }
 
     #[test]

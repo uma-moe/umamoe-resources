@@ -1,13 +1,13 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
-use rusqlite::Connection;
+use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 26;
+const ALGORITHM_VERSION: u8 = 28;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -2993,7 +2993,8 @@ fn append_master_reward_catalog_rows(
             available_at,
             provenance: "jp_master_catalog",
             assumption,
-            default_enabled: row.default_enabled,
+            default_enabled: row.default_enabled
+                || assumption == "all_first_clears_high_difficulty",
             source_url: row.source_url,
             source_items: row.source_items,
             confidence: "projected_parity",
@@ -3237,12 +3238,20 @@ fn projected_competition_templates(competition: &str) -> &'static [ProjectedComp
         label: "Projected final placement rewards",
         items: &[],
     }];
-    const LEGEND_RACE: &[ProjectedCompetitionTemplate] = &[ProjectedCompetitionTemplate {
-        id: "first-clear",
-        master_event_id: 83,
-        label: "First clear (projected Global parity)",
-        items: &[(90, 43, 150)],
-    }];
+    const LEGEND_RACE: &[ProjectedCompetitionTemplate] = &[
+        ProjectedCompetitionTemplate {
+            id: "first-clear",
+            master_event_id: 83,
+            label: "First clear (projected Global parity)",
+            items: &[(90, 43, 150)],
+        },
+        ProjectedCompetitionTemplate {
+            id: "missions",
+            master_event_id: 0,
+            label: "Event participation missions (full completion)",
+            items: &[(164, 149, 1), (164, 150, 2)],
+        },
+    ];
     const LEAGUE_OF_HEROES: &[ProjectedCompetitionTemplate] = &[
         ProjectedCompetitionTemplate {
             id: "rank-2",
@@ -3406,7 +3415,13 @@ fn projected_competition_templates(competition: &str) -> &'static [ProjectedComp
             id: "missions",
             master_event_id: 1008,
             label: "Event missions (full completion)",
-            items: &[(40, 41, 1), (40, 111, 1), (90, 43, 500), (164, 150, 1)],
+            items: &[
+                (40, 41, 1),
+                (40, 111, 1),
+                (90, 43, 300),
+                (164, 149, 1),
+                (164, 150, 1),
+            ],
         },
     ];
 
@@ -3675,43 +3690,17 @@ fn load_competitive_variants_for(
             });
         }
 
-        let mut statement = connection.prepare(
-        r#"
-        SELECT data.team_building_event_id, data.start_date,
-               mission.item_category, mission.item_id, SUM(mission.item_num), COUNT(mission.id)
-        FROM team_building_data AS data
-        JOIN mission_data AS mission
-          ON mission.event_id = data.team_building_event_id AND mission.mission_type = 4
-        GROUP BY data.team_building_event_id, data.start_date, mission.item_category, mission.item_id
-        ORDER BY data.team_building_event_id, mission.item_category, mission.item_id
-        "#,
-    )?;
-        let rows = statement.query_map([], |row| {
-            Ok((
-                row.get::<_, i64>(0)?,
-                row.get::<_, i64>(1)?,
-                PlannerSourceItem {
-                    item_category: row.get(2)?,
-                    item_id: row.get(3)?,
-                    amount: row.get(4)?,
-                    mission_count: Some(row.get(5)?),
-                    odds: None,
-                    order_min: None,
-                    order_max: None,
-                    bonus: None,
-                },
-            ))
-        })?;
-        let mut team_missions: BTreeMap<i64, (i64, Vec<PlannerSourceItem>)> = BTreeMap::new();
+        let mut team_events = connection.prepare(
+            "SELECT team_building_event_id, start_date FROM team_building_data ORDER BY start_date",
+        )?;
+        let rows =
+            team_events.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
         for row in rows {
-            let (team_id, start, item) = row?;
-            team_missions
-                .entry(team_id)
-                .or_insert_with(|| (start, Vec::new()))
-                .1
-                .push(item);
-        }
-        for (team_id, (start, items)) in team_missions {
+            let (team_id, start) = row?;
+            let items = load_general_event_mission_items(connection, start, 15)?;
+            if items.is_empty() {
+                continue;
+            }
             let Some((event_id, _)) = timeline_link_near_start(&team_links, start) else {
                 continue;
             };
@@ -3807,6 +3796,21 @@ fn load_competitive_variants_for(
                     available_at: available_at.clone(),
                     label: format!("First clear vs Character {image_id}"),
                     source_items: items,
+                    provenance,
+                    confidence,
+                    default_enabled: false,
+                });
+            }
+            let mission_items = load_general_event_mission_items(connection, start, 8)?;
+            if !mission_items.is_empty() {
+                variants.push(PlannerCompetitiveVariant {
+                    id: format!("legend-race-{event_key}-missions"),
+                    competition: "legend_race",
+                    event_id,
+                    master_event_id: event_key,
+                    available_at,
+                    label: "Event participation missions (full completion)".to_string(),
+                    source_items: mission_items,
                     provenance,
                     confidence,
                     default_enabled: false,
@@ -4251,8 +4255,20 @@ fn load_story_rewards(
         }
     }
 
-    let mut schedule =
-        connection.prepare("SELECT story_event_id, start_date, end_date FROM story_event_data")?;
+    let mut schedule = connection.prepare(
+        r#"
+        SELECT story_event_id,
+               CASE typeof(start_date)
+                 WHEN 'integer' THEN start_date
+                 ELSE CAST(strftime('%s', replace(start_date, '/', '-')) AS INTEGER)
+               END,
+               CASE typeof(end_date)
+                 WHEN 'integer' THEN end_date
+                 ELSE CAST(strftime('%s', replace(end_date, '/', '-')) AS INTEGER)
+               END
+        FROM story_event_data
+        "#,
+    )?;
     let rows = schedule.query_map([], |row| {
         Ok((
             row.get::<_, i64>(0)?,
@@ -4704,6 +4720,50 @@ fn add_source_item(
     });
 }
 
+/// Recurring event missions such as Legend Races, Racing Carnivals, and
+/// Strongest Team use the shared `event_id = 0` namespace. Match them by the
+/// event start day and feature-specific mission type; numeric event IDs from
+/// the surrounding tables are not compatible and can collide with unrelated
+/// mission campaign IDs.
+fn load_general_event_mission_items(
+    connection: &Connection,
+    event_start: i64,
+    mission_type: i64,
+) -> Result<Vec<PlannerSourceItem>> {
+    if !sqlite_table_exists(connection, "mission_data")? {
+        return Ok(Vec::new());
+    }
+    let event_day = timestamp_to_rfc3339(event_start)
+        .get(..10)
+        .unwrap_or_default()
+        .to_string();
+    let mut statement = connection.prepare(
+        r#"
+        SELECT item_category, item_id, SUM(item_num), COUNT(id)
+        FROM mission_data
+        WHERE event_id = 0
+          AND mission_type = ?2
+          AND substr(replace(start_date, '/', '-'), 1, 10) = ?1
+        GROUP BY item_category, item_id
+        ORDER BY item_category, item_id
+        "#,
+    )?;
+    let rows = statement.query_map(params![event_day, mission_type], |row| {
+        Ok(PlannerSourceItem {
+            item_category: row.get(0)?,
+            item_id: row.get(1)?,
+            amount: row.get(2)?,
+            mission_count: Some(row.get(3)?),
+            odds: None,
+            order_min: None,
+            order_max: None,
+            bonus: None,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(Into::into)
+}
+
 fn load_slotted_items(
     connection: &Connection,
     table: &str,
@@ -5077,6 +5137,7 @@ fn load_racing_carnival_rewards_for(
             true,
             load_exchange_items(connection, shop_id)?,
         );
+        let mission_items = load_general_event_mission_items(connection, start, 10)?;
         push_master_event_component(
             rewards,
             &links,
@@ -5090,16 +5151,20 @@ fn load_racing_carnival_rewards_for(
             "racing_carnival_bonus_skill_mission",
             confidence,
             true,
-            vec![PlannerSourceItem {
-                item_category: JEWEL_CATEGORY,
-                item_id: JEWEL_ITEM_ID,
-                amount: 100,
-                mission_count: Some(1),
-                odds: None,
-                order_min: None,
-                order_max: None,
-                bonus: None,
-            }],
+            if mission_items.is_empty() {
+                vec![PlannerSourceItem {
+                    item_category: JEWEL_CATEGORY,
+                    item_id: JEWEL_ITEM_ID,
+                    amount: 100,
+                    mission_count: Some(1),
+                    odds: None,
+                    order_min: None,
+                    order_max: None,
+                    bonus: None,
+                }]
+            } else {
+                mission_items
+            },
         );
     }
     Ok(())
@@ -5265,7 +5330,7 @@ fn load_masters_challenge_rewards_for(
             provenance,
             "all_first_clears_high_difficulty",
             confidence,
-            false,
+            true,
             load_slotted_items(
                 connection,
                 "ultimate_race_contents",
@@ -7220,9 +7285,9 @@ mod tests {
         jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
         load_competitive_variants, load_competitive_variants_for, load_daily_pack_rules,
         load_event_exchange_rewards, load_factor_research_rewards_for, load_gachas,
-        load_global_news_rewards, load_global_social_rewards, load_mission_campaign_rewards,
-        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, load_story_rewards,
+        load_general_event_mission_items, load_global_news_rewards, load_global_social_rewards,
+        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
+        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
@@ -7237,6 +7302,48 @@ mod tests {
     use rusqlite::Connection;
     use serde_json::json;
     use std::collections::{BTreeMap, BTreeSet};
+
+    #[test]
+    fn recurring_event_missions_match_start_day_and_feature_type() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE mission_data (
+                    id INTEGER PRIMARY KEY,
+                    event_id INTEGER,
+                    mission_type INTEGER,
+                    item_category INTEGER,
+                    item_id INTEGER,
+                    item_num INTEGER,
+                    start_date TEXT
+                );
+                INSERT INTO mission_data VALUES
+                    (1, 0, 8, 164, 149, 1, '2026/08/09 12:00:00'),
+                    (2, 0, 8, 164, 150, 1, '2026/08/09 12:00:00'),
+                    (3, 0, 8, 164, 150, 1, '2026/08/09 12:00:00'),
+                    (4, 0, 15, 164, 149, 9, '2026/08/09 12:00:00'),
+                    (5, 0, 8, 164, 149, 9, '2026/08/10 12:00:00');
+                "#,
+            )
+            .unwrap();
+
+        let items = load_general_event_mission_items(&connection, 1_786_244_400, 8).unwrap();
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.item_id == 149)
+                .map(|item| item.amount),
+            Some(1)
+        );
+        assert_eq!(
+            items
+                .iter()
+                .find(|item| item.item_id == 150)
+                .map(|item| item.amount),
+            Some(2)
+        );
+    }
 
     #[test]
     fn bundled_master_catalog_uses_current_timeline_dates() {
@@ -9727,7 +9834,10 @@ mod tests {
             variant.event_id == "team-future"
                 && variant.label == "Event missions (full completion)"
                 && variant.source_items.iter().any(|item| {
-                    item.item_category == 90 && item.item_id == 43 && item.amount == 500
+                    item.item_category == 90 && item.item_id == 43 && item.amount == 300
+                })
+                && variant.source_items.iter().any(|item| {
+                    item.item_category == 164 && item.item_id == 149 && item.amount == 1
                 })
                 && variant.source_items.iter().any(|item| {
                     item.item_category == 164 && item.item_id == 150 && item.amount == 1
