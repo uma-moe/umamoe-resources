@@ -218,7 +218,6 @@ jobs:
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
             -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
-            -e JP_MASTER_PATH=/data/jp-master.mdb \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
@@ -377,7 +376,6 @@ jobs:
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
             -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
-            -e JP_MASTER_PATH=/data/jp-master.mdb \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
