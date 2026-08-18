@@ -41,9 +41,14 @@ jobs:
 
       - name: Archive official Global news
         shell: bash
-        run: >-
+        env:
+          HTTPS_PROXY: ${{ secrets.PROXY_URL }}
+        run: |
+          if [[ -z "${HTTPS_PROXY:-}" ]]; then
+            echo "::error::The PROXY_URL Actions secret is required for the Global news sync."
+            exit 1
+          fi
           cargo run --locked -- sync-global-news
-          --endpoint 'https://news.tnnlb.dev/api/ajax/pr_info_index?format=json'
 
       - name: Archive official Global social posts
         shell: bash
