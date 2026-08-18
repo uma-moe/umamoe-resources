@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "source": "https://umamusume.com/api/ajax/pr_info_index?format=json",
+  "source": "https://news.tnnlb.dev/api/ajax/pr_info_index?format=json",
   "posts": [
     {
       "announce_id": 122,
@@ -1998,6 +1998,27 @@
       ]
     },
     {
+      "announce_id": 916,
+      "page_url": "https://umamusume.com/news/916/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "cee1ab9ad987ebc6dd815a46f38fcddfd6f380487ec29687fd56dea1bc5d953a",
+          "raw": {
+            "announce_id": 916,
+            "announce_label": 1,
+            "image": "",
+            "message": " As of 9:59 p.m., Aug 10, 2026 (UTC), the story event \"Wings of Steam and Steel\" has ended.<br>\r\n Rewards will remain available to collect until 9:59 p.m., Aug 13, 2026 (UTC).<br>\r\n During the reward collection period, you can access the story event's home screen to collect unreceived event mission rewards and play the Prize Derby.<br>\r\n Any event story episodes that you have unlocked previously during the event period will remain viewable.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Event Points earned in this event cannot be carried over to future events.<br>\r\n 2. Prize Coins earned in this event will be converted into monies after the reward collection period has ended.<br>\r\n 3. You cannot complete event missions during the reward collection period, even if you fulfill their conditions.",
+            "post_at": "2026-08-10 22:00:00",
+            "post_platform_flag": 62,
+            "title": "The story event \"Wings of Steam and Steel\" has ended!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 917,
       "page_url": "https://umamusume.com/news/917/",
       "first_seen_at": "2026-08-07T10:58:56.178650400+00:00",
@@ -2082,6 +2103,27 @@
       ]
     },
     {
+      "announce_id": 936,
+      "page_url": "https://umamusume.com/news/936/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "077285e83c12f2d9b058034b297fce9bc7613295c538744d1e0a2f52a58fa112",
+          "raw": {
+            "announce_id": 936,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30310902_L1786226400.png?c=20260616082723",
+            "message": " As of 10:00 p.m., Aug 8, 2026 (UTC), the Champions Meeting: Virgo Cup has begun!<br><br>\r\n Champions Meeting: Virgo Cup is a race event in which you match with other trainers around the world to compete in real time.<br> \r\n In order to compete, you will need to register a team of three Veteran Umamusume.<br>\r\n (Champions Meeting is unlocked when you reach a Team Rank of E2.)<br>\r\n<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Aug 8 - 9:59 p.m., Aug 14, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> League Selection Period</h3>\r\n 10:00 p.m., Aug 5 - 9:59 p.m., Aug 12, 2026 (UTC)<br>\r\n • After 10:00 p.m., Aug 8, 2026 (UTC), it is not possible to change your league selection once you have made it.<br>\r\n • If you register for the Champions Meeting after 10:00 p.m., Aug 10, 2026 (UTC), you will automatically be entered into Round 2, Group B.<br>\r\n • If you have not entered the Champions Meeting by 9:59 p.m., Aug 12, 2026 (UTC), you will not be able to do so after that point.<br> \r\n<h3 class=\"subheading\"> Round 1</h3>\r\n 10:00 p.m., Aug 8 - 9:59 p.m., Aug 10, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Round 2</h3>\r\n 10:00 p.m., Aug 10 - 9:59 p.m., Aug 12, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Final Round: Registration Period</h3>\r\n 10:00 p.m., Aug 12 - 9:59 a.m., Aug 13, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Final Round: Matching Period</h3>\r\n 10:00 a.m., Aug 13 - 9:59 p.m., Aug 13, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Final Round: Race Period</h3>\r\n 10:00 p.m., Aug 13 - 9:59 p.m., Aug 14, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"heading\"> Race Conditions</h2>\r\n Oi / Dirt / 2,000m (Medium) / Right-Handed / Fall / Sunny / Good<br>\r\n<br>\r\n The following skills will activate during this Virgo Cup.<br>\r\n • Collaborative Graded Races ◎<br>\r\n • Collaborative Graded Races ○<br>\r\n • Collaborative Graded Races ×<br>\r\n<br>\r\n The following skills will not activate during this Virgo Cup.<br>\r\n • Night Races ◎<br>\r\n • Night Races ○<br>\r\n • Night Races ×<br>\r\n • Sharp Turns ◎<br>\r\n • Sharp Turns ○<br>\r\n • Sharp Turns ×<br>\r\n<h2 class=\"heading\"> League Selection</h2>\r\n In Champions Meeting events, you can choose to enter either the Graded League or the Open League. <br>\r\n You will only be matched with other trainers participating in the same league.<br>\r\n Rewards differ depending on the league you select.<br>\r\n<br>\r\n The two leagues have different conditions for which Veteran Umamusume can enter, so try to select the league best suited for the Career Ranks of the Veteran Umamusume you intend to include in your team.<br>\r\n Once you have selected a league, you will receive a reward for participation.<br>\r\n<h3 class=\"subheading\"> League Details</h3>\r\n • Graded League: All Veteran Umamusume can enter regardless of Career Rank.<br>\r\n • Open League: Only Veteran Umamusume with a Career Rank of A+ or below can enter.<br>\r\n (Please note that Veteran Umamusume with a Career Rank of S or above cannot participate in the Open League.)<br>\r\n<h3 class=\"subheading\"> League Participation Rewards</h3>\r\n • Toughness 30 × 3<br>\r\n • Alarm Clock × 3<br>\r\n<br>\r\n<h2 class=\"heading\"> Round Structure</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/banner_detail_30300002_L1786226400.png?c=20260616082723\"></figure>\r\n The Champions Meeting is divided into three rounds: Round 1, Round 2, and the final round.<br>\r\n Rounds 1 and 2 are preliminaries in which trainers compete to qualify for the later rounds.<br>\r\n In Round 2 and the final round, trainers are divided into two groups: Group A and Group B.<br> \r\n The number of races in a single entry, as well as the conditions to progress, depend upon your current round and group.<br>\r\n The overall round structure is identical for both leagues.<br>\r\n<br>\r\n<h2 class=\"heading\"> Round 1 Details</h2>\r\n • In each entry, you will compete in five races.<br>\r\n • In each race, you will be matched with two other trainers.<br>\r\n • Each race features nine contenders.<br>\r\n • You can make one entry for free each day.<br>\r\n (Entries after the first require an entry fee of either a Virgo Cup Entry Ticket or 30 carats.)<br>\r\n • You can make up to four entries in total per day.<br>\r\n • Achieve three wins or more to qualify for Group A in Round 2.<br>\r\n • If you achieve two or fewer wins, you will be assigned to Group B in Round 2.<br>\r\n<br>\r\n<h2 class=\"heading\"> Round 2 Details</h2>\r\n • In each entry, you will compete in five races.<br>\r\n • In each race, you will be matched with two other trainers.<br>\r\n • Each race features nine contenders.<br>\r\n • You can make one entry for free each day.<br>\r\n (Entries after the first require an entry fee of either a Virgo Cup Entry Ticket or 30 carats.)<br>\r\n • You can make up to four entries in total per day.<br>\r\n Please note that it is possible to enter a Champions Meeting starting from Round 2. In this case, you will automatically be placed in Group B.<br>\r\n<h3 class=\"subheading\"> Group A</h3>\r\n • Achieve three wins or more to qualify for Group A in the final round.<br>\r\n • Achieve one or two wins to qualify for Group B in the final round.<br>\r\n • If you achieve no wins, you will not proceed to the final round.<br>\r\n<h3 class=\"subheading\"> Group B</h3>\r\n • Achieve at least one win to qualify for Group B in the final round.<br>\r\n • If you achieve no wins, you will not proceed to the final round.<br>\r\n <br>\r\n<h2 class=\"heading\"> Final Round Details</h2>\r\n • After the registration period and matching period, you will be matched with two other trainers to compete in a single decisive race.<br>\r\n • The race features nine contenders.<br>\r\n Please note that the ranking displayed after the race is calculated individually for each player based on their performance throughout the Champions Meeting.<br>\r\n<h3 class=\"subheading\"> Final Round Entry</h3>\r\n • All trainers who qualified for the final round are automatically entered for free.<br>\r\n If you do not register a team for the final round during the registration period, you will automatically be entered using the team from your most recent entry. <br>\r\n You can change your registered Veteran Umamusume and their strategies until the end of the registration period.<br>\r\n<br>\r\n<h2 class=\"heading\"> Event Rewards</h2><figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30300902_L1786226400.png?c=20260616082723\"></figure>\r\n The rewards vary depending on your selected league.<br>\r\n In the preliminary rounds, you will receive a reward for each entry. The more wins you achieve in that entry, the greater the reward will be.<br>\r\n In the final round, you will earn rewards based on your league, group, and rank, including event-exclusive titles.<br>\r\n<br>\r\n ■ Event-Exclusive Titles<br>\r\n • Virgo Cup Platinum<br>\r\n • Virgo Cup Gold<br>\r\n • Virgo Cup Silver<br>\r\n • Virgo Cup Bronze<br>\r\n<br>\r\n If you reobtain an event-exclusive title that you have previously obtained, a star will be added to the existing title.<br>\r\n Applicable titles will be shown with the star upgrade in the in-game reward list.<br>\r\n<br>\r\n<h2 class=\"heading\"> Special Missions</h2>\r\n During Rounds 1 and 2, special daily missions will be available, allowing you to earn Virgo Cup Entry Tickets!<br>\r\n As in the previous Champions Meeting, two Entry Tickets are available to claim each day from these missions, so make good use of those additional entries!<br>\r\n<br>\r\n These special missions update each day at 10:00 p.m. (UTC) while Rounds 1 and 2 are in progress. Please take care not to miss out on them.<br>\r\n (Entry Tickets received from missions are added directly to your totals.)<br>\r\n<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Champions Meeting events, please refer to \"Champions Meeting\" under \"Races\" in Help.<br>\r\n 2. Entry counts reset daily at 10:00 p.m. (UTC).<br>\r\n 3. Round Rewards and Rank Rewards are added directly to your totals without being sent to your Presents. However, if the current round ends while you are in the middle of an entry, that entry will end immediately and the rewards for any wins will be sent to your Presents.<br>\r\n 4. Any Scout Tickets you possess can be found under Items in the menu.<br>\r\n 5. You cannot include the same Umamusume more than once in a single team.<br>\r\n 6. If it takes too long to find a match, you will instead be matched with other trainers who have previously registered in the same league, group, and round. As such, some races may not take place against other users in real time. In such cases, the opponent's race results will not be affected.<br>\r\n 7. Any remaining Entry Tickets are discarded at the end of Round 2. They cannot be carried over to future Champions Meetings.<br>\r\n 8. The event schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-08 22:00:00",
+            "post_platform_flag": 62,
+            "title": "The race event Champions Meeting: Virgo Cup is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 943,
       "page_url": "https://umamusume.com/news/943/",
       "first_seen_at": "2026-08-07T10:58:56.178650400+00:00",
@@ -2097,6 +2139,300 @@
             "post_at": "2026-08-05 22:00:00",
             "post_platform_flag": 62,
             "title": "Timing of Addition of Future Trainees as Singers",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 945,
+      "page_url": "https://umamusume.com/news/945/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "4d26c1186b57023a9b4ccb896ca226927154b0a4722878c27d8e3932f6060ea3",
+          "raw": {
+            "announce_id": 945,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30321002_L1786831200.png?c=20260615023331",
+            "message": " Here is some information about the upcoming race event Champions Meeting: Libra Cup.<br>\r\n<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n League Selection: From 10:00 p.m., Aug 25, 2026 (UTC)<br>\r\n Round 1: From 10:00 p.m., Aug 28, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"heading\"> Race Conditions</h2>\r\n Hanshin / Turf / 1,600m (Mile) / Right-Handed / Outer / Fall / Cloudy / Firm<br>\r\n<br>\r\n The following skills will not activate during this Libra Cup.<br>\r\n • Night Races ◎<br>\r\n • Night Races ○<br>\r\n • Night Races ×<br>\r\n • Sharp Turns ◎<br>\r\n • Sharp Turns ○<br>\r\n • Sharp Turns ×<br>\r\n • Collaborative Graded Races ◎<br>\r\n • Collaborative Graded Races ○<br>\r\n • Collaborative Graded Races ×<br>\r\n<br>\r\n The full schedule and other details will be posted once they have been decided.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Champions Meeting, please refer to the Help topic.<br>\r\n 2. The schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-15 22:00:00",
+            "post_platform_flag": 62,
+            "title": "The race event Champions Meeting: Libra Cup is coming in late August!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 946,
+      "page_url": "https://umamusume.com/news/946/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "05f333c308e211b533da3743f62d2451440cc9cd22250f55dfe30268cb1eeced",
+          "raw": {
+            "announce_id": 946,
+            "announce_label": 1,
+            "image": "",
+            "message": " A new Spotlight Pretty Derby Scout and Spotlight Support Card Scout are set to begin at 10:00 p.m., Aug 12, 2026 (UTC)!<br>\r\n The Spotlight Pretty Derby Scout will feature a new Trainee Umamusume.<br>\r\n<br>\r\n During the Spotlight period, if you obtain a spotlighted 3★ Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 21, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30116_new_L1786485600.png?c=20260703005522\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Rocket☆Star] Seeking the Pearl<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume<br>\r\n ★★★ [Rocket☆Star] Seeking the Pearl<br>\r\n Scout Bonus:<br>\r\n [Rocket☆Star] Seeking the Pearl Star Piece × 90<br>\r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30117_L1786485600.png?c=20260703005522\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [Ah, Such Majesty] Daiichi Ruby<br>\r\n • SR [The 3rd Miracle] K.S.Miracle<br>\r\n • R [Tracen Academy] Daiichi Ruby<br>\r\n • R [Tracen Academy] K.S.Miracle<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. The Spotlight Pretty Derby Scout and Spotlight Support Card Scout schedules and contents are subject to change without notice.<br>\r\n 2. When scouting a Spotlight 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>",
+            "post_at": "2026-08-11 22:00:00",
+            "post_platform_flag": 62,
+            "title": "New Spotlight Pretty Derby and Spotlight Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 947,
+      "page_url": "https://umamusume.com/news/947/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "5e473efbaf8082b2ce14e2cc49c99003db4f45f47f926c8bb88bc07e8362f964",
+          "raw": {
+            "announce_id": 947,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/announce_banner_3116_new_L1786572000.png?c=20260714012131",
+            "message": " As of 10:00 p.m., Aug 12, 2026 (UTC), a new Spotlight Pretty Derby Scout and Spotlight Support Card Scout have begun!<br>\r\n They will feature a new Trainee Umamusume and new Support Cards.<br>\r\n<br>\r\n During the Spotlight period, scout rates for spotlighted Trainee Umamusume and Support Cards are increased!<br>\r\n<br>\r\n In addition, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n During the availability period, you can earn bonuses as many times as you acquire the spotlighted 3★ Trainee Umamusume, including when you do so by using Trainee Exchange Points.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 21, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30116_new_L1786572000.png?c=20260714012131\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Rocket☆Star] Seeking the Pearl<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume<br>\r\n ★★★ [Rocket☆Star] Seeking the Pearl<br>\r\n Scout Bonus:<br>\r\n [Rocket☆Star] Seeking the Pearl Star Piece x 90<br>\r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30117_L1786572000.png?c=20260714012131\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [Ah, Such Majesty] Daiichi Ruby<br>\r\n • SR [The 3rd Miracle] K.S.Miracle<br>\r\n • R [Tracen Academy] Daiichi Ruby<br>\r\n • R [Tracen Academy] K.S.Miracle<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. To check the specific rates at which Trainee Umamusume and Support Cards appear from the Spotlight Pretty Derby Scout and Spotlight Support Card Scout, tap Details on the Scout screen and select the Rates tab.<br>\r\n 2. Support Cards will not appear in the Spotlight Pretty Derby Scout.<br>\r\n 3. Trainee Umamusume will not appear in the Spotlight Support Card Scout.<br>\r\n 4. Trainee Exchange Points and Support Card Exchange Points from this Spotlight Scout cannot be carried over to future Spotlight Scouts.<br>\r\n 5. Trainee Exchange Points and Support Card Exchange Points not utilized during the Spotlight Scout availability period will automatically be converted into Clovers.<br>\r\n 6. The Spotlight Pretty Derby Scout and Spotlight Support Card Scout schedules and contents are subject to change without notice.<br>\r\n 7. What you can exchange Trainee Exchange Points and Support Card Exchange Points for differs depending on the Scout.<br>\r\n 8. Trainee Umamusume and Support Cards that you can exchange Exchange Points for may become available again in the future.<br>\r\n 9. Trainee Umamusume with the same name cannot be on the same team, nor can they be selected as Legacy Umamusume at the same time in Career mode.<br>\r\n 10. The abilities and skills of the Umamusume appearing in this Spotlight Pretty Derby Scout may differ from those of the same character in Career scenarios and Career Events.<br>\r\n 11. For details on the Spotlight Trainee Umamusume and Support Cards, select the Featured Trainees or Featured Cards button at the top-right of each Scout screen.<br>\r\n 12. When scouting a Spotlight 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_40200001_L1786572000.png?c=20260714012131\"></figure>\r\n To celebrate the new arrival of [Rocket☆Star] Seeking the Pearl, episodes 1 through 4 of her Umamusume Story will be fully unlocked for a limited time!<br>\r\n During the sneak peek period, you can watch the story episodes even without fulfilling their unlock conditions!<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 21, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Applicable Umamusume</h2>\r\n • Seeking the Pearl<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. During the sneak peek period, even if you have not obtained the applicable Umamusume, you can still watch episodes 1 through 4 of her Umamusume Story!<br>\r\n 2. If you do watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will obtain first-watch carat rewards, Umamusume Story rewards, and Umamusume Archive experience.<br>\r\n 3. If you do not watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will not obtain first-watch carat rewards, Umamusume Story rewards, or Umamusume Archive experience.<br>\r\n 4. After the sneak peek period has ended, any unwatched Umamusume Stories will once again become locked.<br>\r\n 5. Umamusume Stories can be viewed after the tutorial is completed.<br>\r\n<br>",
+            "post_at": "2026-08-12 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Spotlight Pretty Derby and Spotlight Support Card Scouts out now!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 948,
+      "page_url": "https://umamusume.com/news/948/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "57565b4f51ed5c94049c3900593ec15b7a5ccf8f9b712a115509112af3e3e5b8",
+          "raw": {
+            "announce_id": 948,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_25700001 (1)_L1786572000.png?c=20260615014255",
+            "message": "As of 10:00 p.m., Aug 12, 2026 (UTC), Part 1 of our Fall G1 Celebration has begun!<br>\r\n See below for details of included events.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_25700001_L1786572000.png?c=20260615014255\"></figure>\r\n Beginning from 10:00 p.m., Aug 12, 2026 (UTC), new limited-time missions are available under the Missions section on the Home screen!<br>\r\n<br>\r\n Note: Please be aware that after the availability period of each mission ends, it will no longer be possible to attempt that mission.<br>\r\n<br>\r\n By completing these missions, you can earn rewards including carats, monies and Support Points!<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n Sprinters Stakes Missions<br>\r\n 10:00 p.m., Aug 12 - 2:59 p.m., Aug 19, 2026 (UTC)<br>\r\n<br>\r\n Mile Championship Nanbu Hai Missions<br>\r\n 3:00 p.m., Aug 18 - 2:59 p.m., Aug 25, 2026 (UTC)<br>\r\n<br>\r\n Shuka Sho Missions<br>\r\n 3:00 p.m., Aug 25 - 2:59 p.m., Sep 1, 2026 (UTC)<br>\r\n<br>\r\n Kikuka Sho Missions<br>\r\n 3:00 p.m., Sep 1 - 2:59 p.m., Sep 8, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Limited-time missions can only be cleared if the conditions are fulfilled after the time when the relevant mission is added. Even if you have fulfilled the conditions before this time, it will not count towards mission completion.<br>\r\n 2. Please be aware that if you retry a race in Career mode, any conditions that you may have fulfilled in the original attempt will no longer count towards mission completion.<br>\r\n 3. The availability periods and details of these missions are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_25700002_L1786572000.png?c=20260615014255\"></figure>\r\n To celebrate the fall G1 race season, we're sending a set of Fall G1 Race Giveaway gifts to all our trainers!<br>\r\n<br>\r\n See below for all the details.<br>\r\n<br>\r\n • Sprinters Stakes Giveaway<br>\r\n 10:00 p.m., Aug 18, 2026 (UTC) - Monies x 50,000<br>\r\n<br>\r\n • Mile Championship Nanbu Hai Giveaway<br>\r\n 10:00 p.m., Aug 24, 2026 (UTC) - Monies x 50,000<br>\r\n<br>\r\n • Shuka Sho Giveaway<br>\r\n 10:00 p.m., Aug 31, 2026 (UTC) - Monies x 50,000<br>\r\n<br>\r\n • Kikuka Sho Giveaway<br>\r\n 10:00 p.m., Sep 7, 2026 (UTC) - Monies x 50,000<br>\r\n<h2 class=\"heading\"> How to Receive</h2>\r\n After completing the game's tutorial, select Presents on the Home screen to find your gift.<br>\r\n If you don't see the gift in your Presents, try returning to the title screen and loading the game again.<br>\r\n<br>\r\n<h2 class=\"heading\"> Gift Expiry</h2>\r\n Gifts will expire if not claimed within 30 days after they are sent to your Presents.<br>\r\n Please be aware that expired gifts will automatically be deleted, so be sure to claim them before this happens.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n The details of this giveaway are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_25700003_L1786572000.png?c=20260615014255\"></figure>\r\n To celebrate the fall G1 race season, we're adding bonus Star Piece rewards to certain Career races for a limited time!<br>\r\n During each reward period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day!<br>\r\n<br>\r\n The periods and applicable races are as follows.<br>\r\n<h2 class=\"heading\"> Races / Periods / Rewards</h2>\r\n Sprinters Stakes<br>\r\n 3:00 p.m., Aug 17 - 2:59 p.m., Aug 19, 2026 (UTC)<br>\r\n [Buono ☆ Alla Moda] Hishi Akebono Star Pieces<br>\r\n<br>\r\n Mile Championship Nanbu Hai<br>\r\n 3:00 p.m., Aug 23 - 2:59 p.m., Aug 25, 2026 (UTC)<br>\r\n [Eightfold☆Fortune] Copano Rickey Star Pieces<br>\r\n<br>\r\n Shuka Sho<br>\r\n 3:00 p.m., Aug 30 - 2:59 p.m., Sep 1, 2026 (UTC)<br>\r\n [Off the Line] Mejiro Dober Star Pieces<br>\r\n<br>\r\n Kikuka Sho<br>\r\n 3:00 p.m., Sep 6 - 2:59 p.m., Sep 8, 2026 (UTC)<br>\r\n [Natural Brilliance] Satono Diamond Star Pieces<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.<br>",
+            "post_at": "2026-08-12 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Fall G1 Celebration Part 1 now available!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 949,
+      "page_url": "https://umamusume.com/news/949/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "6d4b45d2953f2dd6a738943fb8b24b93cdbf53b374cf73157545e37d64dd14b6",
+          "raw": {
+            "announce_id": 949,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_25700002_L1787004000.png?c=20260615014608",
+            "message": " To celebrate the Sprinters Stakes G1 race, bonus Star Piece rewards are available in certain Career races for a limited time!<br>\r\n<br>\r\n During the availability period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day.<br>\r\n You can earn bonus rewards just by entering, but you'll get more if you manage to win!<br>\r\n<br>\r\n See below for more details.<br>\r\n<h2 class=\"heading\"> Race / Period / Rewards</h2>\r\n Sprinters Stakes<br>\r\n 3:00 p.m., Aug 17 - 2:59 p.m., Aug 19, 2026 (UTC)<br>\r\n [Buono ☆ Alla Moda] Hishi Akebono Star Pieces\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.<br>\r\n<br>",
+            "post_at": "2026-08-17 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Bonus Star Piece rewards in Career!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 953,
+      "page_url": "https://umamusume.com/news/953/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "4f4d0e4e0a82e8532f9c0f463ae0ce8efa2369082f61dc013508424f2071fcb4",
+          "raw": {
+            "announce_id": 953,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30200134_L1786312800.png?c=20260601095209",
+            "message": " A Legend Race is set to begin at 10:00 p.m., Aug 13, 2026 (UTC)!<br>\r\n In Legend Races, you can challenge Legend Umamusume to obtain a variety of rewards.<br>\r\n You can earn rewards just by entering the race, so train up your most suitable Umamusume and take on a Legend Umamusume!<br>\r\n<h2 class=\"heading\"> Race Availability Period</h2>\r\n 10:00 p.m., Aug 13 - 2:59 p.m., Aug 16, 2026 (UTC)\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/banner_30200131_L1786312800.png?c=20260601095209\"></figure><br>\r\n 3:00 p.m., Aug 16 - 2:59 p.m., Aug 19, 2026 (UTC)<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/banner_30200132_L1786312800.png?c=20260601095209\"></figure><br>\r\n</figure><h2 class=\"heading\"> Race Conditions</h2>\r\n Sprinters Stakes / Nakayama / Turf / 1,200m (Sprint) / Right-Handed / Outer / Fall\r\n<h3 class=\"subheading\"> Weather / Track Condition</h3>\r\n • Nishino Flower: Cloudy / Firm<br>\r\n • Hishi Akebono: Sunny / Firm<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Legend Races, please refer to the notice that will be posted when the event begins, or Legend Race under Races in Help.<br>\r\n 2. You cannot enter the race with a Veteran Umamusume that is the same as the Legend Umamusume.<br>\r\n 3. The Legend Race schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-09 22:00:00",
+            "post_platform_flag": 62,
+            "title": "A Legend Race is coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 954,
+      "page_url": "https://umamusume.com/news/954/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "0cc985f853e90eb4ef7f088cb3ef98e7b20c71222e2a28adfa1de7518a553d7b",
+          "raw": {
+            "announce_id": 954,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30200135_L1786658400.png?c=20260615015401",
+            "message": " As of 10:00 p.m., Aug 13, 2026 (UTC), a new Legend Race has begun!<br>\r\n In Legend Races, you can challenge Legend Umamusume to obtain a variety of rewards.<br>\r\n You can earn rewards just by entering the race, so train up your most suitable Umamusume and take on a Legend Umamusume!<br>\r\n<h2 class=\"heading\"> Race Availability Period</h2>\r\n 10:00 p.m., Aug 13 - 2:59 p.m., Aug 16, 2026 (UTC)<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/banner_30200131_L1786658400.png?c=20260615015401\"></figure>\r\n 3:00 p.m., Aug 16 - 2:59 p.m., Aug 19, 2026 (UTC)<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/banner_30200132_L1786658400.png?c=20260615015401\"></figure>\r\n<h2 class=\"heading\"> Race Conditions</h2>\r\n Sprinters Stakes / Nakayama / Turf / 1,200m (Sprint) / Right-Handed / Outer / Fall\r\n<h3 class=\"subheading\"> Weather / Track Condition</h3>\r\n • Nishino Flower: Cloudy / Firm<br>\r\n • Hishi Akebono: Sunny / Firm<br>\r\n<h2 class=\"heading\"> Main Rewards</h2>\r\n • [Layered Petals] Nishino Flower Star Pieces<br>\r\n • [Buono ☆ Alla Moda] Hishi Akebono Star Pieces<br>\r\n • Rainbow Crystal Shards<br>\r\n • Gold Crystal Shards<br>\r\n • Carats<br>\r\n Note: For information on other rewards, please check the Legend Race page.<br>\r\n<h2 class=\"heading\"> Available Attempts</h2>\r\n Each Legend Race entry costs one Legend Race Ticket.<br>\r\n On the first day (Aug 13), you will receive three Legend Race Tickets at 10:00 p.m. (UTC). On subsequent days, tickets will be replenished each day at 3:00 p.m. (UTC), up to a maximum of three.<br>\r\n Example: If you possess one Legend Race Ticket at 3:00 p.m. (UTC), you will be granted an additional two tickets.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Legend Races, please refer to Legend Race under Races in Help.<br>\r\n 2. You cannot enter the race with a Veteran Umamusume that is the same as the Legend Umamusume.<br>\r\n 3. If you start a race that ends after 3:00 p.m. (UTC), you may not be able to finish.<br>\r\n 4. Star Pieces for alternate outfit versions of the Legend Umamusume will not appear in Legend Race rewards.<br>\r\n 5. Legend Races featuring Nishino Flower and Hishi Akebono may be held again in the future. At present, the dates have yet to be decided.<br>\r\n 6. The Legend Race schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-13 22:00:00",
+            "post_platform_flag": 62,
+            "title": "A Legend Race is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 955,
+      "page_url": "https://umamusume.com/news/955/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "b53de569aa994861df2865b8342fb1bab3d3ae87d5d2801804babb2a10e6fed1",
+          "raw": {
+            "announce_id": 955,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30600001_L1786485600.png?c=20260601095513",
+            "message": " The Trainer Aptitude Test is an event where trainers can test their prowess in eligible Career scenarios and aim to achieve a high score.<br>\r\n Collect Test Coins based on your final score and test rating to exchange for various items!<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 21, 2026 (UTC) <br>\r\n<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on this event, please refer to the notice that will be posted when the event begins, or tap the Help icon on the top right of the event's home screen.<br>\r\n 2. The event schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-11 22:00:00",
+            "post_platform_flag": 62,
+            "title": "The event \"Trainer Aptitude Test\" is coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 956,
+      "page_url": "https://umamusume.com/news/956/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "148f4c870b239e49c042e170e8a76728f15bd53bae29ae181906140bce11f695",
+          "raw": {
+            "announce_id": 956,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30600002_L1786572000.png?c=20260807074719",
+            "message": "<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 21, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"two-line-heading heading\"> Reward Collection, Test Coin Exchange, and Rankings<br>Display Period</h2>\r\n 10:00 p.m., Aug 21 - 9:59 p.m., Aug 24, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"heading\"> Event Overview</h2>\r\n The Trainer Aptitude Test is an event where trainers can test their prowess in eligible Career scenarios and aim to achieve a high score.<br>\r\n Complete Careers to earn rewards based on your scores, test rating, and mission completion!<br>\r\n<br>\r\n<h2 class=\"heading\"> Event-Eligible Career Scenarios</h2>\r\n Brighter Together! Our Grand Concert<br>\r\n<br>\r\n<h2 class=\"heading\"> How to Participate</h2>\r\n When selecting an eligible Career scenario, you can choose \"Take on a Trainer Aptitude Test\" to participate.<br>\r\n<br>\r\n<h2 class=\"heading\"> Test Contents</h2>\r\n 1. Sprint Test<br>\r\n 2. Mile Test<br>\r\n 3. Medium Test<br>\r\n 4. Long Test<br>\r\n 5. Dirt Test<br>\r\n 6. Extra Test<br>\r\n 7. Free Test<br>\r\n<br>\r\n At the start of the event, you can challenge tests 1-5.<br>\r\n In each attempt, you will receive a test result of \"A,\" B,\" or \"C.\"<br>\r\n<br>\r\n \"Extra Test\" will be unlocked once you have received a test result of at least \"C\" on tests 1-5.<br>\r\n \"Free Test\" will be unlocked once you have received a test result of at least \"C\" on \"Extra Test\".<br>\r\n<br>\r\n Aim for a result of \"A\" to earn a unique title exclusive to this event!<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30600001_L1786572000.png?c=20260807074719\"></figure>\r\n By obtaining strong test results and completing event missions, you can earn Test Coins and other rewards!<br>\r\n<br>\r\n<h2 class=\"heading\"> Test Coins</h2>\r\n Test Coins are an item that can be obtained by taking part in this event.<br>\r\n They can be exchanged for various items on the Test Coins Exchange screen.<br>\r\n For more details, check the Test Coins Exchange from the event screen or under Shop on the main Home screen.<br>\r\n<br>\r\n [Main Exchangeable Items]<br>\r\n • Carats<br>\r\n • Rainbow Crystal Shards<br>\r\n • Gold Crystal Shards<br>\r\n • Trainee Scout Ticket<br>\r\n • Support Card Scout Ticket<br>\r\n • Rare Textbook of Hints<br>\r\n • Rare Book of Hints<br>\r\n • Textbook of Hints<br>\r\n • Book of Hints<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30600002_L1786572000.png?c=20260807074719\"></figure>\r\n This is a top score ranking of all trainers who have passed the test.<br>\r\n The top 100 Leading Umamusume are updated every day at 10:00 p.m. (UTC).<br>\r\n Only the Veteran Umamusume with which you achieved the highest score during the event period is eligible to appear in this ranking.<br>\r\n Note: On the first day of the event, scores are still being tallied, so no rankings are available to view.<br>\r\n<br>\r\n From 4:00 p.m., Aug 13, 2026 (UTC), Leading Umamusume ranked in the top 30 can be borrowed as legacies during the event availability period.<br>\r\n There is no limit to how many times these legacies can be borrowed, but they are only available when selecting to take on the Trainer Aptitude Test in an eligible Career scenario.<br>\r\n<br>\r\n Please note that it may take some time for Leading Umamusume to become available to borrow.<br>\r\n When selecting a Legacy Umamusume under the Event tab in a Career, a message reading \"Tallying\" may appear. If it does, please allow some time to pass before revisiting the Career screen. <br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30600003_L1786572000.png?c=20260807074719\"></figure>\r\n There is also a ranking for the Support Cards most frequently used in the Trainer Aptitude Test across all participating trainers.<br>\r\n You can view the top 10 most-used Support Cards, updated every day at 10:00 p.m. (UTC).<br>\r\n Note: On the first day of the event, scores are still being tallied, so no rankings are available to view.<br>\r\n<br>\r\n<h2 class=\"heading\"> Changes from the Previous Trainer Aptitude Test</h2>\r\n 1. The Event Boost feature has been added.<br>\r\n You can choose to add an Event Boost at the cost of twice the TP on the confirmation screen before starting a Career playthrough. <br>\r\n Boosted playthroughs cost twice the TP and yield twice the amount of Test Coins as a regular run.<br>\r\n (Other rewards and your test score will not change.)<br>\r\n 2. You can now challenge tests 1-5 from the very start of the event.<br>\r\n 3. On the skill acquisition screen in Career, you can now confirm skills eligible for score bonuses in the test you're currently challenging.<br>\r\n 4. The amount of coins you can acquire in tests has been adjusted.<br>\r\n 5. The number of Test Coins required to obtain some items has been adjusted in the Test Coins Exchange.<br>\r\n 6. The amount of monies necessary to rent Leading Umamusume has been changed to 3,000 across the board.<br>\r\n 7. All event screen UI has been adjusted.<br>\r\n<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on the event, tap the Help icon on the top left of the event's home screen.<br> \r\n 2. The event schedule and contents are subject to change without notice.<br>\r\n 3. As it can take time for Leading Umamusume rankings to update, the previous day's rankings may still be displayed in some cases.<br>\r\n 4. If you are in the middle of a test when the event ends, you will not be able to view event results or receive event rewards for that Career playthrough.<br>\r\n 5. Test Coins earned in this event cannot be carried over to future events.<br>\r\n 6. If there are event missions listed as completed when the date changes, their rewards will be sent to your Presents. If the next day is the final day of the event, all rewards other than Test Coins will be sent to your Presents.",
+            "post_at": "2026-08-12 22:00:00",
+            "post_platform_flag": 62,
+            "title": "The event \"Trainer Aptitude Test\" is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 958,
+      "page_url": "https://umamusume.com/news/958/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "f539b32079d50f8ab36f2dd8558b762bfbaf60aac142eaea2215c505e8f3b5a4",
+          "raw": {
+            "announce_id": 958,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30500001_L1786485600.png?c=20260601095611",
+            "message": " A Transfer Request event is set to begin at 10:00 p.m., Aug 12, 2026 (UTC)!<br>\r\n Transfer Requests allow trainers to receive rewards by transferring Veteran Umamusume that meet the recipient trainer's desired conditions.<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 16, 2026 (UTC)\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Transfer Requests, please refer to the notice that will be posted when the event begins, or Transfer Requests under Umamusume in Help.<br>\r\n 2. The Transfer Request schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-11 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Transfer Requests coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 959,
+      "page_url": "https://umamusume.com/news/959/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "b4ffda3523d8ae7e1c89e768d1572dd01551e59a76e3b2e677608a02c151986a",
+          "raw": {
+            "announce_id": 959,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30500002_L1786572000.png?c=20260615020759",
+            "message": " As of 10:00 p.m., Aug 12, 2026 (UTC), a Transfer Request event has begun!<br>\r\n Transfer Requests allow trainers to receive rewards by transferring Veteran Umamusume that meet the recipient trainer's desired conditions.<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Aug 12 - 9:59 p.m., Aug 16, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Outline</h2>\r\n By transferring Veteran Umamusume that meet the request conditions, you can earn rewards.<br>\r\n Any transferred Veteran Umamusume will disappear.<br>\r\n Please be aware that once a Veteran Umamusume has been transferred, it cannot be recovered.<br>\r\n Requests are updated every two days at 10:00 p.m. (UTC).<br>\r\n<h3 class=\"subheading\"> Request Conditions</h3>\r\n Each trainer's request includes required conditions relating to the Veteran Umamusume's abilities and achievements.<br>\r\n You may only transfer Veteran Umamusume that meet the request conditions.<br>\r\n<h3 class=\"subheading\"> Rank</h3>\r\n Each request has a defined rank.<br>\r\n The higher the rank, the greater rewards you can receive.<br>\r\n<h3 class=\"subheading\"> Transfer Availability Period</h3>\r\n Each request has a transfer availability period.<br>\r\n You can no longer transfer once the availability period has passed.<br>\r\n<h3 class=\"subheading\"> Transfer Amount</h3>\r\n The amount of possible transfers per request is limited.<br>\r\n Transferring one Veteran Umamusume reduces the amount by one transfer.<br>\r\n Once a request's remaining transfers reach 0, you will be unable to transfer to that trainer.<br>\r\n<h2 class=\"heading\"> Rewards</h2>\r\nYour rewards will differ depending on the contents and rank of the request.<br>\r\n ■ Main Rewards<br>\r\n • Trainee Umamusume Star Pieces<br>\r\n • Monies<br>\r\n • Support Points<br>\r\n Note: When the reward is a Trainee Umamusume's Star Pieces, you will receive Star Pieces corresponding to the transferred Veteran Umamusume.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Transfer Requests, please refer to Transfer Requests under Umamusume in Help.<br>\r\n 2. Rewards are added directly to your totals.<br>\r\n 3. Rewards will not include Star Pieces for different outfit versions of the transferred Veteran Umamusume.<br>\r\n 4. The option to select all transfer requests will be changed to Off if the request list is updated due to time elapsing.<br>\r\n 5. The availability period and contents of Transfer Requests are subject to change without warning.",
+            "post_at": "2026-08-12 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Transfer Requests now available!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 966,
+      "page_url": "https://umamusume.com/news/966/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "efa0f544ee09811948ce4b4a4d30d608cdbe08c135c53c9c5eb22093fc6b7f33",
+          "raw": {
+            "announce_id": 966,
+            "announce_label": 1,
+            "image": "",
+            "message": " A new Spotlight Pretty Derby Scout and Spotlight Support Card Scout are set to begin at 10:00 p.m., Aug 18, 2026 (UTC)!<br>\r\n They will feature new Trainee Umamusume and new Support Cards.<br>\r\n<br>\r\n During the Spotlight period, if you obtain a spotlighted 3★ Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Aug 18 - 9:59 p.m., Aug 30, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30118_L1787004000.png?c=20260714005950\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Fanatic♡Jiangshi] Agnes Digital<br>\r\n ★★★ [Dot-o'-Lantern] Meisho Doto<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 1<br>\r\n ★★★ [Fanatic♡Jiangshi] Agnes Digital<br>\r\n Scout Bonus:<br>\r\n [Fanatic♡Jiangshi] Agnes Digital Star Piece × 90<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 2<br>\r\n ★★★ [Dot-o'-Lantern] Meisho Doto<br>\r\n Scout Bonus:<br>\r\n [Dot-o'-Lantern] Meisho Doto Star Piece × 90<br>\r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30119_L1787004000.png?c=20260714005950\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [Moonlit Devil ♪] Mejiro Palmer<br>\r\n • SSR [Sunlit Angel ♪] Daitaku Helios<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. The Spotlight Pretty Derby Scout and Spotlight Support Card Scout schedules and contents are subject to change without notice.<br>\r\n 2. When scouting a Spotlight 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>\r\n 3. Trainee Umamusume with the same name cannot be on the same team, nor can they be selected as Legacy Umamusume at the same time in Career mode.<br>",
+            "post_at": "2026-08-17 22:00:00",
+            "post_platform_flag": 62,
+            "title": "New Spotlight Pretty Derby and Spotlight Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 972,
+      "page_url": "https://umamusume.com/news/972/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "dab4abe1f19911c8bd67d8d6ea24db410e9ba398833bf5a7db3ff2daf8452c3f",
+          "raw": {
+            "announce_id": 972,
+            "announce_label": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30100033_L1786744800.png?c=20260615020926",
+            "message": " The story event \"Days Flying By\" is set to begin at 10:00 p.m., Aug 18, 2026 (UTC)!<br>\r\n In this story event, you can complete Careers to collect Event Points, which will earn you a variety of rewards, including copies of an event-exclusive SSR Support Card. As you progress through the event, you will also unlock episodes to an exclusive story to enjoy.<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Aug 18 - 9:59 p.m., Aug 30, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on story events, please refer to the notice that will be posted when the event begins, or tap the Help icon on the top-right of the event's home screen.<br>\r\n 2. The event schedule and contents are subject to change without notice.",
+            "post_at": "2026-08-14 22:00:00",
+            "post_platform_flag": 16,
+            "title": "The story event \"Days Flying By\" is coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 979,
+      "page_url": "https://umamusume.com/news/979/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "a1e1b882e6ac08c58e135274afd45d2a58fc0a6366035d96dc624576064afa7f",
+          "raw": {
+            "announce_id": 979,
+            "announce_label": 3,
+            "image": "",
+            "message": "<h2 class=\"heading\"> New Trainee Umamusume and Support Cards!</h2>\r\n Starting 10:00 p.m., Aug 18, 2026 (UTC), we'll be holding a new Spotlight Pretty Derby Scout and Spotlight Support Card Scout, featuring brand-new Trainee Umamusume and Support Cards!<br>\r\n<br>\r\n<h3 class=\"subheading\">New Trainee Umamusume</h3>\r\n The Spotlight Pretty Derby Scout will feature two new 3★ Trainees: [Fanatic♡Jiangshi] Agnes Digital and [Dot-o'-Lantern] Meisho Doto!<br>\r\n<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/3_AgnesDigital_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/3_MeishoDotou_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<br>\r\n<h3 class=\"subheading\"> New Support Cards</h3>\r\n The Spotlight Support Card Scout will feature the following new Support Cards!<br>\r\n<br>\r\n<br>\r\n<strong> ■ SSR [Moonlit Devil ♪] Mejiro Palmer</strong><br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/SSR_mejiropalmer_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<br>\r\n<strong> ■ SSR [Sunlit Angel ♪] Daitaku Helios</strong><br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/SSR_daitakuhelios_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> New Story Event: \"Days Flying By\"!</h2>\r\n Our next story event, titled \"Days Flying By,\" will be kicking off at 10:00 p.m., Aug 18, 2026 (UTC)!<br>\r\n<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/storyevent_logo_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<br>\r\n This event revolves around the Solefall Faire, Tracen Academy's culture festival!<br>\r\n Look forward to seeing your favorite Umamusume participate in and enjoy various activities alongside their fans in this huge event!<br>\r\n<br>\r\n<br>\r\n<h3 class=\"subheading\"> Story Event Availability Period</h3>\r\n 10:00 p.m., Aug 18 - 9:59 p.m., Aug 30, 2026 (UTC)<br>\r\n<br>\r\n<br>\r\n<h3 class=\"subheading\"> Event-Exclusive Support Card</h3>\r\n In the story event \"Days Flying By,\" you can earn copies of an exclusive Support Card!<br>\r\n Don't forget to take part and claim this Support Card while it's available!<br>\r\n The Support Card available from this event is as follows.<br>\r\n<br>\r\n<br>\r\n ■ Event-Exclusive SSR Support Card: [Onwards, Demon Queen Lackeys!] Shinko Windy<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/SSR_shinkowindy_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n<br>\r\n We'll be bringing you more updates on the new story event in the days to come, so don't miss it!<br>\r\n<br>\r\n<h2 class=\"heading\"> New Champions Meeting: Libra Cup Information!</h2>\r\n Our next Champions Meeting event is fast approaching, and this time it's the Libra Cup!<br>\r\n Here are the race conditions to prepare for:<br>\r\n Hanshin / Turf / 1,600m (Mile) / Right-Handed / Outer / Fall / Cloudy / Firm<br>\r\n<br>\r\n League selection will begin at 10:00 p.m. on Aug 25, 2026 (UTC), and the main event kicks off at 10:00 p.m. on Aug 28, 2026 (UTC). Don't miss it!<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/championsmeeting_logo_L1787004000.png?c=20260812044847\"></figure></figure><br>\r\n<br>\r\n<br>\r\n For more details, please refer to the notice that will be posted at the time of the event, or the Champions Meeting section in the in-game Help.<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> New Team Ranks for Team Trials!</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/teamrank_banner_L1787004000.png?c=20260812044847\"></figure><br>\r\n New Team Ranks are scheduled to be added to Team Trials from around 8:00 a.m., Aug 18, 2026 (UTC)!<br>\r\n Trainers will now be able to increase their team's rank above SS.<br>\r\n<br>\r\n You can earn rewards every time your Team Rank increases.<br>\r\n Be sure to train strong Umamusume and raise your team's rank even further!<br>\r\n<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/teamrank_screenshot_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n Look out for more details in a future announcement!<br>\r\n<br>\r\n<br>\r\n Furthermore, a \"Let's Go! Uma Outing!\" event, which lets you raise your trainees' Bond Level, is scheduled to kick off in September!<br>\r\n<br>\r\n Look out for more details in a future announcement!<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> New Transfer Request Information!</h2>\r\n From 10:00 p.m., Sep 1, 2026 (UTC), a Transfer Request event is set to begin!<br>\r\n Transfer Veteran Umamusume that meet each trainer's conditions to receive rewards including Support Points, monies, and Trainee Umamusume Star Pieces!<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/TokubetsuIseki_L1787004000.png?c=20260812044847\"></figure><br>\r\n<br>\r\n For more details, please refer to the notice that will be posted when the Transfer Request event begins, or the Transfer Request entry in Help.<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Fall G1 Celebration Part 1 Is Here!</h2>\r\n To celebrate the fall G1 race season, we're sending a gift of monies to all our trainers!<br>\r\n There are special missions available too, so don't forget to take them on!<br>\r\n<br>\r\n Furthermore, an event that gives Star Pieces from Career Rewards is also coming soon!<br>\r\n<br>\r\n<br>\r\n Please note that the updates listed above are subject to change without notice.<br>",
+            "post_at": "2026-08-17 22:00:00",
+            "post_platform_flag": 62,
+            "title": "Check out all the latest updates!",
             "update_at": null
           }
         }
@@ -2769,6 +3105,27 @@
             "post_at": "2026-08-06 04:45:00",
             "post_platform_flag": 62,
             "title": "Regarding the Three Cheers for Trainer! August Giveaway Gift Contents",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 100100,
+      "page_url": "https://umamusume.com/news/100100/",
+      "first_seen_at": "2026-08-18T01:54:54.563599369+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-18T01:54:54.563599369+00:00",
+          "content_hash": "11fa65b57095fce8de502604c2e1bfb4190af4d352588d03a82016f44e4815b8",
+          "raw": {
+            "announce_id": 100100,
+            "announce_label": 1,
+            "image": "",
+            "message": " We have confirmed the following issue that affected Independent Training for certain Trainee Umamusume.<br>\r\n<br>\r\n ■ Issue Details<br>\r\n During Independent Training, certain Career events that take place after entering a race did not trigger properly.<br>\r\n<br>\r\n ■ Affected Period<br>\r\n 8:00 a.m., Jul 22–9:16 a.m., Aug 13, 2026 (UTC)<br>\r\n<br>\r\n This issue has now been resolved.<br>\r\n<br>\r\n As an apology for the inconvenience, we plan to distribute items to affected trainers.<br>\r\n This notice will be updated once more details are available.<br>\r\n<br>\r\n We sincerely apologize to all trainers who faced inconveniences due to this issue.<br>",
+            "post_at": "2026-08-13 10:00:00",
+            "post_platform_flag": 62,
+            "title": "Issue with Independent Training",
             "update_at": null
           }
         }
