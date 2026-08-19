@@ -638,7 +638,14 @@ pub fn generate(
 
     let mut rewards = load_master_rewards(connection, jp_connection, timeline)?;
     rewards.extend(global_rewards);
-    rewards.extend(jp_news_rewards);
+    // Keep every JP post in the comparison archive, but only place rewards on
+    // the Global planner when a timeline event supplies a defensible date.
+    rewards.extend(
+        jp_news_rewards
+            .iter()
+            .filter(|reward| is_projectable_jp_news_reward(reward))
+            .cloned(),
+    );
     remove_global_news_login_bonuses_covered_by_master(&mut rewards);
     prefer_global_news_over_jp_news(&mut rewards);
     project_missing_story_rewards(timeline, &mut rewards);
@@ -6472,6 +6479,14 @@ fn planner_timestamp(value: &str) -> Option<i64> {
         })
 }
 
+fn is_projectable_jp_news_reward(reward: &PlannerReward) -> bool {
+    let evidence = reward.evidence.as_deref().unwrap_or_default();
+    let text = format!("{} {evidence}", reward.label);
+    let lower = text.to_ascii_lowercase();
+    let is_broadcast_gift = text.contains("ぱかライブ") || lower.contains("paka live");
+    (reward.event_id.is_some() || reward.gacha_id.is_some()) && !is_broadcast_gift
+}
+
 fn load_news_rewards(archive: &Archive, timeline: &Value) -> Vec<PlannerReward> {
     let mut rewards = Vec::new();
     for post in &archive.news {
@@ -7292,12 +7307,13 @@ mod tests {
         extract_login_bonus_total, extract_month_day_time, extract_news_free_pull_claims,
         extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
         has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
-        jewel_amounts_from_line, load_archive, load_competitive_reward_metadata,
-        load_competitive_variants, load_competitive_variants_for, load_daily_pack_rules,
-        load_event_exchange_rewards, load_factor_research_rewards_for, load_gachas,
-        load_general_event_mission_items, load_global_news_rewards, load_global_social_rewards,
-        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
-        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
+        is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
+        load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
+        load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
+        load_gachas, load_general_event_mission_items, load_global_news_rewards,
+        load_global_social_rewards, load_mission_campaign_rewards,
+        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
+        load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
@@ -9271,6 +9287,42 @@ mod tests {
             }
         ]});
         assert!(match_news_event(&post, "Anniversary Campaign", &timeline).is_none());
+    }
+
+    #[test]
+    fn dated_planner_only_projects_linked_non_broadcast_jp_news_rewards() {
+        let reward = |id: &str, label: &str, event_id: Option<&str>| PlannerReward {
+            id: id.to_string(),
+            label: label.to_string(),
+            event_id: event_id.map(str::to_string),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(300),
+            available_at: "2026-07-29T15:20:00Z".to_string(),
+            provenance: "jp_news",
+            assumption: "jp_reward_parity",
+            default_enabled: false,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact_source_text",
+            evidence: None,
+        };
+
+        assert!(!is_projectable_jp_news_reward(&reward(
+            "news-3377",
+            "■「ぱかライブTV」放送記念プレゼント！",
+            None,
+        )));
+        assert!(!is_projectable_jp_news_reward(&reward(
+            "news-3377-linked",
+            "Paka Live TV broadcast gift",
+            Some("campaign-3377"),
+        )));
+        assert!(is_projectable_jp_news_reward(&reward(
+            "news-887-login",
+            "1.5th Anniversary login bonus",
+            Some("campaign-217"),
+        )));
     }
 
     #[test]
