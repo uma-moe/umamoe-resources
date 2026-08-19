@@ -4828,7 +4828,9 @@ mod tests {
         for campaign in
             load_timeline_campaigns(&connection).expect("campaign timeline data should parse")
         {
-            assert_webp_reference(&campaign.image);
+            if !campaign.image.is_empty() {
+                assert_webp_reference(&campaign.image);
+            }
         }
     }
 

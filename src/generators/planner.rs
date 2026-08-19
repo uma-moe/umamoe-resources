@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 29;
+const ALGORITHM_VERSION: u8 = 30;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -648,6 +648,7 @@ pub fn generate(
     );
     remove_global_news_login_bonuses_covered_by_master(&mut rewards);
     prefer_global_news_over_jp_news(&mut rewards);
+    remove_projected_login_bonus_duplicates(&mut rewards);
     project_missing_story_rewards(timeline, &mut rewards);
     project_missing_scenario_rewards(timeline, &mut rewards);
     project_missing_event_exchange_rewards(
@@ -2887,6 +2888,16 @@ fn load_master_rewards(
             "jp_reward_parity_full_exchange",
             "projected_parity",
         )?;
+        load_login_bonus_rewards_for(
+            jp_connection,
+            timeline,
+            &mut rewards,
+            Some("jp_release_date"),
+            "jp_master",
+            "all_login_days_jp_parity",
+            false,
+            "projected_parity",
+        )?;
         load_event_exchange_rewards(
             jp_connection,
             timeline,
@@ -2910,7 +2921,16 @@ fn load_master_rewards(
     if jp_connection.is_none() {
         load_master_reward_catalog(timeline, &mut rewards)?;
     }
-    load_login_bonus_rewards(connection, &mut rewards)?;
+    load_login_bonus_rewards_for(
+        connection,
+        timeline,
+        &mut rewards,
+        None,
+        "global_master",
+        "all_login_days",
+        true,
+        "exact_source",
+    )?;
     load_competitive_reward_metadata(connection, timeline, &mut rewards)?;
     Ok(rewards)
 }
@@ -2980,22 +3000,27 @@ fn append_master_reward_catalog_rows(
             continue;
         }
 
-        let available_at = row
-            .event_id
-            .as_ref()
-            .and_then(|event_id| timeline_dates.get(event_id))
-            .map(|(_, start, end)| {
-                if row
-                    .label
-                    .starts_with("Training scenario evaluation rewards")
-                    || row.label.starts_with("Temporary trainee stories:")
-                {
-                    start.clone()
-                } else {
-                    end.clone()
-                }
-            })
-            .unwrap_or(row.available_at);
+        let available_at = if row.assumption == "all_login_days_jp_parity" {
+            // Login rewards become usable after the final required login day,
+            // not at the much later campaign claim deadline.
+            row.available_at.clone()
+        } else {
+            row.event_id
+                .as_ref()
+                .and_then(|event_id| timeline_dates.get(event_id))
+                .map(|(_, start, end)| {
+                    if row
+                        .label
+                        .starts_with("Training scenario evaluation rewards")
+                        || row.label.starts_with("Temporary trainee stories:")
+                    {
+                        start.clone()
+                    } else {
+                        end.clone()
+                    }
+                })
+                .unwrap_or_else(|| row.available_at.clone())
+        };
         let evidence = Some(match row.evidence {
             Some(evidence) => format!("{evidence}. {catalog_evidence}"),
             None => catalog_evidence.clone(),
@@ -3057,6 +3082,7 @@ fn catalog_assumption(value: &str) -> Result<&'static str> {
     match value {
         "all_first_clears" => Ok("all_first_clears"),
         "all_first_clears_high_difficulty" => Ok("all_first_clears_high_difficulty"),
+        "all_login_days_jp_parity" => Ok("all_login_days_jp_parity"),
         "all_limited_shop_exchanges" => Ok("all_limited_shop_exchanges"),
         "all_reward_boxes" => Ok("all_reward_boxes"),
         "all_story_episodes_viewed" => Ok("all_story_episodes_viewed"),
@@ -5459,15 +5485,27 @@ fn sqlite_column_exists(connection: &Connection, table: &str, column: &str) -> R
     Ok(false)
 }
 
-fn load_login_bonus_rewards(
+#[allow(clippy::too_many_arguments)]
+fn load_login_bonus_rewards_for(
     connection: &Connection,
+    timeline: &Value,
     rewards: &mut Vec<PlannerReward>,
+    timeline_date_field: Option<&str>,
+    provenance: &'static str,
+    assumption: &'static str,
+    default_enabled: bool,
+    confidence: &'static str,
 ) -> Result<()> {
     let mut statement = connection.prepare(
         r#"
-        SELECT bonus.id, bonus.start_date, bonus.end_date,
+        SELECT bonus.id, bonus.start_date, days.max_count,
                rewards.item_category, rewards.item_id, SUM(rewards.item_num)
         FROM login_bonus_data AS bonus
+        JOIN (
+            SELECT login_bonus_id, MAX(count) AS max_count
+            FROM login_bonus_detail
+            GROUP BY login_bonus_id
+        ) AS days ON days.login_bonus_id = bonus.id
         JOIN (
             SELECT login_bonus_id, item_category, item_id, item_num FROM login_bonus_detail
             UNION ALL SELECT login_bonus_id, item_category_2, item_id_2, item_num_2 FROM login_bonus_detail
@@ -5477,7 +5515,7 @@ fn load_login_bonus_rewards(
         ) AS rewards ON rewards.login_bonus_id = bonus.id
         WHERE bonus.type = 3
           AND rewards.item_category > 0 AND rewards.item_id > 0 AND rewards.item_num > 0
-        GROUP BY bonus.id, bonus.start_date, bonus.end_date, rewards.item_category, rewards.item_id
+        GROUP BY bonus.id, bonus.start_date, days.max_count, rewards.item_category, rewards.item_id
         ORDER BY bonus.id, rewards.item_category, rewards.item_id
         "#,
     )?;
@@ -5485,7 +5523,7 @@ fn load_login_bonus_rewards(
         Ok((
             row.get::<_, i64>(0)?,
             row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
+            row.get::<_, i64>(2)?,
             PlannerSourceItem {
                 item_category: row.get(3)?,
                 item_id: row.get(4)?,
@@ -5498,30 +5536,131 @@ fn load_login_bonus_rewards(
             },
         ))
     })?;
-    let mut groups: BTreeMap<i64, (String, String, Vec<PlannerSourceItem>)> = BTreeMap::new();
+    let mut groups: BTreeMap<i64, (String, i64, Vec<PlannerSourceItem>)> = BTreeMap::new();
     for row in rows {
-        let (login_id, start, end, item) = row?;
+        let (login_id, start, login_days, item) = row?;
         groups
             .entry(login_id)
-            .or_insert_with(|| (start, end, Vec::new()))
+            .or_insert_with(|| (start, login_days, Vec::new()))
             .2
             .push(item);
     }
-    for (login_id, (_start, end, items)) in groups {
+    let campaign_links = timeline_campaign_reward_links(
+        timeline,
+        timeline_date_field.unwrap_or("global_release_date"),
+    );
+    for (login_id, (start, login_days, items)) in groups {
+        let start_timestamp = planner_timestamp(&master_date_to_rfc3339(&start)?)
+            .with_context(|| format!("invalid login bonus start date {start}"))?;
+        let source_start = if timeline_date_field == Some("jp_release_date") {
+            // JP master dates are stored as JST wall-clock timestamps.
+            start_timestamp - 9 * 60 * 60
+        } else {
+            start_timestamp
+        };
+        let source_available = source_start + login_days.saturating_sub(1) * 86_400;
+        let event_id = timeline_date_field
+            .and_then(|_| timeline_link_near_start(&campaign_links, source_start))
+            .map(|link| link.0.clone());
+        let available_at = timeline_date_field
+            .and_then(|_| project_jp_reward_timestamp(timeline, source_start, source_available))
+            .unwrap_or_else(|| timestamp_to_rfc3339(source_available));
+        let reward_start = rewards.len();
         push_structured_rewards(
             rewards,
-            &format!("login-bonus-{login_id}"),
-            "Limited login bonus",
-            None,
-            &master_date_to_rfc3339(&end)?,
-            "global_master",
-            "all_login_days",
-            true,
+            &format!("{provenance}-login-bonus-{login_id}"),
+            if provenance == "global_master" {
+                "Limited login bonus"
+            } else {
+                "Limited login bonus (projected JP parity)"
+            },
+            event_id,
+            &available_at,
+            provenance,
+            assumption,
+            default_enabled,
             items,
-            None,
+            Some(format!(
+                "Exact login_bonus_data/login_bonus_detail rows for {login_days} login days"
+            )),
         );
+        for reward in &mut rewards[reward_start..] {
+            reward.confidence = confidence;
+        }
     }
     Ok(())
+}
+
+fn timeline_campaign_reward_links(
+    timeline: &Value,
+    date_field: &str,
+) -> BTreeMap<i64, (String, String)> {
+    let events = timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut links = BTreeMap::new();
+    for wanted_type in ["scenario_release", "campaign"] {
+        for event in events {
+            let event_type = event.get("type").and_then(Value::as_str);
+            let title = event
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_ascii_lowercase();
+            if event_type != Some(wanted_type)
+                || (wanted_type == "campaign"
+                    && !title.contains("anniversary")
+                    && !title.contains("scenario"))
+            {
+                continue;
+            }
+            let Some(timestamp) = event
+                .get(date_field)
+                .and_then(Value::as_str)
+                .and_then(|date| DateTime::parse_from_rfc3339(date).ok())
+                .map(|date| date.timestamp())
+            else {
+                continue;
+            };
+            let (Some(event_id), Some(global_date)) = (
+                event.get("id").and_then(Value::as_str),
+                event.get("global_release_date").and_then(Value::as_str),
+            ) else {
+                continue;
+            };
+            // Anniversary campaign rows share some start dates with scenario
+            // releases. Prefer the campaign so its login reward is grouped
+            // with the matching campaign phase.
+            links.insert(timestamp, (event_id.to_string(), global_date.to_string()));
+        }
+    }
+    links
+}
+
+fn project_jp_reward_timestamp(
+    timeline: &Value,
+    source_start: i64,
+    source_available: i64,
+) -> Option<String> {
+    let (jp_anchor, global_anchor) = timeline
+        .get("events")
+        .and_then(Value::as_array)?
+        .iter()
+        .filter_map(|event| {
+            let jp = DateTime::parse_from_rfc3339(event.get("jp_release_date")?.as_str()?)
+                .ok()?
+                .timestamp();
+            let global = DateTime::parse_from_rfc3339(event.get("global_release_date")?.as_str()?)
+                .ok()?
+                .timestamp();
+            Some((jp, global))
+        })
+        .min_by_key(|(jp, _)| (*jp - source_start).abs())?;
+    Some(timestamp_to_rfc3339(
+        global_anchor + (source_available - jp_anchor),
+    ))
 }
 
 fn load_global_news_rewards(
@@ -6087,6 +6226,80 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
     rewards.retain(|reward| !suppressed_ids.contains(&reward.id));
 }
 
+fn remove_projected_login_bonus_duplicates(rewards: &mut Vec<PlannerReward>) {
+    let is_projected_master = |reward: &PlannerReward| {
+        matches!(reward.provenance, "jp_master" | "jp_master_catalog")
+            && reward.assumption == "all_login_days_jp_parity"
+            && reward.amount.is_some_and(|amount| amount > 0)
+    };
+    let is_exact_global = |reward: &PlannerReward| {
+        matches!(reward.provenance, "global_master" | "global_news")
+            && (reward.assumption.contains("login") || reward.id.contains("login-bonus"))
+            && reward.amount.is_some_and(|amount| amount > 0)
+    };
+    let mut suppressed_ids = BTreeSet::new();
+    let mut used_exact_ids = BTreeSet::new();
+
+    for projected in rewards.iter().filter(|reward| is_projected_master(reward)) {
+        let (Some(amount), Some(timestamp)) =
+            (projected.amount, planner_timestamp(&projected.available_at))
+        else {
+            continue;
+        };
+        if let Some(exact) = rewards
+            .iter()
+            .filter(|reward| is_exact_global(reward))
+            .filter(|reward| !used_exact_ids.contains(&reward.id))
+            .filter(|reward| reward.currency == projected.currency && reward.amount == Some(amount))
+            .filter(|reward| {
+                planner_timestamp(&reward.available_at)
+                    .is_some_and(|candidate| (candidate - timestamp).abs() <= 45 * 86_400)
+            })
+            .min_by_key(|reward| {
+                planner_timestamp(&reward.available_at)
+                    .map(|candidate| (candidate - timestamp).abs())
+                    .unwrap_or(i64::MAX)
+            })
+        {
+            used_exact_ids.insert(exact.id.clone());
+            suppressed_ids.insert(projected.id.clone());
+        }
+    }
+
+    let mut used_projected_ids = BTreeSet::new();
+    for news in rewards.iter().filter(|reward| {
+        reward.provenance == "jp_news"
+            && reward.assumption == "all_login_days_jp_parity"
+            && reward.amount.is_some_and(|amount| amount > 0)
+    }) {
+        let (Some(amount), Some(timestamp)) = (news.amount, planner_timestamp(&news.available_at))
+        else {
+            continue;
+        };
+        if let Some(projected) = rewards
+            .iter()
+            .filter(|reward| is_projected_master(reward))
+            .filter(|reward| !suppressed_ids.contains(&reward.id))
+            .filter(|reward| !used_projected_ids.contains(&reward.id))
+            .filter(|reward| reward.currency == news.currency && reward.amount == Some(amount))
+            .filter(|reward| {
+                planner_timestamp(&reward.available_at)
+                    .is_some_and(|candidate| (candidate - timestamp).abs() <= 45 * 86_400)
+            })
+            .min_by_key(|reward| {
+                planner_timestamp(&reward.available_at)
+                    .map(|candidate| (candidate - timestamp).abs())
+                    .unwrap_or(i64::MAX)
+            })
+        {
+            used_projected_ids.insert(projected.id.clone());
+            suppressed_ids.insert(news.id.clone());
+        }
+    }
+
+    rewards.retain(|reward| !suppressed_ids.contains(&reward.id));
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 struct GlobalSocialDeduplication {
     reward_items_removed: usize,
@@ -6638,7 +6851,9 @@ fn prefer_detailed_gift_sections(rewards: &mut Vec<PlannerReward>, post_reward_s
 fn is_detailed_gift_label(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     value.contains("プレゼントの詳細")
+        || value.contains("プレゼントの内容")
         || lower.contains("gift details")
+        || lower.contains("gift contents")
         || lower.contains("details of the gift")
 }
 
@@ -7152,7 +7367,7 @@ fn deduplicate_rewards(rewards: &mut Vec<PlannerReward>) {
             "global_master" => 0,
             "global_news" => 1,
             "global_social" => 2,
-            "jp_master_snapshot" | "jp_master_catalog" => 3,
+            "jp_master" | "jp_master_snapshot" | "jp_master_catalog" => 3,
             "jp_news" | "jp_fallback" => 4,
             _ => 4,
         };
@@ -7311,17 +7526,18 @@ mod tests {
         load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
         load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
         load_gachas, load_general_event_mission_items, load_global_news_rewards,
-        load_global_social_rewards, load_mission_campaign_rewards,
+        load_global_social_rewards, load_login_bonus_rewards_for, load_mission_campaign_rewards,
         load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
         load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
-        planner_reward_event_ids, remove_global_social_rewards_covered_by_news, reward_sections,
-        seed_timeline_gacha_fallbacks, timeline_gacha_links, timeline_link_near_start, Archive,
-        ArchiveNews, GachaAccumulator, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
-        GlobalSocialArchive, GlobalSocialPost, GlobalSocialSnapshot, NewsFreePullCampaignClaim,
-        PlannerFreePullAllocation, PlannerGacha, PlannerGachaShard, PlannerReward,
-        PlannerRewardCatalogRow, PlannerSourceItem, TimelineLink,
+        planner_reward_event_ids, prefer_detailed_gift_sections,
+        remove_global_social_rewards_covered_by_news, remove_projected_login_bonus_duplicates,
+        reward_sections, seed_timeline_gacha_fallbacks, timeline_gacha_links,
+        timeline_link_near_start, Archive, ArchiveNews, GachaAccumulator, GlobalNewsArchive,
+        GlobalNewsPost, GlobalNewsSnapshot, GlobalSocialArchive, GlobalSocialPost,
+        GlobalSocialSnapshot, NewsFreePullCampaignClaim, PlannerFreePullAllocation, PlannerGacha,
+        PlannerGachaShard, PlannerReward, PlannerRewardCatalogRow, PlannerSourceItem, TimelineLink,
         TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
     };
     use chrono::NaiveDate;
@@ -7406,6 +7622,130 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("bundled JP master catalogue"));
+    }
+
+    #[test]
+    fn jp_master_login_bonus_uses_exact_items_and_projected_final_login_day() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE login_bonus_data (
+                    id INTEGER PRIMARY KEY,
+                    type INTEGER,
+                    start_date TEXT,
+                    end_date TEXT
+                );
+                CREATE TABLE login_bonus_detail (
+                    id INTEGER PRIMARY KEY,
+                    login_bonus_id INTEGER,
+                    count INTEGER,
+                    item_category INTEGER, item_id INTEGER, item_num INTEGER,
+                    item_category_2 INTEGER, item_id_2 INTEGER, item_num_2 INTEGER,
+                    item_category_3 INTEGER, item_id_3 INTEGER, item_num_3 INTEGER,
+                    item_category_4 INTEGER, item_id_4 INTEGER, item_num_4 INTEGER,
+                    item_category_5 INTEGER, item_id_5 INTEGER, item_num_5 INTEGER
+                );
+                INSERT INTO login_bonus_data VALUES
+                    (30238, 3, '2026/02/24 12:00:00', '2026/03/31 04:59:59');
+                INSERT INTO login_bonus_detail VALUES
+                    (1, 30238, 1, 90, 43, 300, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                    (2, 30238, 2, 90, 43, 300, 40, 41, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                "#,
+            )
+            .unwrap();
+        let timeline = json!({"events": [{
+            "id": "campaign-1007",
+            "type": "campaign",
+            "title": "5th Anniversary Campaign Vol. 2",
+            "jp_release_date": "2026-02-24T03:00:00Z",
+            "global_release_date": "2029-02-08T22:00:00Z",
+            "estimated_end_date": "2029-03-10T22:00:00Z"
+        }]});
+        let mut rewards = Vec::new();
+
+        load_login_bonus_rewards_for(
+            &connection,
+            &timeline,
+            &mut rewards,
+            Some("jp_release_date"),
+            "jp_master",
+            "all_login_days_jp_parity",
+            false,
+            "projected_parity",
+        )
+        .unwrap();
+
+        let jewels = rewards
+            .iter()
+            .find(|reward| reward.currency == "free_jewels")
+            .unwrap();
+        assert_eq!(jewels.amount, Some(600));
+        assert_eq!(jewels.event_id.as_deref(), Some("campaign-1007"));
+        assert_eq!(jewels.available_at, "2029-02-09T22:00:00+00:00");
+        assert!(!jewels.default_enabled);
+        assert_eq!(jewels.source_items[0].amount, 600);
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.currency == "uma_ticket" && reward.amount == Some(1)));
+    }
+
+    #[test]
+    fn master_backed_login_replaces_the_same_projected_news_login() {
+        let reward = |id: &str, provenance: &'static str, assumption: &'static str| PlannerReward {
+            id: id.to_string(),
+            label: "Limited login bonus".to_string(),
+            event_id: Some("campaign-1007".to_string()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(3000),
+            available_at: "2029-02-18T22:00:00Z".to_string(),
+            provenance,
+            assumption,
+            default_enabled: false,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact",
+            evidence: None,
+        };
+        let mut rewards = vec![
+            reward("jp-master-login", "jp_master", "all_login_days_jp_parity"),
+            reward("jp-news-login", "jp_news", "all_login_days_jp_parity"),
+        ];
+
+        remove_projected_login_bonus_duplicates(&mut rewards);
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].id, "jp-master-login");
+    }
+
+    #[test]
+    fn repeated_exact_gift_amount_in_one_news_post_is_counted_once() {
+        let reward = |id: &str, label: &str| PlannerReward {
+            id: id.to_string(),
+            label: label.to_string(),
+            event_id: Some("campaign-1007".to_string()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(3000),
+            available_at: "2029-02-08T22:00:00Z".to_string(),
+            provenance: "jp_news",
+            assumption: "jp_reward_parity",
+            default_enabled: false,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact_source_text",
+            evidence: None,
+        };
+        let mut rewards = vec![
+            reward("gift-details", "Gift contents"),
+            reward("gift-expiry", "Gift expiry"),
+        ];
+
+        prefer_detailed_gift_sections(&mut rewards, 0);
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].id, "gift-details");
     }
 
     #[test]

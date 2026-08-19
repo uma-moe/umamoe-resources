@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,6 +12,24 @@ SPEC.loader.exec_module(sync)
 
 
 class MergeExistingCatalogTests(unittest.TestCase):
+    def test_new_campaign_without_local_image_is_still_added_to_timeline(self) -> None:
+        group = {
+            "id": 1007,
+            "title": "5th Anniversary missions, Part 2",
+            "start_date": "2026/02/24 12:00:00",
+            "end_date": "2026/03/31 04:59:59",
+            "mission_count": 13,
+            "mission_fingerprint": "current-master",
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            row = sync.new_timeline_row(group, Path(directory))
+
+        self.assertEqual(row["campaign_id"], 1007)
+        self.assertEqual(row["image"], "")
+        self.assertEqual(row["jp_mission_event_id"], 1007)
+        self.assertEqual(row["start_date"], "2026-02-24T03:00:00")
+
     def test_unmatched_historical_row_keeps_structured_rewards(self) -> None:
         existing = [{
             "campaign_id": 100,
