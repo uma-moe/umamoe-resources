@@ -238,6 +238,42 @@
     "evidence": "Exact ticket stock and exchange limits from master data"
   },
   {
+    "id": "jp_master-login-bonus-30018-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-101",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2025-11-08T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30062
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30035-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-138",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2026-03-21T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30088
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
     "id": "jp_master-trainer-skills-test-4001-scores-free_jewels",
     "label": "Trainer Skills Test score rewards",
     "event_id": "trainer-skills-test-master-4001",
@@ -554,6 +590,24 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30047-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-218",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2026-09-13T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30121
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-230-1029-free_jewels",
@@ -1085,6 +1139,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30052-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-10-11T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-245-1078-free_jewels",
     "label": "Temporary trainee stories: Character 1078 chapters 1-4",
     "event_id": "support-banner-2022_30123",
@@ -1104,6 +1175,57 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30051-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2026-10-14T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30053-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-10-15T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30054-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-10-22T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-252-1049-free_jewels",
     "label": "Temporary trainee stories: Character 1049 chapters 1-4",
     "event_id": "support-banner-2022_30127",
@@ -1121,6 +1243,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30056-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-10-29T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1019",
@@ -1232,6 +1371,74 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30057-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-11-07T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30058-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-11-09T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30059-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-11-13T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30060-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-11-19T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-266-1047-free_jewels",
     "label": "Temporary trainee stories: Character 1047 chapters 1-4",
     "event_id": "support-banner-2022_30135",
@@ -1249,6 +1456,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30061-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-11-20T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1020",
@@ -1341,6 +1565,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30062-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-12-01T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-287-1099-free_jewels",
     "label": "Temporary trainee stories: Character 1099 chapters 1-4",
     "event_id": "support-banner-2023_30141",
@@ -1358,6 +1599,57 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30078-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2026-12-11T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30063-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-12-12T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30077-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 4200,
+    "available_at": "2026-12-12T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 4200,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-story-event-1021",
@@ -1467,6 +1759,40 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30064-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-12-18T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30065-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-12-23T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-270-1027-free_jewels",
@@ -1772,6 +2098,41 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30066-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2026-12-30T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30067-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-301",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-02T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-300-1043-free_jewels",
     "label": "Temporary trainee stories: Character 1043 chapters 1-4",
     "event_id": "support-banner-2023_30149",
@@ -1879,6 +2240,42 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30068-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-302",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-06T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30069-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-302",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-08T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-scenario-record-5-free_jewels",
@@ -2007,6 +2404,78 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30070-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-303",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-15T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30089-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-302",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2027-01-18T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30089-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-302",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2027-01-18T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30136
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30071-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-303",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-19T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-324-1085-free_jewels",
     "label": "Temporary trainee stories: Character 1085 chapters 1-4",
     "event_id": "support-banner-2023_30153",
@@ -2116,6 +2585,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30072-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-26T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-330-1083-free_jewels",
     "label": "Temporary trainee stories: Character 1083 chapters 1-4",
     "event_id": "support-banner-2023_30155",
@@ -2133,6 +2619,41 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30073-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-01-27T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30090-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-303",
+    "currency": "free_jewels",
+    "amount": 2250,
+    "available_at": "2027-02-02T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2250,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 15 login days"
   },
   {
     "id": "jp_master-factor-research-1001-free_jewels",
@@ -2253,6 +2774,23 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30092-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-02-10T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-338-1076-free_jewels",
     "label": "Temporary trainee stories: Character 1076 chapters 1-4",
     "event_id": "support-banner-2023_30159",
@@ -2362,6 +2900,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30093-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-02-14T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-339-1105-free_jewels",
     "label": "Temporary trainee stories: Character 1105 chapters 1-4",
     "event_id": "support-banner-2023_30161",
@@ -2379,6 +2934,57 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30094-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-02-18T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30095-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-02-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30096-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2027-02-25T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 150,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11003-support_ticket",
@@ -3839,6 +4445,60 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30107-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-373",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2027-05-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30107-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-373",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2027-05-24T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30162
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30108-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-374",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-05-27T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-trainer_skills_test-11004-support_ticket",
     "label": "Trainer Skills Test exchange rewards (projected JP parity)",
     "event_id": "news-event-trainer-skills-test-2023-08-31",
@@ -4590,6 +5250,40 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30109-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-06-13T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30110-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-06-16T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-story-event-1029",
     "label": "Story event rewards",
     "event_id": "story-event-09_patchworks_farewell_banner",
@@ -4680,6 +5374,40 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30124-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-06-20T05:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30111-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-06-23T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-491-1086-free_jewels",
     "label": "Temporary trainee stories: Character 1086 chapters 1-4",
     "event_id": "support-banner-2023_30199",
@@ -4697,6 +5425,40 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30123-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-02T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30113-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-03T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-factor-research-1003-free_jewels",
@@ -4822,6 +5584,40 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30114-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-07T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30122-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2027-07-09T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
     "id": "jp_master-story-event-1030",
     "label": "Story event rewards",
     "event_id": "story-event-10_as_the_leaves_rust_feelings_blossom_banner",
@@ -4912,6 +5708,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30115-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-11T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-499-1107-free_jewels",
     "label": "Temporary trainee stories: Character 1107 chapters 1-4",
     "event_id": "support-banner-2023_30205",
@@ -4929,6 +5742,74 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30116-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-17T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30117-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-22T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30118-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-25T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30119-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-07-30T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-501-1088-free_jewels",
@@ -5057,6 +5938,40 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30120-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-08-06T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30121-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-08-10T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-racing_carnival-20006-support_ticket",
@@ -5437,6 +6352,23 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30130-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 4200,
+    "available_at": "2027-08-22T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 4200,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-529-1091-free_jewels",
@@ -5858,6 +6790,42 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30141-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-632",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2027-09-29T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30141-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-632",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2027-09-29T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30186
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11005-support_ticket",
@@ -6369,6 +7337,24 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30142-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-633",
+    "currency": "free_jewels",
+    "amount": 2250,
+    "available_at": "2027-10-15T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2250,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 15 login days"
+  },
+  {
     "id": "jp_master-factor-research-1005-free_jewels",
     "label": "Agnes Tachyon's Factor Research box rewards",
     "event_id": "news-event-factor-research-2024-03-21",
@@ -6769,6 +7755,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30148-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2027-11-16T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-662-1082-free_jewels",
     "label": "Temporary trainee stories: Character 1082 chapters 1-4",
     "event_id": "umapyoi-gacha-30245",
@@ -7018,6 +8021,24 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30150-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-665",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2027-12-14T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-scenario-record-8-free_jewels",
@@ -7928,6 +8949,24 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30162-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-676",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2028-01-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-719-1116-free_jewels",
     "label": "Temporary trainee stories: Character 1116 chapters 1-4",
     "event_id": "support-banner-2024_30269",
@@ -7945,6 +8984,60 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30149-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-676",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2028-01-28T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30161-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-676",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2028-02-02T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30161-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-676",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2028-02-02T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30216
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-722-1110-free_jewels",
@@ -8631,6 +9724,24 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30163-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-738",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2028-03-10T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-scenario-record-9-free_jewels",
     "label": "Training scenario evaluation rewards",
     "event_id": "news-event-training-scenario-2024-10-29",
@@ -8761,6 +9872,24 @@
         "item_id": 41
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30164-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-738",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2028-03-13T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11007-support_ticket",
@@ -9539,6 +10668,23 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30170-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 4200,
+    "available_at": "2028-05-02T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 4200,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
     "id": "jp_master-story-event-1041",
     "label": "Story event rewards",
     "event_id": "story-event-12_the_painted_dragon_banner",
@@ -10031,6 +11177,42 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30181-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-809",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2028-06-09T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30181-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-809",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2028-06-09T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30243
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-801-1131-free_jewels",
     "label": "Temporary trainee stories: Character 1131 chapters 1-4",
     "event_id": "support-banner-2025_30319",
@@ -10048,6 +11230,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30183-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2028-06-16T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-803-1096-free_jewels",
@@ -10593,6 +11792,24 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30182-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-810",
+    "currency": "free_jewels",
+    "amount": 2250,
+    "available_at": "2028-06-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2250,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 15 login days"
+  },
+  {
     "id": "jp_master-masters-challenge-1004-free_jewels",
     "label": "Masters Challenge first-clear rewards",
     "event_id": "news-event-masters-challenge-2024-11-28",
@@ -10679,6 +11896,23 @@
         "item_id": 149
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30184-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-06-28T05:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1043",
@@ -10771,6 +12005,40 @@
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
   },
   {
+    "id": "jp_master-login-bonus-30185-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-06T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30186-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-08T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-847-1127-free_jewels",
     "label": "Temporary trainee stories: Character 1127 chapters 1-4",
     "event_id": "umapyoi-gacha-30329",
@@ -10790,6 +12058,57 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30187-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-10T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30188-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-20T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30189-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-23T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-859-1090-free_jewels",
     "label": "Temporary trainee stories: Character 1090 chapters 1-4",
     "event_id": "support-banner-2025_30337",
@@ -10807,6 +12126,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30190-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-07-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1044",
@@ -10916,6 +12252,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30191-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-01T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-factor-research-1012-free_jewels",
@@ -11041,6 +12394,40 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30192-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-07T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30193-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-10T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-867-1133-free_jewels",
     "label": "Temporary trainee stories: Character 1133 chapters 1-4",
     "event_id": "umapyoi-gacha-30347",
@@ -11058,6 +12445,23 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30194-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-17T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1045",
@@ -11148,6 +12552,42 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30195-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-868",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-20T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30197-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-868",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2028-08-24T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-scenario-record-11-free_jewels",
@@ -11280,6 +12720,24 @@
         "item_id": 41
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30196-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-868",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-08-26T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11009-support_ticket",
@@ -12112,6 +13570,42 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30208-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-865",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2028-10-12T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30208-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-865",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2028-10-12T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30266
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-907-1081-free_jewels",
     "label": "Temporary trainee stories: Character 1081 chapters 1-4",
     "event_id": "support-banner-2025_30369",
@@ -12363,6 +13857,57 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30210-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-11-01T05:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30211-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-11-07T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30212-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-11-10T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-story-event-1048",
     "label": "Story event rewards",
     "event_id": "story-event-master-1048",
@@ -12470,6 +14015,24 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30209-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-946",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2028-11-13T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-factor-research-1015-free_jewels",
@@ -12588,6 +14151,24 @@
         "item_id": 149
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30220-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-946",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2028-11-18T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-scenario-record-12-free_jewels",
@@ -12720,6 +14301,41 @@
         "item_id": 41
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30213-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-946",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-11-21T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30214-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-11-26T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11010-support_ticket",
@@ -13168,6 +14784,23 @@
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
   },
   {
+    "id": "jp_master-login-bonus-30215-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-12-04T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-factor-research-1016-free_jewels",
     "label": "Agnes Tachyon's Factor Research box rewards",
     "event_id": "news-event-factor-research-2025-11-10",
@@ -13286,6 +14919,40 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30216-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-12-11T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30217-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-12-14T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
+  },
+  {
     "id": "jp_master-masters-challenge-1006-free_jewels",
     "label": "Masters Challenge first-clear rewards",
     "event_id": "news-event-masters-challenge-2025-07-31",
@@ -13372,6 +15039,23 @@
         "item_id": 149
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30218-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-12-23T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-story-event-1049",
@@ -13462,6 +15146,23 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30219-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 300,
+    "available_at": "2028-12-25T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 300,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-temporary-character-stories-972-1135-free_jewels",
@@ -13599,6 +15300,23 @@
         "item_id": 149
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30227-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "currency": "free_jewels",
+    "amount": 4200,
+    "available_at": "2029-01-10T15:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 4200,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-story-event-1050",
@@ -14086,6 +15804,42 @@
       }
     ],
     "evidence": "First temporary unlock for this trainee; repeat anniversary unlocks excluded"
+  },
+  {
+    "id": "jp_master-login-bonus-30238-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-1007",
+    "currency": "free_jewels",
+    "amount": 3000,
+    "available_at": "2029-02-17T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3000,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
+  },
+  {
+    "id": "jp_master-login-bonus-30238-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "event_id": "campaign-1007",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2029-02-17T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2,
+        "item_category": 51,
+        "item_id": 30291
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 10 login days"
   },
   {
     "id": "jp_master-trainer_skills_test-11011-support_ticket",
@@ -14637,6 +16391,24 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30239-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-1008",
+    "currency": "free_jewels",
+    "amount": 2250,
+    "available_at": "2029-03-04T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 2250,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 15 login days"
+  },
+  {
     "id": "jp_master-masters-challenge-1007-free_jewels",
     "label": "Masters Challenge first-clear rewards",
     "event_id": "news-event-masters-challenge-2025-11-28",
@@ -14963,6 +16735,53 @@
     ]
   },
   {
+    "id": "jp_master-login-bonus-30240-items",
+    "label": "Limited login bonus (projected JP parity) item details",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2029-03-30T22:00:00+00:00",
+    "assumption": "qualitative_only",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 3,
+        "item_category": 20,
+        "item_id": 32
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 308
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 309
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 310
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 311
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 312
+      },
+      {
+        "amount": 1,
+        "item_category": 190,
+        "item_id": 313
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 6 login days"
+  },
+  {
     "id": "jp_master-temporary-character-stories-1079-1112-free_jewels",
     "label": "Temporary trainee stories: Character 1112 chapters 1-4",
     "event_id": "umapyoi-gacha-30439",
@@ -15285,6 +17104,24 @@
       }
     ],
     "evidence": "Exact point, mission, story, and finite bingo reward tables from master data"
+  },
+  {
+    "id": "jp_master-login-bonus-30241-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-1087",
+    "currency": "free_jewels",
+    "amount": 1500,
+    "available_at": "2029-05-06T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 1500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-factor-research-1022-free_jewels",
@@ -16171,6 +18008,24 @@
         "item_id": 149
       }
     ]
+  },
+  {
+    "id": "jp_master-login-bonus-30242-free_jewels",
+    "label": "Limited login bonus (projected JP parity)",
+    "event_id": "campaign-1114",
+    "currency": "free_jewels",
+    "amount": 500,
+    "available_at": "2029-06-04T22:00:00+00:00",
+    "assumption": "all_login_days_jp_parity",
+    "default_enabled": false,
+    "source_items": [
+      {
+        "amount": 500,
+        "item_category": 90,
+        "item_id": 43
+      }
+    ],
+    "evidence": "Exact login_bonus_data/login_bonus_detail rows for 1 login days"
   },
   {
     "id": "jp_master-masters-challenge-1009-free_jewels",

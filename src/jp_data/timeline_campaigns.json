@@ -1891,5 +1891,185 @@
     "jp_title": "GⅠ記念ミッション フェブラリーステークス",
     "mission_count": 5,
     "mission_fingerprint": "467b3ce934dc312ea48ee04e77c3ca14585a7d3892bbe187b986a4b98788b4ef"
+  },
+  {
+    "campaign_id": 1007,
+    "image": "",
+    "start_date": "2026-02-24T03:00:00",
+    "end_date": "2026-03-30T19:59:59",
+    "jp_mission_event_id": 1007,
+    "jp_title": "5th Anniversary 記念ミッション 第2弾",
+    "mission_count": 13,
+    "mission_fingerprint": "b3d85e396309cf8a373be0be35e8f0b2fc3785629cc80871da1ebc359aa3a7b8"
+  },
+  {
+    "campaign_id": 1008,
+    "image": "",
+    "start_date": "2026-03-11T03:00:00",
+    "end_date": "2026-03-30T19:59:59",
+    "jp_mission_event_id": 1008,
+    "jp_title": "5th Anniversary 記念ミッション 第3弾",
+    "mission_count": 13,
+    "mission_fingerprint": "4824da790262e4590f61839879f2ff42469254725cd7ae36a1498048ba0dad03"
+  },
+  {
+    "campaign_id": 1036,
+    "image": "",
+    "start_date": "2026-03-23T03:00:00",
+    "end_date": "2026-03-29T19:59:59",
+    "jp_mission_event_id": 1036,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 高松宮記念",
+    "mission_count": 5,
+    "mission_fingerprint": "913041d3fc17fd150ddc1abbb136ad34b29230e0064a3edc0cd7517f57b77b17"
+  },
+  {
+    "campaign_id": 1037,
+    "image": "",
+    "start_date": "2026-03-29T20:00:00",
+    "end_date": "2026-04-05T19:59:59",
+    "jp_mission_event_id": 1037,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 大阪杯",
+    "mission_count": 5,
+    "mission_fingerprint": "2ba36cf6a9011c77860366b9edecb82884da2ad71a7854b6e26b6b9daaa4f654"
+  },
+  {
+    "campaign_id": 1038,
+    "image": "",
+    "start_date": "2026-04-01T20:00:00",
+    "end_date": "2026-04-08T19:59:59",
+    "jp_mission_event_id": 1038,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 川崎記念",
+    "mission_count": 5,
+    "mission_fingerprint": "ec4c2b296a1da294e50b9ddebcf2e34ef6482d75dcd9b97ec2efbd2a157a8cbc"
+  },
+  {
+    "campaign_id": 1039,
+    "image": "",
+    "start_date": "2026-04-05T20:00:00",
+    "end_date": "2026-04-12T19:59:59",
+    "jp_mission_event_id": 1039,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 桜花賞",
+    "mission_count": 5,
+    "mission_fingerprint": "b35c6e38656af586304dfcd1796f02010aeab7fe60d315665a296609a0da0302"
+  },
+  {
+    "campaign_id": 1040,
+    "image": "",
+    "start_date": "2026-04-12T20:00:00",
+    "end_date": "2026-04-19T19:59:59",
+    "jp_mission_event_id": 1040,
+    "jp_title": "春のGⅠ記念ミッション 第1弾 皐月賞",
+    "mission_count": 5,
+    "mission_fingerprint": "424cd77f2b1c161d943d7eab6d71cb35d0db38d0d88c6fc22d92b6022abd5dbb"
+  },
+  {
+    "campaign_id": 1041,
+    "image": "",
+    "start_date": "2026-04-27T03:00:00",
+    "end_date": "2026-05-03T19:59:59",
+    "jp_mission_event_id": 1041,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 天皇賞（春）",
+    "mission_count": 6,
+    "mission_fingerprint": "de27d733b28004642852076f0be2e4c4f0a15d9f7ccfba34ffa76babf53eb2a0"
+  },
+  {
+    "campaign_id": 1042,
+    "image": "",
+    "start_date": "2026-04-28T20:00:00",
+    "end_date": "2026-05-05T19:59:59",
+    "jp_mission_event_id": 1042,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 かしわ記念",
+    "mission_count": 6,
+    "mission_fingerprint": "b91cc10bbb77603171b92d5f0b6000f8dbde66f9201d51b26f43fc4916357807"
+  },
+  {
+    "campaign_id": 1043,
+    "image": "",
+    "start_date": "2026-05-03T20:00:00",
+    "end_date": "2026-05-10T19:59:59",
+    "jp_mission_event_id": 1043,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 NHKマイルカップ",
+    "mission_count": 6,
+    "mission_fingerprint": "8eadd9acc370a022ece337f6c3898b46cc2b490193277cce326334d3cc1eab5a"
+  },
+  {
+    "campaign_id": 1044,
+    "image": "",
+    "start_date": "2026-05-10T20:00:00",
+    "end_date": "2026-05-17T19:59:59",
+    "jp_mission_event_id": 1044,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 ヴィクトリアマイル",
+    "mission_count": 6,
+    "mission_fingerprint": "4299d83eb628193fed4cc199710b53556c5d891206758f615637fef83a3fdb2a"
+  },
+  {
+    "campaign_id": 1045,
+    "image": "",
+    "start_date": "2026-05-17T20:00:00",
+    "end_date": "2026-05-24T19:59:59",
+    "jp_mission_event_id": 1045,
+    "jp_title": "春のGⅠ記念ミッション 第2弾 オークス",
+    "mission_count": 6,
+    "mission_fingerprint": "845de81e1d2487a287d28fb7ef87ffe49be7727684713e99a34e49163d75028f"
+  },
+  {
+    "campaign_id": 1046,
+    "image": "",
+    "start_date": "2026-05-25T03:00:00",
+    "end_date": "2026-05-31T19:59:59",
+    "jp_mission_event_id": 1046,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 日本ダービー",
+    "mission_count": 6,
+    "mission_fingerprint": "a7b5e6bc2c02ff86bf0698b94d29d527cc6daa585d7230ae9499aabf9039eead"
+  },
+  {
+    "campaign_id": 1047,
+    "image": "",
+    "start_date": "2026-05-31T20:00:00",
+    "end_date": "2026-06-07T19:59:59",
+    "jp_mission_event_id": 1047,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 安田記念",
+    "mission_count": 6,
+    "mission_fingerprint": "2108a1b37486cea5c789d3602ff6802412aaaac1ef25d098949584785e7a90b6"
+  },
+  {
+    "campaign_id": 1048,
+    "image": "",
+    "start_date": "2026-06-07T20:00:00",
+    "end_date": "2026-06-14T19:59:59",
+    "jp_mission_event_id": 1048,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 宝塚記念",
+    "mission_count": 6,
+    "mission_fingerprint": "0dd6996c30899e9a74564fe504054c74a18f119f7bb8e118e94e801092aef1d5"
+  },
+  {
+    "campaign_id": 1049,
+    "image": "",
+    "start_date": "2026-06-24T20:00:00",
+    "end_date": "2026-07-01T19:59:59",
+    "jp_mission_event_id": 1049,
+    "jp_title": "春のGⅠ記念ミッション 第3弾 帝王賞",
+    "mission_count": 6,
+    "mission_fingerprint": "54f1226bf4ca871b0fc3b7b3151f98b141b169ac579bcf86d75f7e08a25eabf0"
+  },
+  {
+    "campaign_id": 1087,
+    "image": "",
+    "start_date": "2026-06-29T03:00:00",
+    "end_date": "2026-07-29T19:59:59",
+    "jp_mission_event_id": 1087,
+    "jp_title": "新育成シナリオ公開記念ミッション",
+    "mission_count": 12,
+    "mission_fingerprint": "2a540b9b6a2d33b5849e622dac785bc8da6a56b63c4c20645b46ab16b1d218de"
+  },
+  {
+    "campaign_id": 1114,
+    "image": "",
+    "start_date": "2026-08-14T03:00:00",
+    "end_date": "2026-09-30T19:59:59",
+    "jp_mission_event_id": 1114,
+    "jp_title": "5.5th Anniversary 記念ミッション 第1弾",
+    "mission_count": 13,
+    "mission_fingerprint": "2aec3f3b1e4f5ed56f0f0d7cd64d2f0b7b37caf6861fe846e5630d6909e3a87b"
   }
 ]

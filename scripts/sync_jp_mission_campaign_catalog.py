@@ -249,6 +249,18 @@ def write_jp_campaign_webp(source: Path, target: Path) -> None:
     os.replace(temporary, target)
 
 
+def new_timeline_row(group: dict, image_root: Path) -> dict:
+    image = f"{group['id']}.png" if (image_root / f"{group['id']}.webp").is_file() else ""
+    row = {
+        "campaign_id": group["id"],
+        "image": image,
+        "start_date": utc_catalog_date(group["start_date"]),
+        "end_date": utc_catalog_date(group["end_date"]),
+    }
+    attach_group(row, group)
+    return row
+
+
 def main() -> int:
     args = parse_args()
     existing = json.loads(args.catalog.read_text(encoding="utf-8"))
@@ -291,16 +303,10 @@ def main() -> int:
     for group in groups.values():
         if group["id"] in mapped_group_ids:
             continue
-        if not (image_root / f"{group['id']}.webp").is_file():
-            continue
-        row = {
-            "campaign_id": group["id"],
-            "image": f"{group['id']}.png",
-            "start_date": utc_catalog_date(group["start_date"]),
-            "end_date": utc_catalog_date(group["end_date"]),
-        }
-        attach_group(row, group)
-        rows.append(row)
+        # Reward/timeline coverage must not depend on whether an optional local
+        # banner image has already been extracted. The timeline accepts an
+        # empty image and can still receive an official news overlay later.
+        rows.append(new_timeline_row(group, image_root))
 
     deduplicated = {}
     for row in rows:
