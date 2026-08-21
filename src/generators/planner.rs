@@ -5675,8 +5675,7 @@ fn load_global_news_rewards(
         };
         let Some(posted_at) = raw
             .get("post_at")
-            .and_then(Value::as_str)
-            .and_then(normalize_global_news_timestamp)
+            .and_then(normalize_global_news_timestamp_value)
         else {
             continue;
         };
@@ -5973,6 +5972,17 @@ fn normalize_global_news_timestamp(value: &str) -> Option<String> {
                 .ok()
                 .map(|date| date.and_utc().to_rfc3339())
         })
+}
+
+fn normalize_global_news_timestamp_value(value: &Value) -> Option<String> {
+    match value {
+        Value::String(value) => normalize_global_news_timestamp(value),
+        Value::Number(value) => value
+            .as_i64()
+            .and_then(|seconds| Utc.timestamp_opt(seconds, 0).single())
+            .map(|date| date.to_rfc3339()),
+        _ => None,
+    }
 }
 
 fn is_global_correction_notice(text: &str) -> bool {
@@ -7892,6 +7902,27 @@ mod tests {
         assert!(rewards
             .iter()
             .all(|reward| reward.default_enabled && reward.provenance == "global_news"));
+    }
+
+    #[test]
+    fn global_news_rewards_accept_umapyoi_epoch_timestamps() {
+        let mut post = global_post(
+            108,
+            "Official game launch!",
+            "To celebrate, we've sent a gift of 1,500 carats to all trainers!",
+        );
+        post.snapshots[0].raw["post_at"] = json!(1_750_897_800_i64);
+        let archive = GlobalNewsArchive { posts: vec![post] };
+
+        let rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(1500));
+        assert_eq!(rewards[0].available_at, "2025-06-26T00:30:00+00:00");
     }
 
     fn global_post(announce_id: i64, title: &str, message: &str) -> GlobalNewsPost {

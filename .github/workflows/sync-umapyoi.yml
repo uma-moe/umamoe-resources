@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       full:
-        description: Re-fetch every archived news post
+        description: Re-fetch every archived JP news post
         required: false
         type: boolean
         default: false
@@ -30,7 +30,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Synchronize news and gacha metadata
+      - name: Synchronize Umapyoi JP news and gacha metadata
         shell: bash
         run: |
           args=(--locked -- sync-umapyoi --request-interval-ms 1000)
@@ -39,18 +39,11 @@ jobs:
           fi
           cargo run "${args[@]}"
 
-      - name: Archive official Global news
+      - name: Archive Umapyoi English news
         shell: bash
-        env:
-          HTTPS_PROXY: ${{ secrets.PROXY_URL }}
-        run: |
-          if [[ -z "${HTTPS_PROXY:-}" ]]; then
-            echo "::error::The PROXY_URL Actions secret is required for the Global news sync."
-            exit 1
-          fi
-          cargo run --locked -- sync-global-news
+        run: cargo run --locked -- sync-global-news
 
-      - name: Archive official Global social posts
+      - name: Archive official English Twitter posts
         shell: bash
         run: cargo run --locked -- sync-global-social
 
