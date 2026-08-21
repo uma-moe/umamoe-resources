@@ -10,8 +10,9 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 const ARCHIVE_VERSION: u8 = 1;
-const PAGE_SIZE: usize = 100;
+const PAGE_SIZE: usize = 32;
 const MAX_PAGES: usize = 100;
+const REQUEST_INTERVAL: Duration = Duration::from_millis(150);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalNewsArchive {
@@ -119,44 +120,35 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
 
 async fn fetch_all_posts(client: &Client, endpoint: &str) -> Result<Vec<Value>> {
     let mut posts = Vec::new();
+    let endpoint = endpoint.trim_end_matches('/');
     for page in 0..MAX_PAGES {
         let offset = page * PAGE_SIZE;
-        let payload = post_json_with_retry(client, endpoint, offset).await?;
+        let page_url = format!("{endpoint}/latest/{PAGE_SIZE}/{offset}");
+        let payload = get_json_with_retry(client, &page_url).await?;
         let batch = payload
-            .get("information_list")
-            .and_then(Value::as_array)
-            .context("official EN news response is missing information_list")?;
+            .as_array()
+            .with_context(|| format!("Umapyoi EN news response from {page_url} is not an array"))?;
         let batch_len = batch.len();
         posts.extend(batch.iter().cloned());
-        // The production API has returned `show_more_button` as both a boolean
-        // and a numeric flag. Page fullness is the stable pagination signal;
-        // an extra empty request at an exact page boundary is harmless.
         if batch_len < PAGE_SIZE {
             return Ok(posts);
         }
+        sleep(REQUEST_INTERVAL).await;
     }
-    bail!("official EN news pagination exceeded {MAX_PAGES} pages")
+    bail!("Umapyoi EN news pagination exceeded {MAX_PAGES} pages")
 }
 
-async fn post_json_with_retry(client: &Client, endpoint: &str, offset: usize) -> Result<Value> {
+async fn get_json_with_retry(client: &Client, url: &str) -> Result<Value> {
     const MAX_ATTEMPTS: usize = 4;
     let mut delay = Duration::from_secs(2);
     for attempt in 1..=MAX_ATTEMPTS {
-        let response = client
-            .post(endpoint)
-            .json(&serde_json::json!({
-                "announce_label": 0,
-                "limit": PAGE_SIZE,
-                "offset": offset,
-            }))
-            .send()
-            .await;
+        let response = client.get(url).send().await;
         match response {
             Ok(response) if response.status().is_success() => {
                 return response
                     .json()
                     .await
-                    .with_context(|| format!("invalid JSON returned by {endpoint}"));
+                    .with_context(|| format!("invalid JSON returned by {url}"));
             }
             Ok(response)
                 if response.status() == StatusCode::TOO_MANY_REQUESTS
@@ -164,12 +156,12 @@ async fn post_json_with_retry(client: &Client, endpoint: &str, offset: usize) ->
             {
                 let status = response.status();
                 if attempt == MAX_ATTEMPTS {
-                    bail!("{endpoint} returned {status} after {attempt} attempts");
+                    bail!("{url} returned {status} after {attempt} attempts");
                 }
             }
-            Ok(response) => bail!("{endpoint} returned {}", response.status()),
+            Ok(response) => bail!("{url} returned {}", response.status()),
             Err(error) if attempt == MAX_ATTEMPTS => {
-                return Err(error).context(format!("request failed: {endpoint}"));
+                return Err(error).context(format!("request failed: {url}"));
             }
             Err(_) => {}
         }
