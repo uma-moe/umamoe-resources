@@ -14,7 +14,7 @@ const RECOVERED_CAMPAIGNS_PATH = path.join(
   'jp_data',
   'english_mission_campaign_assets.json'
 );
-const EN_NEWS_API = 'https://news.tnnlb.dev/api/ajax/pr_info_index?format=json';
+const EN_NEWS_API = 'https://umapyoi.net/api/v1/news/en';
 const EN_ASSET_ROOT =
   'https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header';
 const USER_AGENT = 'umamoe-resources-image-sync/2.0 (+https://uma.moe)';
@@ -267,16 +267,13 @@ function officialPostAssetUrls(post) {
 
 async function fetchOfficialEnglishNews() {
   const posts = [];
-  for (let offset = 0; offset < 5000; offset += 100) {
-    const response = await fetchWithRetry(EN_NEWS_API, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'user-agent': USER_AGENT },
-      body: JSON.stringify({ announce_label: 0, limit: 100, offset })
-    });
+  for (let offset = 0; offset < 5000; offset += 32) {
+    const response = await fetchWithRetry(`${EN_NEWS_API}/latest/32/${offset}`);
     const payload = await response.json();
-    if (!Array.isArray(payload.information_list)) throw new Error('invalid official EN news response');
-    posts.push(...payload.information_list);
-    if (!payload.information_list.length || !payload.show_more_button) break;
+    if (!Array.isArray(payload)) throw new Error('invalid Umapyoi EN news response');
+    posts.push(...payload);
+    if (payload.length < 32) break;
+    await sleep(150);
   }
   return posts;
 }

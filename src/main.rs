@@ -75,12 +75,9 @@ enum Command {
         #[arg(long)]
         offline: bool,
     },
-    /// Archive official English news posts for Global planner rewards.
+    /// Archive official English news posts from Umapyoi for Global planner rewards.
     SyncGlobalNews {
-        #[arg(
-            long,
-            default_value = "https://umamusume.com/api/ajax/pr_info_index?format=json"
-        )]
+        #[arg(long, default_value = "https://umapyoi.net/api/v1/news/en")]
         endpoint: String,
         #[arg(long, default_value = "src/global_data/official_news_archive.json")]
         out: PathBuf,
