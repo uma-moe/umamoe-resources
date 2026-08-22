@@ -3903,6 +3903,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2090982638802850232",
+      "status_url": "https://x.com/umamusume_eng/status/2090982638802850232",
+      "first_seen_at": "2026-08-22T07:04:04.009637860+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-22T07:04:04.009637860+00:00",
+          "content_hash": "fd5a683e993af5faea1f5f63ffa14ed6b40550cc69dfae725b5a16d634db4a88",
+          "raw": {
+            "created_at": "2026-08-22T02:01:24.326+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">The story event Days Flying By is now available!<br><br>Get event-exclusive Support Cards as rewards for progressing through the story! For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/HHOPXIxvUM\">pic.twitter.com/HHOPXIxvUM</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2090982638802850232?ref_src=twsrc%5Etfw\">August 22, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2090982638802850232",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2090982638802850232",
+            "status_url": "https://x.com/umamusume_eng/status/2090982638802850232",
+            "text": "The story event Days Flying By is now available!\nGet event-exclusive Support Cards as rewards for progressing through the story! For more details, please check the in-game notice.#Umamusume pic.twitter.com/HHOPXIxvUM"
+          }
+        }
+      ]
     }
   ]
 }
