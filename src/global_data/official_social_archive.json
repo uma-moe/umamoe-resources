@@ -3963,6 +3963,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2091540999936061798",
+      "status_url": "https://x.com/umamusume_eng/status/2091540999936061798",
+      "first_seen_at": "2026-08-23T18:52:03.085406730+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-23T18:52:03.085406730+00:00",
+          "content_hash": "9bea277baab336d11939ef3e83a67eaa77c240e1cb6e6a088baa2862c11e8336",
+          "raw": {
+            "created_at": "2026-08-23T15:00:07.994+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Extra Star Piece Event underway!<br><br>To celebrate the G1 Mile Championship Nambu Hai race, you can earn Star Pieces by winning eligible races during a Career once per day!<br><br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/1YuwxzhsvH\">pic.twitter.com/1YuwxzhsvH</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2091540999936061798?ref_src=twsrc%5Etfw\">August 23, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2091540999936061798",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2091540999936061798",
+            "status_url": "https://x.com/umamusume_eng/status/2091540999936061798",
+            "text": "Extra Star Piece Event underway!\nTo celebrate the G1 Mile Championship Nambu Hai race, you can earn Star Pieces by winning eligible races during a Career once per day!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/1YuwxzhsvH"
+          }
+        }
+      ]
     }
   ]
 }
