@@ -3993,6 +3993,96 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2092009119976923384",
+      "status_url": "https://x.com/umamusume_eng/status/2092009119976923384",
+      "first_seen_at": "2026-08-25T01:56:34.444782128+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-25T01:56:34.444782128+00:00",
+          "content_hash": "99c2e48548bafb4e7921b4d44f4357dd0e298f6e246a783b810f381e3f7f8cd1",
+          "raw": {
+            "created_at": "2026-08-24T22:00:16.509+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📢 New characters are on their way to debut on Aug 25 (UTC):<br><br>🥕 3★ Aston Machan will appear in the Pretty Derby Scout!<br><br>🤝 SSR Maruzensky and SSR Fine Motion will also appear in the Support Card Scout, which features Speed- and Wit-type Support Cards!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/Ta5QQk1pUu\">pic.twitter.com/Ta5QQk1pUu</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2092009119976923384?ref_src=twsrc%5Etfw\">August 24, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2092009119976923384",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2092009119976923384",
+            "status_url": "https://x.com/umamusume_eng/status/2092009119976923384",
+            "text": "📢 New characters are on their way to debut on Aug 25 (UTC):\n🥕 3★ Aston Machan will appear in the Pretty Derby Scout!\n🤝 SSR Maruzensky and SSR Fine Motion will also appear in the Support Card Scout, which features Speed- and Wit-type Support Cards!#Umamusume pic.twitter.com/Ta5QQk1pUu"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2092010444525646326",
+      "status_url": "https://x.com/umamusume_eng/status/2092010444525646326",
+      "first_seen_at": "2026-08-25T01:56:34.444782128+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-25T01:56:34.444782128+00:00",
+          "content_hash": "7fcc6213eccc65efe5ff4895ef6db159e035968b2f4d717cc85af25b8619eb53",
+          "raw": {
+            "created_at": "2026-08-24T22:05:32.306+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">🎊 Here&#39;s your first look at the new 3★ character!<br><br>Introducing [Flare] Aston Machan!<br><br>For details, please check the Featured Trainees section on the top right of the Scout screen available from Aug 25 (UTC).<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/RCF9c1VD0G\">pic.twitter.com/RCF9c1VD0G</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2092010444525646326?ref_src=twsrc%5Etfw\">August 24, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2092010444525646326",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2092010444525646326",
+            "status_url": "https://x.com/umamusume_eng/status/2092010444525646326",
+            "text": "🎊 Here's your first look at the new 3★ character!\nIntroducing [Flare] Aston Machan!\nFor details, please check the Featured Trainees section on the top right of the Scout screen available from Aug 25 (UTC).#Umamusume pic.twitter.com/RCF9c1VD0G"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2092011605404106967",
+      "status_url": "https://x.com/umamusume_eng/status/2092011605404106967",
+      "first_seen_at": "2026-08-25T01:56:34.444782128+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-25T01:56:34.444782128+00:00",
+          "content_hash": "516c2234437d9d2534e59ff3eefb3a4b1b6e36543dbeab4b329875193f70ea9b",
+          "raw": {
+            "created_at": "2026-08-24T22:10:09.081+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Have you completed the Mile Championship Nambu Hai missions? We&#39;ve sent out a present commemorating the race!<br><br>🎁 Gift Contents:<br>- Monies × 50,000<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/kNta8BykDq\">pic.twitter.com/kNta8BykDq</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2092011605404106967?ref_src=twsrc%5Etfw\">August 24, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2092011605404106967",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2092011605404106967",
+            "status_url": "https://x.com/umamusume_eng/status/2092011605404106967",
+            "text": "Have you completed the Mile Championship Nambu Hai missions? We've sent out a present commemorating the race!\n🎁 Gift Contents:\n- Monies × 50,000#Umamusume pic.twitter.com/kNta8BykDq"
+          }
+        }
+      ]
     }
   ]
 }
