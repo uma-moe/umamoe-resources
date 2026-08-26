@@ -4233,6 +4233,66 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2092433172034421246",
+      "status_url": "https://x.com/umamusume_eng/status/2092433172034421246",
+      "first_seen_at": "2026-08-26T07:12:58.087531298+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-26T07:12:58.087531298+00:00",
+          "content_hash": "6dd4734c98e7dd394fdefdf80d6a94e4a8b96e654a51c68d5ae41ee6ea8ed0b3",
+          "raw": {
+            "created_at": "2026-08-26T02:05:18.398+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Character Introduction 🥕<br><br>Aston Machan<br>Voice: Honoka Inoue<br><br>A fleeting presence looking to leave a lasting mark—as a loveable mascot character!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/QdU9yNPRcU\">pic.twitter.com/QdU9yNPRcU</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2092433172034421246?ref_src=twsrc%5Etfw\">August 26, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2092433172034421246",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2092433172034421246",
+            "status_url": "https://x.com/umamusume_eng/status/2092433172034421246",
+            "text": "Character Introduction 🥕\nAston Machan\nVoice: Honoka Inoue\nA fleeting presence looking to leave a lasting mark—as a loveable mascot character!#Umamusume pic.twitter.com/QdU9yNPRcU"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2092434366609969591",
+      "status_url": "https://x.com/umamusume_eng/status/2092434366609969591",
+      "first_seen_at": "2026-08-26T07:12:58.087531298+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-26T07:12:58.087531298+00:00",
+          "content_hash": "8157cac0d1b60e838046fbd53afe02fb7b2a847b2df9518d7ebea3749630870a",
+          "raw": {
+            "created_at": "2026-08-26T02:10:03.207+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📖 One-Panel Comic 📖<br><br>Aston Machan<br>The Unusual Machan 👀<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/kvucEn6IPD\">pic.twitter.com/kvucEn6IPD</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2092434366609969591?ref_src=twsrc%5Etfw\">August 26, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2092434366609969591",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2092434366609969591",
+            "status_url": "https://x.com/umamusume_eng/status/2092434366609969591",
+            "text": "📖 One-Panel Comic 📖\nAston Machan\nThe Unusual Machan 👀#Umamusume pic.twitter.com/kvucEn6IPD"
+          }
+        }
+      ]
     }
   ]
 }
