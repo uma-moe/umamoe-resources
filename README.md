@@ -185,7 +185,16 @@ Normal planner generation extracts exact free-Carat gifts and detailed login bon
 
 `planner_rewards.json` also publishes `global_reward_comparison`. Website posts are matched to JP only by their shared numeric announce ID, then split into the Global-minus-JP delta for matched news and the full reward for EN-only news. Official social rewards are a third bucket after website/social deduplication; the resource exposes both the retained social total and the count/Carat value of overlapping items removed. For long-term planning, `speculative_monthly_carats` is the arithmetic mean of those mutually exclusive uplift buckets across the latest six completed calendar months, including zero-reward months. This preserves infrequent large gifts in the expected total while adapting relatively quickly when Global rewards trend down or up. The six inputs, their median, and the whole-archive mean are also published for auditability. The frontend starts that projection only after the latest confirmed reward date, preventing confirmed and speculative income from overlapping.
 
-`.github/workflows/sync-umapyoi.yml` runs the Umapyoi JP news/gacha sync, Umapyoi English website-news sync, and official English Twitter sync every six hours, then commits the archives only when source content changed. It can also be started manually with the full-refresh option for the JP source.
+`.github/workflows/sync-umapyoi.yml` runs the Umapyoi JP news/gacha sync, Umapyoi English website-news sync, and official English Twitter sync four times daily, then commits the archives only when source content changed. The `umapyoi-en-news-published` repository-dispatch event can trigger the same job immediately from the Umapyoi publisher, with the schedule retained as a fallback. Every EN sync audits all archived posts with the production reward parser and fails before committing when a confirmed Carat login bonus or direct gift produces no planner reward. It can also be started manually with the full-refresh option for the JP source.
+
+The Umapyoi publisher can request the immediate run with an authenticated `POST /repos/uma-moe/umamoe-resources/dispatches` GitHub API call and this body:
+
+```json
+{
+  "event_type": "umapyoi-en-news-published",
+  "client_payload": { "announce_id": 994 }
+}
+```
 
 Timeline images are stored in the frontend rather than hotlinked at runtime. Generate a plain `banner_timeline.json`, then run `node scripts/sync_umapyoi_timeline_images.mjs --timeline-json <path> --frontend-root <umamoe-frontend>`. The Node/Sharp sync consumes the archive maintained by the Rust `sync-umapyoi` command; it is not a separate Python scraper. The original files below `assets/images/...` and `assets/timeline-images/...` are immutable production fallbacks: the sync never writes, deletes, or restores those paths. Official JP news-post artwork is stored separately below `assets/timeline-images/jp/`; official EN news-post artwork is stored below `assets/timeline-images/en/`. Each locale has a manifest mapping the unchanged timeline `image_path` to its overlay only after that overlay exists and opens successfully. The frontend resolves EN first, then JP, then the untouched legacy path, so removing either overlay directory is a complete rollback. Pass `--refresh-jp` to refresh only the managed JP overlay.
 
