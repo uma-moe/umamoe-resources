@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 33;
+const ALGORITHM_VERSION: u8 = 34;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -6863,30 +6863,41 @@ fn build_global_reward_comparison(
     let mut en_only_news = Vec::new();
     let mut monthly_uplift = BTreeMap::<String, GlobalRewardMonthAccumulator>::new();
     for (announce_id, rewards) in global_by_post {
-        let global_carats = rewards.iter().filter_map(|reward| reward.amount).sum();
         let first = rewards[0];
         let title = first.label.clone();
         let global_url = first.source_url.clone().unwrap_or_default();
-        let month = first.available_at.get(..7).map(str::to_string);
         if let Some(jp_post) = jp_posts.get(&announce_id) {
+            let global_carats = rewards.iter().filter_map(|reward| reward.amount).sum();
             let jp_carats = jp_by_post.get(&announce_id).copied().unwrap_or_default();
-            let extra_carats = global_carats - jp_carats;
-            if let Some(month) = month {
-                monthly_uplift
-                    .entry(month)
-                    .or_default()
-                    .matched_news_extra_carats += extra_carats;
-            }
             matched_news.push(PlannerGlobalNewsComparison {
                 announce_id,
                 title,
                 global_carats,
                 jp_carats,
-                extra_carats,
+                // If the campaign exists on JP, none of it is speculative
+                // Global-only generosity, even when one parser sees a
+                // different amount or no quantitative JP reward.
+                extra_carats: 0,
                 global_url,
                 jp_url: Some(jp_post.page_url.clone()),
             });
         } else {
+            let eligible_rewards = rewards
+                .iter()
+                .copied()
+                .filter(|reward| is_speculative_global_only_news_reward(reward))
+                .collect::<Vec<_>>();
+            let global_carats = eligible_rewards
+                .iter()
+                .filter_map(|reward| reward.amount)
+                .sum::<i64>();
+            if global_carats <= 0 {
+                continue;
+            }
+            let month = eligible_rewards[0]
+                .available_at
+                .get(..7)
+                .map(str::to_string);
             if let Some(month) = month {
                 monthly_uplift.entry(month).or_default().en_only_news_carats += global_carats;
             }
@@ -6953,9 +6964,11 @@ fn build_global_reward_comparison(
     let mut observed_dates = global_rewards
         .iter()
         .filter(|reward| {
-            matches!(reward.provenance, "global_news" | "global_social")
-                && reward.currency == "free_jewels"
-                && reward.amount.is_some_and(|amount| amount > 0)
+            reward.provenance == "global_social"
+                || (reward.provenance == "global_news"
+                    && is_speculative_global_only_news_reward(reward)
+                    && reward_post_id(&reward.id, "global-news-")
+                        .is_some_and(|post_id| !jp_posts.contains_key(&post_id)))
         })
         .filter_map(|reward| reward.available_at.get(..10))
         .filter_map(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
@@ -7040,7 +7053,7 @@ fn build_global_reward_comparison(
 
     PlannerGlobalRewardComparison {
         news_match_method: "same_announce_id",
-        speculative_method: "mean_last_6_complete_calendar_months",
+        speculative_method: "mean_last_6_complete_calendar_months_global_only_gifts",
         archive_as_of: archive_as_of_date.to_string(),
         observation_start: observation_start_date.to_string(),
         observation_end: observation_end_date.to_string(),
@@ -7066,6 +7079,43 @@ fn build_global_reward_comparison(
         matched_news,
         en_only_news,
     }
+}
+
+fn is_speculative_global_only_news_reward(reward: &PlannerReward) -> bool {
+    if reward.provenance != "global_news"
+        || reward.currency != "free_jewels"
+        || reward.assumption != "official_global_carat_gift"
+        || !reward.amount.is_some_and(|amount| amount > 0)
+    {
+        return false;
+    }
+
+    // The JP and Global sites often use different announce IDs for the same
+    // routine campaign. Keep this forecast deliberately conservative: only
+    // direct gifts/compensation survive, while recognizable JP campaign
+    // families are excluded even when an ID match is unavailable.
+    let text = format!(
+        "{} {}",
+        reward.label,
+        reward.evidence.as_deref().unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    ![
+        "anniversary",
+        "valentine",
+        "white day",
+        "golshi week",
+        "login bonus",
+        "new beginnings",
+        "career scenario",
+        "broadcast commemoration",
+        "race celebration",
+        "g1 race",
+        "gⅠ race",
+        "release celebration part",
+    ]
+    .iter()
+    .any(|marker| text.contains(marker))
 }
 
 fn mean_monthly_carats(values: Vec<i64>) -> i64 {
@@ -8820,7 +8870,7 @@ mod tests {
     }
 
     #[test]
-    fn global_comparison_uses_archive_cutoff_even_with_future_rewards() {
+    fn global_comparison_counts_only_global_gifts_without_jp_counterparts() {
         let reward = |id: &str,
                       label: &str,
                       available_at: &str,
@@ -8916,17 +8966,17 @@ mod tests {
 
         assert_eq!(comparison.matched_news_global_carats, 1500);
         assert_eq!(comparison.matched_news_jp_carats, 1000);
-        assert_eq!(comparison.matched_news_extra_carats, 500);
-        assert_eq!(comparison.en_only_news_carats, 3600);
+        assert_eq!(comparison.matched_news_extra_carats, 0);
+        assert_eq!(comparison.en_only_news_carats, 300);
         assert_eq!(comparison.social_carats, 600);
         assert_eq!(comparison.social_reward_posts, 1);
         assert_eq!(comparison.social_news_duplicate_reward_items_removed, 1);
         assert_eq!(comparison.social_news_duplicate_carats_removed, 300);
-        assert_eq!(comparison.speculative_observed_carats, 4700);
+        assert_eq!(comparison.speculative_observed_carats, 900);
         assert_eq!(comparison.matched_news.len(), 1);
-        assert_eq!(comparison.en_only_news.len(), 2);
-        assert_eq!(comparison.observation_start, "2026-01-01");
-        assert_eq!(comparison.observation_end, "2026-12-23");
+        assert_eq!(comparison.en_only_news.len(), 1);
+        assert_eq!(comparison.observation_start, "2026-02-01");
+        assert_eq!(comparison.observation_end, "2026-03-01");
         assert_eq!(comparison.archive_as_of, "2026-04-01");
         assert_eq!(comparison.speculative_window_start, "2025-10");
         assert_eq!(comparison.speculative_window_end, "2026-03");
@@ -8936,10 +8986,10 @@ mod tests {
                 .iter()
                 .map(|month| month.total_carats)
                 .collect::<Vec<_>>(),
-            vec![0, 0, 0, 500, 300, 600]
+            vec![0, 0, 0, 0, 300, 600]
         );
-        assert_eq!(comparison.speculative_monthly_carats, 233);
-        assert_eq!(comparison.speculative_recent_median_monthly_carats, 150);
+        assert_eq!(comparison.speculative_monthly_carats, 150);
+        assert_eq!(comparison.speculative_recent_median_monthly_carats, 0);
         assert_eq!(comparison.speculative_recent_median_window_start, "2025-10");
         assert_eq!(comparison.speculative_recent_median_window_end, "2026-03");
     }
