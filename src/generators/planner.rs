@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 34;
+const ALGORITHM_VERSION: u8 = 35;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -664,7 +664,7 @@ pub fn generate(
             .filter(|reward| is_projectable_jp_news_reward(reward))
             .cloned(),
     );
-    remove_global_news_login_bonuses_covered_by_master(&mut rewards);
+    remove_global_news_login_bonuses_covered_by_master(&mut rewards, &global_news_archive);
     prefer_global_news_over_jp_news(&mut rewards);
     remove_projected_login_bonus_duplicates(&mut rewards);
     project_missing_story_rewards(timeline, &mut rewards);
@@ -6565,7 +6565,10 @@ fn normalized_global_heading(value: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerReward>) {
+fn remove_global_news_login_bonuses_covered_by_master(
+    rewards: &mut Vec<PlannerReward>,
+    archive: &GlobalNewsArchive,
+) {
     let master_logins = rewards
         .iter()
         .enumerate()
@@ -6620,18 +6623,30 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
             continue;
         }
         let daily_amount = total / period_count_i64;
+        let exact_period_starts = global_period_login_starts(archive, reward)
+            .filter(|(amount, starts)| *amount == daily_amount && starts.len() == period_count)
+            .map(|(_, starts)| starts);
         let matching = master_logins
             .iter()
             .filter(|(index, _, currency, amount, timestamp)| {
                 !used_master_rows.contains(index)
                     && *currency == reward.currency
                     && *amount == daily_amount
-                    && *timestamp >= start
-                    && *timestamp <= end
+                    && exact_period_starts.as_ref().map_or_else(
+                        || *timestamp >= start && *timestamp <= end,
+                        |starts| {
+                            starts
+                                .iter()
+                                .any(|period_start| (*timestamp - *period_start).abs() <= 5 * 60)
+                        },
+                    )
             })
             .map(|(index, id, _, _, _)| (*index, id.clone()))
             .collect::<Vec<_>>();
-        if matching.len() != period_count {
+        // Exact starts let us absorb a partially released master schedule
+        // immediately. The count guard remains for older archived notices
+        // where only the broad claim window can be reconstructed.
+        if exact_period_starts.is_none() && matching.len() != period_count {
             continue;
         }
         for (index, id) in matching {
@@ -6686,6 +6701,32 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
         }
     }
     rewards.retain(|reward| !suppressed_ids.contains(&reward.id));
+}
+
+fn global_period_login_starts(
+    archive: &GlobalNewsArchive,
+    reward: &PlannerReward,
+) -> Option<(i64, Vec<i64>)> {
+    let announce_id = reward_post_id(&reward.id, "global-news-")?;
+    let post = archive
+        .posts
+        .iter()
+        .find(|post| post.announce_id == announce_id)?;
+    let raw = &post.snapshots.last()?.raw;
+    let posted_at = raw
+        .get("post_at")
+        .and_then(normalize_global_news_timestamp_value)?;
+    let title = raw
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or("Official Global reward");
+    let text = html_to_text(raw.get("message").and_then(Value::as_str).unwrap_or(""));
+    let (amount, periods, _) = extract_global_period_login_bonus(title, &text, &posted_at)?;
+    let starts = periods
+        .iter()
+        .filter_map(|(start, _)| planner_timestamp(start))
+        .collect::<Vec<_>>();
+    (starts.len() == periods.len()).then_some((amount, starts))
 }
 
 fn remove_projected_login_bonus_duplicates(rewards: &mut Vec<PlannerReward>) {
@@ -8303,7 +8344,10 @@ mod tests {
             ),
         ];
 
-        remove_global_news_login_bonuses_covered_by_master(&mut rewards);
+        remove_global_news_login_bonuses_covered_by_master(
+            &mut rewards,
+            &GlobalNewsArchive { posts: Vec::new() },
+        );
 
         assert_eq!(rewards.len(), 1);
         assert_eq!(rewards[0].id, "global-news-100039-login-bonus");
@@ -8314,6 +8358,63 @@ mod tests {
         assert_eq!(
             rewards[0].source_url.as_deref(),
             Some("https://umapyoi.net/news/en/100039")
+        );
+    }
+
+    #[test]
+    fn bundled_news_login_absorbs_partial_master_schedule_by_exact_period_start() {
+        let text = "Umayuru Login Bonus has begun!\nReceive a series of 150-carat gifts by logging in during the applicable periods.\nAvailability Periods\n10:00 p.m., Aug 26 - 2:59 p.m., Sep 2, 2026 (UTC)\n3:00 p.m., Aug 30 - 2:59 p.m., Sep 6, 2026 (UTC)\nImportant Information";
+        let mut post = global_post(994, "A special Umayuru Celebration has begun!", text);
+        post.page_url = "https://umapyoi.net/news/en/994".to_string();
+        post.snapshots[0].raw["post_at"] = json!(1_787_781_600_i64);
+        let archive = GlobalNewsArchive { posts: vec![post] };
+        let mut rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+        let master_reward = |id: &str, available_at: &str| PlannerReward {
+            id: id.to_string(),
+            label: "Limited login bonus".to_string(),
+            event_id: None,
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(150),
+            available_at: available_at.to_string(),
+            available_until: None,
+            provenance: "global_master",
+            assumption: "full_completion",
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact_source",
+            evidence: Some(
+                "Exact login_bonus_data/login_bonus_detail rows for 1 login days".to_string(),
+            ),
+        };
+        rewards.push(master_reward(
+            "global-master-login-bonus-30052-free_jewels",
+            "2026-08-30T15:00:00Z",
+        ));
+        rewards.push(master_reward(
+            "global-master-unrelated-login",
+            "2026-08-31T15:00:00Z",
+        ));
+
+        remove_global_news_login_bonuses_covered_by_master(&mut rewards, &archive);
+
+        assert_eq!(rewards.len(), 2);
+        assert!(rewards
+            .iter()
+            .any(|reward| reward.id == "global-master-unrelated-login"));
+        let bundled = rewards
+            .iter()
+            .find(|reward| reward.id == "global-news-994-login-bonus")
+            .unwrap();
+        assert_eq!(bundled.amount, Some(300));
+        assert_eq!(
+            bundled.source_url.as_deref(),
+            Some("https://umapyoi.net/news/en/994")
         );
     }
 
