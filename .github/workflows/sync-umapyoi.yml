@@ -1,9 +1,11 @@
 name: Sync News Archives
 
 on:
+  repository_dispatch:
+    types: [umapyoi-en-news-published]
   schedule:
-    # Every six hours so short-lived official social posts are captured.
-    - cron: '17 */6 * * *'
+    # Four times daily; repository_dispatch handles immediate EN-news updates.
+    - cron: '17 0,6,12,18 * * *'
   workflow_dispatch:
     inputs:
       full:

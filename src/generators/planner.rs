@@ -6,8 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 30;
+const ALGORITHM_VERSION: u8 = 31;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -466,13 +467,13 @@ struct ArchiveNews {
     raw: Value,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GlobalNewsArchive {
     #[serde(default)]
     posts: Vec<GlobalNewsPost>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GlobalNewsPost {
     announce_id: i64,
     page_url: String,
@@ -481,9 +482,24 @@ struct GlobalNewsPost {
     snapshots: Vec<GlobalNewsSnapshot>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GlobalNewsSnapshot {
     raw: Value,
+}
+
+#[derive(Debug)]
+pub struct GlobalNewsRewardAudit {
+    pub checked_posts: usize,
+    pub reward_posts: usize,
+    pub parsed_rewards: usize,
+    pub issues: Vec<GlobalNewsRewardAuditIssue>,
+}
+
+#[derive(Debug)]
+pub struct GlobalNewsRewardAuditIssue {
+    pub announce_id: i64,
+    pub page_url: String,
+    pub reason: &'static str,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1518,6 +1534,127 @@ fn load_archive() -> Result<Archive> {
 fn load_global_news_archive() -> Result<GlobalNewsArchive> {
     serde_json::from_slice(GLOBAL_NEWS_ARCHIVE)
         .context("failed to parse official Global news archive")
+}
+
+pub fn audit_global_news_reward_archive(path: &Path) -> Result<GlobalNewsRewardAudit> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("failed to read Global news archive at {}", path.display()))?;
+    let archive = serde_json::from_slice(&bytes)
+        .with_context(|| format!("failed to parse Global news archive at {}", path.display()))?;
+    Ok(audit_global_news_reward_posts(&archive))
+}
+
+fn audit_global_news_reward_posts(archive: &GlobalNewsArchive) -> GlobalNewsRewardAudit {
+    let rewards = load_global_news_rewards(
+        archive,
+        &Archive { news: Vec::new() },
+        &serde_json::json!({"events": []}),
+    );
+    let mut audit = GlobalNewsRewardAudit {
+        checked_posts: 0,
+        reward_posts: 0,
+        parsed_rewards: 0,
+        issues: Vec::new(),
+    };
+    for post in &archive.posts {
+        audit.checked_posts += 1;
+        let prefix = format!("global-news-{}-", post.announce_id);
+        let post_rewards = rewards
+            .iter()
+            .filter(|reward| reward.id.starts_with(&prefix))
+            .collect::<Vec<_>>();
+        if !post_rewards.is_empty() {
+            audit.reward_posts += 1;
+            audit.parsed_rewards += post_rewards.len();
+        }
+        let Some(raw) = post.snapshots.last().map(|snapshot| &snapshot.raw) else {
+            continue;
+        };
+        let title = raw.get("title").and_then(Value::as_str).unwrap_or("");
+        let text = html_to_text(raw.get("message").and_then(Value::as_str).unwrap_or(""));
+        if is_global_correction_notice(&text) {
+            continue;
+        }
+        let has_login_reward = post_rewards
+            .iter()
+            .any(|reward| reward.assumption == "all_login_days_global");
+        if is_confirmed_global_login_reward_claim(title, &text) && !has_login_reward {
+            audit.issues.push(GlobalNewsRewardAuditIssue {
+                announce_id: post.announce_id,
+                page_url: post.page_url.clone(),
+                reason: "confirmed EN Carat login bonus produced no planner reward",
+            });
+        }
+        let has_direct_reward = post_rewards.iter().any(|reward| {
+            matches!(
+                reward.assumption,
+                "official_global_carat_gift" | "official_global_item_gift"
+            )
+        });
+        if is_confirmed_global_direct_reward_claim(&text) && !has_direct_reward {
+            audit.issues.push(GlobalNewsRewardAuditIssue {
+                announce_id: post.announce_id,
+                page_url: post.page_url.clone(),
+                reason: "confirmed EN direct gift produced no planner reward",
+            });
+        }
+    }
+    audit
+}
+
+fn is_confirmed_global_login_reward_claim(title: &str, text: &str) -> bool {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("login bonus")
+        || !lower.contains("carat")
+        || !is_confirmed_global_login_notice(title, text)
+    {
+        return false;
+    }
+    text.lines().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        lower.contains("carat")
+            && !lower.contains("paid carat")
+            && ["gift", "receive", "login", "each", "per day", "period"]
+                .iter()
+                .any(|phrase| lower.contains(phrase))
+    })
+}
+
+fn is_confirmed_global_direct_reward_claim(text: &str) -> bool {
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    let distribution_phrases = [
+        "we've sent everyone",
+        "we have sent everyone",
+        "we're sending a gift",
+        "we are sending a gift",
+        "gifted eligible trainers with",
+        "sent a gift to all trainers",
+    ];
+    if lines.iter().any(|line| {
+        let lower = line.to_ascii_lowercase();
+        (lower.contains("carat") || lower.contains("uncap crystal"))
+            && !lower.contains("chance to win")
+            && !lower.contains("paid carat")
+            && distribution_phrases
+                .iter()
+                .any(|phrase| lower.contains(phrase))
+    }) {
+        return true;
+    }
+    lines.iter().enumerate().any(|(index, line)| {
+        if !is_global_gift_heading(line) {
+            return false;
+        }
+        lines.iter().skip(index + 1).take(10).any(|candidate| {
+            if is_global_gift_section_end(candidate) {
+                return false;
+            }
+            let lower = candidate.to_ascii_lowercase();
+            (lower.contains("carat") || lower.contains("uncap crystal"))
+                && !lower.contains("paid carat")
+                && !lower.contains("chance to win")
+        })
+    })
 }
 
 fn load_global_social_archive() -> Result<GlobalSocialArchive> {
@@ -5699,7 +5836,20 @@ fn load_global_news_rewards(
             continue;
         }
 
-        if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
+        if let Some((amount, total, available_at, evidence)) =
+            extract_global_period_login_bonus(title, &text, &posted_at)
+        {
+            rewards.push(global_news_reward(
+                format!("global-news-{}-login-bonus", post.announce_id),
+                title,
+                event_id.clone(),
+                total,
+                available_at,
+                "all_login_days_global",
+                &post.page_url,
+                format!("{amount} Carats per availability period; {evidence}"),
+            ));
+        } else if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
             rewards.push(global_news_reward(
                 format!("global-news-{}-login-bonus", post.announce_id),
                 title,
@@ -5990,6 +6140,134 @@ fn is_global_correction_notice(text: &str) -> bool {
     lower.contains("correct amount")
         && lower.contains("actual amount")
         && (lower.contains("incorrect") || lower.contains("difference"))
+}
+
+fn extract_global_period_login_bonus(
+    title: &str,
+    text: &str,
+    posted_at: &str,
+) -> Option<(i64, i64, String, String)> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("login bonus")
+        || !lower.contains("carat")
+        || !lower.contains("availability period")
+        || !is_confirmed_global_login_notice(title, text)
+    {
+        return None;
+    }
+    let amount = text.lines().find_map(|line| {
+        let lower_line = line.to_ascii_lowercase();
+        (lower_line.contains("carat")
+            && (lower_line.contains("gift") || lower_line.contains("receive"))
+            && (lower_line.contains("period")
+                || lower_line.contains("episode")
+                || lower_line.contains("week")))
+        .then(|| carat_amounts_from_line(line).into_iter().next())
+        .flatten()
+        .filter(|amount| (1..=10_000).contains(amount))
+    })?;
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    let schedule_start = lines.iter().position(|line| {
+        let heading = normalized_global_heading(line);
+        heading.ends_with("availability period") || heading.ends_with("availability periods")
+    })?;
+    let period_starts = lines
+        .iter()
+        .skip(schedule_start + 1)
+        .take_while(|line| !normalized_global_heading(line).starts_with("important information"))
+        .filter_map(|line| global_period_start(line, posted_at))
+        .collect::<Vec<_>>();
+    if period_starts.len() < 2 {
+        return None;
+    }
+    let explicit_total = text.lines().find_map(|line| {
+        let lower_line = line.to_ascii_lowercase();
+        (lower_line.contains("carat")
+            && (lower_line.contains("total") || lower_line.contains("maximum")))
+        .then(|| {
+            carat_amounts_from_line(line)
+                .into_iter()
+                .filter(|candidate| *candidate >= amount && *candidate % amount == 0)
+                .max()
+        })
+        .flatten()
+    });
+    let listed_count = i64::try_from(period_starts.len()).ok()?;
+    let (count, total) = explicit_total
+        .map(|total| (total / amount, total))
+        .unwrap_or((listed_count, amount.checked_mul(listed_count)?));
+    let available_at = period_starts.into_iter().max()?.to_rfc3339();
+    Some((
+        amount,
+        total,
+        available_at,
+        format!("{count} listed availability periods"),
+    ))
+}
+
+fn is_confirmed_global_login_notice(title: &str, text: &str) -> bool {
+    let phrases = [
+        "has begun",
+        "now available",
+        "is here",
+        "underway",
+        "is being held",
+        "we're holding",
+        "we are holding",
+    ];
+    let lower_title = title.to_ascii_lowercase();
+    phrases.iter().any(|phrase| lower_title.contains(phrase))
+        || text.lines().any(|line| {
+            let lower = line.to_ascii_lowercase();
+            lower.contains("login bonus") && phrases.iter().any(|phrase| lower.contains(phrase))
+        })
+}
+
+fn global_period_start(line: &str, posted_at: &str) -> Option<DateTime<Utc>> {
+    let reference = DateTime::parse_from_rfc3339(posted_at)
+        .ok()?
+        .with_timezone(&Utc);
+    let start = line.split_once(" - ")?.0;
+    let tokens = start.split_whitespace().collect::<Vec<_>>();
+    let (month_index, month) = tokens.iter().enumerate().find_map(|(index, token)| {
+        let month = match token
+            .trim_matches(|character: char| !character.is_ascii_alphabetic())
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "january" | "jan" => 1,
+            "february" | "feb" => 2,
+            "march" | "mar" => 3,
+            "april" | "apr" => 4,
+            "may" => 5,
+            "june" | "jun" => 6,
+            "july" | "jul" => 7,
+            "august" | "aug" => 8,
+            "september" | "sep" | "sept" => 9,
+            "october" | "oct" => 10,
+            "november" | "nov" => 11,
+            "december" | "dec" => 12,
+            _ => return None,
+        };
+        Some((index, month))
+    })?;
+    let day = tokens
+        .get(month_index + 1)?
+        .trim_matches(|character: char| !character.is_ascii_digit())
+        .parse::<u32>()
+        .ok()?;
+    let (mut hour, minute) = tokens[..month_index]
+        .iter()
+        .find_map(|token| parse_clock_time(token))?;
+    let lower_start = start.to_ascii_lowercase();
+    if lower_start.contains("p.m") && hour < 12 {
+        hour += 12;
+    } else if lower_start.contains("a.m") && hour == 12 {
+        hour = 0;
+    }
+    let year = reference.year() + i32::from(month < reference.month());
+    Utc.with_ymd_and_hms(year, month, day, hour, minute, 0)
+        .single()
 }
 
 fn extract_global_login_bonus_total(text: &str) -> Option<(i64, i64, String)> {
@@ -7527,18 +7805,19 @@ fn mode(values: impl Iterator<Item = i64>) -> Option<i64> {
 mod tests {
     use super::{
         amounts_before_word, append_master_reward_catalog_rows, apply_news_free_pulls,
-        archive_combined_text, build_event_benefits, build_global_reward_comparison,
-        extract_free_pull_total, extract_global_direct_gifts, extract_global_login_bonus_total,
+        archive_combined_text, audit_global_news_reward_posts, build_event_benefits,
+        build_global_reward_comparison, extract_free_pull_total, extract_global_direct_gifts,
+        extract_global_login_bonus_total, extract_global_period_login_bonus,
         extract_login_bonus_total, extract_month_day_time, extract_news_free_pull_claims,
         extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
         has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
         is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
         load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
         load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
-        load_gachas, load_general_event_mission_items, load_global_news_rewards,
-        load_global_social_rewards, load_login_bonus_rewards_for, load_mission_campaign_rewards,
-        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, load_story_rewards,
+        load_gachas, load_general_event_mission_items, load_global_news_archive,
+        load_global_news_rewards, load_global_social_rewards, load_login_bonus_rewards_for,
+        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
+        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, prefer_detailed_gift_sections,
@@ -7852,6 +8131,92 @@ mod tests {
             Some((300, 3000))
         );
         assert_eq!(extract_global_login_bonus_total(preview), None);
+    }
+
+    #[test]
+    fn extracts_umayuru_login_bonus_from_listed_availability_periods() {
+        let starts = [
+            ("10:00 p.m.", "Aug", 26),
+            ("3:00 p.m.", "Aug", 30),
+            ("3:00 p.m.", "Sep", 6),
+            ("3:00 p.m.", "Sep", 10),
+            ("3:00 p.m.", "Sep", 17),
+            ("3:00 p.m.", "Sep", 23),
+            ("3:00 p.m.", "Sep", 27),
+            ("3:00 p.m.", "Oct", 4),
+            ("3:00 p.m.", "Oct", 8),
+            ("3:00 p.m.", "Oct", 15),
+            ("3:00 p.m.", "Oct", 19),
+            ("3:00 p.m.", "Oct", 26),
+            ("3:00 p.m.", "Nov", 5),
+            ("3:00 p.m.", "Nov", 8),
+            ("3:00 p.m.", "Nov", 15),
+            ("3:00 p.m.", "Nov", 18),
+            ("3:00 p.m.", "Nov", 25),
+            ("3:00 p.m.", "Nov", 29),
+            ("3:00 p.m.", "Dec", 6),
+            ("3:00 p.m.", "Dec", 13),
+            ("3:00 p.m.", "Dec", 16),
+            ("3:00 p.m.", "Dec", 23),
+        ];
+        let schedule = starts
+            .iter()
+            .map(|(time, month, day)| {
+                format!("{time}, {month} {day} - 2:59 p.m., {month} {day}, 2026 (UTC)")
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        let text = format!(
+            "Umayuru Login Bonus has begun!\nReceive a series of 150-carat gifts by logging in during the applicable periods.\nAvailability Periods\n{schedule}\nImportant Information"
+        );
+
+        let (amount, total, available_at, evidence) = extract_global_period_login_bonus(
+            "A special Umayuru Celebration has begun!",
+            &text,
+            "2026-08-26T22:00:00+00:00",
+        )
+        .unwrap();
+
+        assert_eq!(amount, 150);
+        assert_eq!(total, 3_300);
+        assert_eq!(available_at, "2026-12-23T15:00:00+00:00");
+        assert!(evidence.contains("22 listed"));
+
+        let mut post = global_post(994, "A special Umayuru Celebration has begun!", &text);
+        post.page_url = "https://umapyoi.net/news/en/994".to_string();
+        post.snapshots[0].raw["post_at"] = json!(1_787_781_600_i64);
+        let audit = audit_global_news_reward_posts(&GlobalNewsArchive { posts: vec![post] });
+        assert_eq!(audit.checked_posts, 1);
+        assert_eq!(audit.reward_posts, 1);
+        assert_eq!(audit.parsed_rewards, 1);
+        assert!(audit.issues.is_empty());
+    }
+
+    #[test]
+    fn reward_audit_flags_unparsed_confirmed_login_bonus() {
+        let post = global_post(
+            999_994,
+            "New celebration now available!",
+            "A special Login Bonus has begun! Each event window grants trainers 150 carats.",
+        );
+
+        let audit = audit_global_news_reward_posts(&GlobalNewsArchive { posts: vec![post] });
+
+        assert_eq!(audit.checked_posts, 1);
+        assert_eq!(audit.reward_posts, 0);
+        assert_eq!(audit.issues.len(), 1);
+        assert_eq!(
+            audit.issues[0].reason,
+            "confirmed EN Carat login bonus produced no planner reward"
+        );
+    }
+
+    #[test]
+    fn bundled_global_news_has_no_unparsed_confirmed_rewards() {
+        let archive = load_global_news_archive().unwrap();
+        let audit = audit_global_news_reward_posts(&archive);
+
+        assert!(audit.issues.is_empty(), "{:?}", audit.issues);
     }
 
     #[test]
