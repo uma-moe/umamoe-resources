@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 32;
+const ALGORITHM_VERSION: u8 = 33;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -1658,6 +1658,8 @@ fn is_confirmed_global_direct_reward_claim(text: &str) -> bool {
             (lower.contains("carat") || lower.contains("uncap crystal"))
                 && !lower.contains("paid carat")
                 && !lower.contains("chance to win")
+                && !lower.contains("per availability period")
+                && !lower.contains("per applicable period")
         })
     })
 }
@@ -5850,39 +5852,48 @@ fn load_global_news_rewards(
         if let Some((amount, periods, evidence)) =
             extract_global_period_login_bonus(title, &text, &posted_at)
         {
-            let period_count = periods.len();
-            for (index, (available_at, available_until)) in periods.into_iter().enumerate() {
-                let mut reward = global_news_reward(
-                    format!(
-                        "global-news-{}-login-bonus-period-{:02}",
-                        post.announce_id,
-                        index + 1
-                    ),
-                    title,
-                    event_id.clone(),
-                    amount,
-                    available_at,
-                    "all_login_days_global",
-                    &post.page_url,
-                    format!(
-                        "{amount} Carats for availability period {} of {period_count}; {evidence}",
-                        index + 1
-                    ),
-                );
-                reward.available_until = Some(available_until);
-                rewards.push(reward);
-            }
-        } else if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
-            rewards.push(global_news_reward(
+            let period_count = i64::try_from(periods.len()).unwrap_or_default();
+            let total = amount.saturating_mul(period_count);
+            let available_at = periods
+                .iter()
+                .map(|(start, _)| start)
+                .min()
+                .cloned()
+                .unwrap_or_else(|| posted_at.clone());
+            let available_until = periods.iter().map(|(_, end)| end).max().cloned();
+            let mut reward = global_news_reward(
                 format!("global-news-{}-login-bonus", post.announce_id),
                 title,
                 event_id.clone(),
                 total,
-                planner_date_after_days(&posted_at, (total / daily).saturating_sub(1)),
+                available_at,
                 "all_login_days_global",
                 &post.page_url,
-                format!("{daily} Carats per login day; {evidence}"),
-            ));
+                format!("{period_count} days × {amount} Carats = {total} Carats; {evidence}"),
+            );
+            reward.available_until = available_until;
+            rewards.push(reward);
+        } else if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
+            let login_days = total / daily;
+            let (available_at, available_until) =
+                extract_global_login_bonus_window(&text, &posted_at).unwrap_or_else(|| {
+                    (
+                        posted_at.clone(),
+                        planner_date_after_days(&posted_at, login_days.saturating_sub(1)),
+                    )
+                });
+            let mut reward = global_news_reward(
+                format!("global-news-{}-login-bonus", post.announce_id),
+                title,
+                event_id.clone(),
+                total,
+                available_at,
+                "all_login_days_global",
+                &post.page_url,
+                format!("{login_days} days × {daily} Carats = {total} Carats; {evidence}"),
+            );
+            reward.available_until = Some(available_until);
+            rewards.push(reward);
         }
 
         for (occurrence, (amount, evidence)) in
@@ -6355,6 +6366,25 @@ fn extract_global_login_bonus_total(text: &str) -> Option<(i64, i64, String)> {
     })
 }
 
+fn extract_global_login_bonus_window(text: &str, posted_at: &str) -> Option<(String, String)> {
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    for (index, line) in lines.iter().enumerate() {
+        let heading = normalized_global_heading(line);
+        if !(heading == "availability period" || heading == "availability periods") {
+            continue;
+        }
+        if let Some((start, end)) = lines
+            .iter()
+            .skip(index + 1)
+            .take(4)
+            .find_map(|candidate| global_period_window(candidate, posted_at))
+        {
+            return Some((start.to_rfc3339(), end.to_rfc3339()));
+        }
+    }
+    None
+}
+
 fn extract_global_direct_gifts(text: &str) -> Vec<(i64, String)> {
     let lines = text.lines().map(str::trim).collect::<Vec<_>>();
     let mut amounts = BTreeMap::<i64, String>::new();
@@ -6466,6 +6496,8 @@ fn collect_global_gift_line(
     let lower = line.to_ascii_lowercase();
     if !lower.contains("carat")
         || lower.contains("up to")
+        || lower.contains("per availability period")
+        || lower.contains("per applicable period")
         || lower.contains("winner")
         || lower.contains("paid carat")
         || has_sales_context(&lower)
@@ -6545,6 +6577,8 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
         .filter_map(|(index, reward)| {
             Some((
                 index,
+                reward.id.clone(),
+                reward.currency,
                 reward.amount?,
                 planner_timestamp(&reward.available_at)?,
             ))
@@ -6553,6 +6587,62 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
     let mut used_master_rows = BTreeSet::new();
     let mut suppressed_ids = BTreeSet::new();
     let mut master_window_updates = Vec::new();
+
+    // A detailed EN notice can bundle a series of one-day master login bonuses.
+    // Keep the richer news row (overall claim window + daily breakdown) when the
+    // master rows exactly account for every listed day.
+    for reward in rewards.iter().filter(|reward| {
+        reward.provenance == "global_news" && reward.assumption == "all_login_days_global"
+    }) {
+        let Some(period_count) = reward
+            .evidence
+            .as_deref()
+            .and_then(|evidence| evidence.split_whitespace().next())
+            .and_then(|count| count.parse::<usize>().ok())
+            .filter(|count| *count > 1)
+        else {
+            continue;
+        };
+        let (Some(total), Some(start), Some(end)) = (
+            reward.amount,
+            planner_timestamp(&reward.available_at),
+            reward
+                .available_until
+                .as_deref()
+                .and_then(planner_timestamp),
+        ) else {
+            continue;
+        };
+        let Ok(period_count_i64) = i64::try_from(period_count) else {
+            continue;
+        };
+        if total % period_count_i64 != 0 {
+            continue;
+        }
+        let daily_amount = total / period_count_i64;
+        let matching = master_logins
+            .iter()
+            .filter(|(index, _, currency, amount, timestamp)| {
+                !used_master_rows.contains(index)
+                    && *currency == reward.currency
+                    && *amount == daily_amount
+                    && *timestamp >= start
+                    && *timestamp <= end
+            })
+            .map(|(index, id, _, _, _)| (*index, id.clone()))
+            .collect::<Vec<_>>();
+        if matching.len() != period_count {
+            continue;
+        }
+        for (index, id) in matching {
+            used_master_rows.insert(index);
+            suppressed_ids.insert(id);
+        }
+    }
+
+    // Reconcile ordinary notices against one equal master row. A news claim
+    // window keeps the richer bundled news row; older point-in-time notices
+    // still defer to the exact master row.
     for reward in rewards.iter().filter(|reward| {
         reward.provenance == "global_news" && reward.assumption == "all_login_days_global"
     }) {
@@ -6561,22 +6651,27 @@ fn remove_global_news_login_bonuses_covered_by_master(rewards: &mut Vec<PlannerR
         else {
             continue;
         };
-        if let Some((master_index, _, _)) = master_logins
+        if let Some((master_index, master_id, _, _, _)) = master_logins
             .iter()
-            .filter(|(index, master_amount, master_timestamp)| {
+            .filter(|(index, _, currency, master_amount, master_timestamp)| {
                 !used_master_rows.contains(index)
+                    && *currency == reward.currency
                     && *master_amount == amount
                     && (timestamp - *master_timestamp).abs() <= 45 * 86_400
             })
-            .min_by_key(|(_, _, master_timestamp)| (timestamp - *master_timestamp).abs())
+            .min_by_key(|(_, _, _, _, master_timestamp)| (timestamp - *master_timestamp).abs())
         {
             used_master_rows.insert(*master_index);
-            suppressed_ids.insert(reward.id.clone());
-            master_window_updates.push((
-                *master_index,
-                reward.available_until.clone(),
-                reward.source_url.clone(),
-            ));
+            if reward.available_until.is_some() {
+                suppressed_ids.insert(master_id.clone());
+            } else {
+                suppressed_ids.insert(reward.id.clone());
+                master_window_updates.push((
+                    *master_index,
+                    reward.available_until.clone(),
+                    reward.source_url.clone(),
+                ));
+            }
         }
     }
     for (master_index, available_until, source_url) in master_window_updates {
@@ -6999,6 +7094,17 @@ fn reward_post_id(value: &str, prefix: &str) -> Option<i64> {
 }
 
 fn prefer_global_news_over_jp_news(rewards: &mut Vec<PlannerReward>) {
+    let global_post_claims = rewards
+        .iter()
+        .filter(|reward| reward.provenance == "global_news")
+        .filter_map(|reward| {
+            Some((
+                reward_post_id(&reward.id, "global-news-")?,
+                reward.currency,
+                reward_semantic_kind(reward),
+            ))
+        })
+        .collect::<BTreeSet<_>>();
     let mut global_claims = BTreeMap::<(String, &'static str, i64, &'static str), usize>::new();
     for reward in rewards
         .iter()
@@ -7019,6 +7125,11 @@ fn prefer_global_news_over_jp_news(rewards: &mut Vec<PlannerReward>) {
     rewards.retain(|reward| {
         if reward.provenance != "jp_news" {
             return true;
+        }
+        if reward_post_id(&reward.id, "news-").is_some_and(|post_id| {
+            global_post_claims.contains(&(post_id, reward.currency, reward_semantic_kind(reward)))
+        }) {
+            return false;
         }
         let (Some(event_id), Some(amount)) = (reward.event_id.as_ref(), reward.amount) else {
             return true;
@@ -7903,7 +8014,7 @@ mod tests {
         load_news_rewards, load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
-        planner_reward_event_ids, prefer_detailed_gift_sections,
+        planner_reward_event_ids, prefer_detailed_gift_sections, prefer_global_news_over_jp_news,
         remove_global_news_login_bonuses_covered_by_master,
         remove_global_social_rewards_covered_by_news, remove_projected_login_bonus_duplicates,
         reward_sections, seed_timeline_gacha_fallbacks, timeline_gacha_links,
@@ -8094,39 +8205,58 @@ mod tests {
     }
 
     #[test]
-    fn master_backed_login_keeps_the_exact_news_claim_window_and_source() {
-        let reward = |id: &str, provenance: &'static str| PlannerReward {
-            id: id.to_string(),
-            label: "Limited login bonus".to_string(),
-            event_id: None,
-            gacha_id: None,
-            currency: "free_jewels",
-            amount: Some(300),
-            available_at: "2025-10-06T12:00:00Z".to_string(),
-            available_until: (provenance == "global_news")
-                .then(|| "2025-10-13T14:59:00Z".to_string()),
-            provenance,
-            assumption: if provenance == "global_news" {
-                "all_login_days_global"
-            } else {
-                "full_completion"
-            },
-            default_enabled: true,
-            source_url: (provenance == "global_news")
-                .then(|| "https://umapyoi.net/news/en/100039".to_string()),
-            source_items: Vec::new(),
-            confidence: "exact",
-            evidence: None,
-        };
+    fn bundled_news_login_replaces_matching_one_day_master_rows() {
+        let reward =
+            |id: &str, provenance: &'static str, amount: i64, available_at: &str| PlannerReward {
+                id: id.to_string(),
+                label: "Limited login bonus".to_string(),
+                event_id: None,
+                gacha_id: None,
+                currency: "free_jewels",
+                amount: Some(amount),
+                available_at: available_at.to_string(),
+                available_until: (provenance == "global_news")
+                    .then(|| "2025-10-13T14:59:00Z".to_string()),
+                provenance,
+                assumption: if provenance == "global_news" {
+                    "all_login_days_global"
+                } else {
+                    "full_completion"
+                },
+                default_enabled: true,
+                source_url: (provenance == "global_news")
+                    .then(|| "https://umapyoi.net/news/en/100039".to_string()),
+                source_items: Vec::new(),
+                confidence: "exact",
+                evidence: (provenance == "global_news").then(|| {
+                    "2 days × 150 Carats = 300 Carats; 2 listed availability periods".to_string()
+                }),
+            };
         let mut rewards = vec![
-            reward("global-master-login", "global_master"),
-            reward("global-news-100039-login-bonus-period-01", "global_news"),
+            reward(
+                "global-master-login-1",
+                "global_master",
+                150,
+                "2025-10-06T12:00:00Z",
+            ),
+            reward(
+                "global-master-login-2",
+                "global_master",
+                150,
+                "2025-10-10T12:00:00Z",
+            ),
+            reward(
+                "global-news-100039-login-bonus",
+                "global_news",
+                300,
+                "2025-10-06T12:00:00Z",
+            ),
         ];
 
         remove_global_news_login_bonuses_covered_by_master(&mut rewards);
 
         assert_eq!(rewards.len(), 1);
-        assert_eq!(rewards[0].id, "global-master-login");
+        assert_eq!(rewards[0].id, "global-news-100039-login-bonus");
         assert_eq!(
             rewards[0].available_until.as_deref(),
             Some("2025-10-13T14:59:00Z")
@@ -8135,6 +8265,40 @@ mod tests {
             rewards[0].source_url.as_deref(),
             Some("https://umapyoi.net/news/en/100039")
         );
+    }
+
+    #[test]
+    fn english_news_replaces_same_post_jp_login_even_when_totals_differ() {
+        let reward = |id: &str, provenance: &'static str, amount: i64| PlannerReward {
+            id: id.to_string(),
+            label: "Umayuru login bonus".to_string(),
+            event_id: None,
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: Some(amount),
+            available_at: "2026-08-26T22:00:00Z".to_string(),
+            available_until: None,
+            provenance,
+            assumption: if provenance == "global_news" {
+                "all_login_days_global"
+            } else {
+                "all_login_days_jp_parity"
+            },
+            default_enabled: true,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence: "exact",
+            evidence: None,
+        };
+        let mut rewards = vec![
+            reward("global-news-994-login-bonus", "global_news", 3_300),
+            reward("news-994-login-bonus", "jp_news", 3_600),
+        ];
+
+        prefer_global_news_over_jp_news(&mut rewards);
+
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].id, "global-news-994-login-bonus");
     }
 
     #[test]
@@ -8262,6 +8426,30 @@ mod tests {
             Some((300, 3000))
         );
         assert_eq!(extract_global_login_bonus_total(preview), None);
+
+        let archive = GlobalNewsArchive {
+            posts: vec![global_post(
+                999_993,
+                "1.5-Year Anniversary Celebration Login Bonus has begun!",
+                detailed,
+            )],
+        };
+        let rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(3_000));
+        assert_eq!(rewards[0].available_at, "2026-07-22T22:00:00+00:00");
+        assert_eq!(
+            rewards[0].available_until.as_deref(),
+            Some("2026-07-31T22:00:00+00:00")
+        );
+        assert!(rewards[0]
+            .evidence
+            .as_deref()
+            .is_some_and(|evidence| evidence.starts_with("10 days × 300 Carats = 3000 Carats")));
     }
 
     #[test]
@@ -8327,26 +8515,23 @@ mod tests {
             &Archive { news: Vec::new() },
             &json!({"events": []}),
         );
-        assert_eq!(rewards.len(), 22);
-        assert!(rewards.iter().all(|reward| reward.amount == Some(150)));
-        assert_eq!(
-            rewards
-                .iter()
-                .filter_map(|reward| reward.amount)
-                .sum::<i64>(),
-            3_300
-        );
-        assert_eq!(rewards[0].id, "global-news-994-login-bonus-period-01");
+        assert_eq!(rewards.len(), 1);
+        assert_eq!(rewards[0].amount, Some(3_300));
+        assert_eq!(rewards[0].id, "global-news-994-login-bonus");
         assert_eq!(rewards[0].available_at, "2026-08-26T22:00:00+00:00");
         assert_eq!(
             rewards[0].available_until.as_deref(),
-            Some("2026-09-02T14:59:00+00:00")
+            Some("2026-12-30T14:59:00+00:00")
+        );
+        assert_eq!(
+            rewards[0].evidence.as_deref(),
+            Some("22 days × 150 Carats = 3300 Carats; 22 listed availability periods")
         );
 
         let audit = audit_global_news_reward_posts(&archive);
         assert_eq!(audit.checked_posts, 1);
         assert_eq!(audit.reward_posts, 1);
-        assert_eq!(audit.parsed_rewards, 22);
+        assert_eq!(audit.parsed_rewards, 1);
         assert!(audit.issues.is_empty());
     }
 
@@ -8378,7 +8563,7 @@ mod tests {
     }
 
     #[test]
-    fn splits_every_archived_multi_period_global_login_bonus() {
+    fn bundles_every_archived_multi_period_global_login_bonus() {
         let archive = load_global_news_archive().unwrap();
         let rewards = load_global_news_rewards(
             &archive,
@@ -8386,16 +8571,20 @@ mod tests {
             &json!({"events": []}),
         );
 
-        for (announce_id, expected_periods) in [(126, 6), (994, 22), (100_039, 10)] {
-            let prefix = format!("global-news-{announce_id}-login-bonus-period-");
-            let periods = rewards
+        for (announce_id, expected_periods, expected_total) in
+            [(126, 6, 1_800), (994, 22, 3_300), (100_039, 10, 3_000)]
+        {
+            let id = format!("global-news-{announce_id}-login-bonus");
+            let matches = rewards
                 .iter()
-                .filter(|reward| reward.id.starts_with(&prefix))
+                .filter(|reward| reward.id == id)
                 .collect::<Vec<_>>();
-            assert_eq!(periods.len(), expected_periods, "post {announce_id}");
-            assert!(periods
-                .iter()
-                .all(|reward| reward.available_until.is_some()));
+            assert_eq!(matches.len(), 1, "post {announce_id}");
+            assert_eq!(matches[0].amount, Some(expected_total));
+            assert!(matches[0].available_until.is_some());
+            assert!(matches[0].evidence.as_deref().is_some_and(
+                |evidence| evidence.starts_with(&format!("{expected_periods} days × "))
+            ));
         }
     }
 
