@@ -6803,9 +6803,10 @@ fn build_global_reward_comparison(
     let observed_months = (observed_months * 1000.0).round() / 1000.0;
     let speculative_mean_monthly_carats =
         (speculative_observed_carats as f64 / observed_months).round() as i64;
-    let archive_as_of_date = archive_as_of
-        .unwrap_or(observation_end_date)
-        .max(observation_end_date);
+    // The archive's last observation is the cutoff for completed historical
+    // months. A reward announced ahead of its availability must not move that
+    // cutoff into the future and turn not-yet-observed months into zeroes.
+    let archive_as_of_date = archive_as_of.unwrap_or(observation_end_date);
     let archive_month_start =
         NaiveDate::from_ymd_opt(archive_as_of_date.year(), archive_as_of_date.month(), 1)
             .unwrap_or(archive_as_of_date);
@@ -8451,7 +8452,7 @@ mod tests {
     }
 
     #[test]
-    fn global_comparison_separates_jp_delta_en_only_and_deduplicated_social() {
+    fn global_comparison_uses_archive_cutoff_even_with_future_rewards() {
         let reward = |id: &str,
                       label: &str,
                       available_at: &str,
@@ -8506,6 +8507,14 @@ mod tests {
                 600,
                 "https://x.com/umamusume_eng/status/2",
             ),
+            reward(
+                "global-news-100002-gift-3300-0",
+                "Future login bonus",
+                "2026-12-23T00:00:00Z",
+                "global_news",
+                3300,
+                "https://umapyoi.net/news/en/100002",
+            ),
         ];
         let social_deduplication =
             remove_global_social_rewards_covered_by_news(&mut global_rewards);
@@ -8539,16 +8548,16 @@ mod tests {
         assert_eq!(comparison.matched_news_global_carats, 1500);
         assert_eq!(comparison.matched_news_jp_carats, 1000);
         assert_eq!(comparison.matched_news_extra_carats, 500);
-        assert_eq!(comparison.en_only_news_carats, 300);
+        assert_eq!(comparison.en_only_news_carats, 3600);
         assert_eq!(comparison.social_carats, 600);
         assert_eq!(comparison.social_reward_posts, 1);
         assert_eq!(comparison.social_news_duplicate_reward_items_removed, 1);
         assert_eq!(comparison.social_news_duplicate_carats_removed, 300);
-        assert_eq!(comparison.speculative_observed_carats, 1400);
+        assert_eq!(comparison.speculative_observed_carats, 4700);
         assert_eq!(comparison.matched_news.len(), 1);
-        assert_eq!(comparison.en_only_news.len(), 1);
+        assert_eq!(comparison.en_only_news.len(), 2);
         assert_eq!(comparison.observation_start, "2026-01-01");
-        assert_eq!(comparison.observation_end, "2026-03-01");
+        assert_eq!(comparison.observation_end, "2026-12-23");
         assert_eq!(comparison.archive_as_of, "2026-04-01");
         assert_eq!(comparison.speculative_window_start, "2025-10");
         assert_eq!(comparison.speculative_window_end, "2026-03");
