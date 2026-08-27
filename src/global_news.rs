@@ -13,6 +13,7 @@ const ARCHIVE_VERSION: u8 = 1;
 const PAGE_SIZE: usize = 32;
 const MAX_PAGES: usize = 100;
 const REQUEST_INTERVAL: Duration = Duration::from_millis(150);
+const UMAPYOI_EN_NEWS_ROOT: &str = "https://umapyoi.net/news/en";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalNewsArchive {
@@ -57,7 +58,10 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
     let mut posts = previous
         .posts
         .into_iter()
-        .map(|post| (post.announce_id, post))
+        .map(|mut post| {
+            post.page_url = umapyoi_en_page_url(post.announce_id);
+            (post.announce_id, post)
+        })
         .collect::<BTreeMap<_, _>>();
     let captured_at = Utc::now().to_rfc3339();
     let mut new_posts = 0;
@@ -86,7 +90,7 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
                     announce_id,
                     GlobalNewsPost {
                         announce_id,
-                        page_url: format!("https://umamusume.com/news/{announce_id}/"),
+                        page_url: umapyoi_en_page_url(announce_id),
                         first_seen_at: captured_at.clone(),
                         snapshots: vec![GlobalNewsSnapshot {
                             captured_at: captured_at.clone(),
@@ -116,6 +120,10 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
         updated_posts,
         changed,
     })
+}
+
+fn umapyoi_en_page_url(announce_id: i64) -> String {
+    format!("{UMAPYOI_EN_NEWS_ROOT}/{announce_id}")
 }
 
 async fn fetch_all_posts(client: &Client, endpoint: &str) -> Result<Vec<Value>> {
@@ -211,7 +219,9 @@ fn write_archive(path: &Path, archive: &GlobalNewsArchive) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{hash_value, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot};
+    use super::{
+        hash_value, umapyoi_en_page_url, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
+    };
     use serde_json::json;
 
     #[test]
@@ -245,5 +255,10 @@ mod tests {
             archive.posts[0].snapshots[0].content_hash,
             archive.posts[0].snapshots[1].content_hash
         );
+    }
+
+    #[test]
+    fn english_news_pages_link_to_umapyoi_frontend() {
+        assert_eq!(umapyoi_en_page_url(108), "https://umapyoi.net/news/en/108");
     }
 }

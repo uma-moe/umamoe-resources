@@ -221,12 +221,33 @@ async fn main() -> Result<()> {
         }
         Command::SyncGlobalNews { endpoint, out } => {
             let summary = global_news::sync(&endpoint, &out).await?;
+            let audit = generators::planner::audit_global_news_reward_archive(&out)?;
+            if !audit.issues.is_empty() {
+                let issues = audit
+                    .issues
+                    .iter()
+                    .map(|issue| {
+                        format!(
+                            "EN post {} ({}): {}",
+                            issue.announce_id, issue.page_url, issue.reason
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                anyhow::bail!("official Global news reward audit failed:\n{issues}");
+            }
             info!(
                 posts = summary.posts,
                 new_posts = summary.new_posts,
                 updated_posts = summary.updated_posts,
                 changed = summary.changed,
                 "official Global news archive synchronized"
+            );
+            info!(
+                checked_posts = audit.checked_posts,
+                reward_posts = audit.reward_posts,
+                parsed_rewards = audit.parsed_rewards,
+                "official Global news reward audit passed"
             );
         }
         Command::SyncGlobalSocial {
