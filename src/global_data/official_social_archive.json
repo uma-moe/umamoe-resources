@@ -4323,6 +4323,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2093458685381292076",
+      "status_url": "https://x.com/umamusume_eng/status/2093458685381292076",
+      "first_seen_at": "2026-08-28T22:19:10.735161176+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-28T22:19:10.735161176+00:00",
+          "content_hash": "27a153e21386e6b01be6857ef653a5fe0b2bdddfe92d66b6b235ae5b1caf239e",
+          "raw": {
+            "created_at": "2026-08-28T22:00:19.833+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Event Underway! 🥕<br><br>The race event Champions Meeting: Libra Cup has begun!<br>Win races for event-exclusive titles and carats!<br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/mdfSlvjI6h\">pic.twitter.com/mdfSlvjI6h</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2093458685381292076?ref_src=twsrc%5Etfw\">August 28, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2093458685381292076",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2093458685381292076",
+            "status_url": "https://x.com/umamusume_eng/status/2093458685381292076",
+            "text": "Event Underway! 🥕\nThe race event Champions Meeting: Libra Cup has begun!\nWin races for event-exclusive titles and carats!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/mdfSlvjI6h"
+          }
+        }
+      ]
     }
   ]
 }
