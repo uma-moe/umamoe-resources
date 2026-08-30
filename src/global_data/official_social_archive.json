@@ -4353,6 +4353,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2093821001096405235",
+      "status_url": "https://x.com/umamusume_eng/status/2093821001096405235",
+      "first_seen_at": "2026-08-30T05:23:43.085335314+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-30T05:23:43.085335314+00:00",
+          "content_hash": "ac5e49640f0648ef28796c3d346fb33f1916e0977194cbcd0affd0a3088f7153",
+          "raw": {
+            "created_at": "2026-08-29T22:00:02.631+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">The ongoing story event Days Flying By will end at 9:59 p.m., Aug 30 (UTC)!<br><br>Come join the event before it ends for a chance to get event-exclusive Support Cards and Rainbow Crystal Shards!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/EBQzBrC6L3\">pic.twitter.com/EBQzBrC6L3</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2093821001096405235?ref_src=twsrc%5Etfw\">August 29, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2093821001096405235",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2093821001096405235",
+            "status_url": "https://x.com/umamusume_eng/status/2093821001096405235",
+            "text": "The ongoing story event Days Flying By will end at 9:59 p.m., Aug 30 (UTC)!\nCome join the event before it ends for a chance to get event-exclusive Support Cards and Rainbow Crystal Shards!#Umamusume pic.twitter.com/EBQzBrC6L3"
+          }
+        }
+      ]
     }
   ]
 }
