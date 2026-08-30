@@ -4383,6 +4383,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2094077752681156885",
+      "status_url": "https://x.com/umamusume_eng/status/2094077752681156885",
+      "first_seen_at": "2026-08-30T16:40:31.661074059+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-08-30T16:40:31.661074059+00:00",
+          "content_hash": "075b8c6112e7f697f5bd4907bdd323106d17bfd145ace39705e35c14f3fdd9cc",
+          "raw": {
+            "created_at": "2026-08-30T15:00:16.979+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Extra Star Piece Event underway!<br><br>To celebrate the G1 Shuka Sho race, you can earn Star Pieces by winning eligible races during a Career once per day!<br><br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/ALehbpGWPr\">pic.twitter.com/ALehbpGWPr</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2094077752681156885?ref_src=twsrc%5Etfw\">August 30, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2094077752681156885",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2094077752681156885",
+            "status_url": "https://x.com/umamusume_eng/status/2094077752681156885",
+            "text": "Extra Star Piece Event underway!\nTo celebrate the G1 Shuka Sho race, you can earn Star Pieces by winning eligible races during a Career once per day!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/ALehbpGWPr"
+          }
+        }
+      ]
     }
   ]
 }
