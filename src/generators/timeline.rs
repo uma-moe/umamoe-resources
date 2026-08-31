@@ -47,7 +47,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 28;
+const TIMELINE_ALGORITHM_VERSION: u8 = 29;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -261,9 +261,10 @@ struct ConfirmedDateLookup {
     news_events: BTreeMap<String, DateTime<Utc>>,
     anniversary: BTreeMap<u32, DateTime<Utc>>,
     closed_global_months: BTreeSet<(i32, u32)>,
+    hidden: BTreeSet<(ConfirmedTimelineKind, String)>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum ConfirmedTimelineKind {
     Character,
     Support,
@@ -286,7 +287,7 @@ enum ConfirmedTimelineKind {
 struct ConfirmedTimelineDate {
     kind: ConfirmedTimelineKind,
     key: String,
-    global_date: DateTime<Utc>,
+    global_date: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone)]
@@ -597,35 +598,62 @@ pub fn generate(
         .map(|(year, month)| first_release_after_global_month(year, month));
 
     let mut events = Vec::new();
-    events.extend(timeline_character_banners.iter().map(|banner| {
-        character_event(
-            banner,
-            &character_names,
-            &confirmed_dates,
-            &unique_anchors,
-            observed_rate,
-        )
-    }));
-    events.extend(timeline_support_banners.iter().map(|banner| {
-        support_event(
-            banner,
-            &support_names,
-            &support_card_names,
-            &confirmed_dates,
-            &unique_anchors,
-            observed_rate,
-        )
-    }));
-    events.extend(additional_gacha_banners.iter().filter_map(|banner| {
-        additional_gacha_event(
-            banner,
-            &support_names,
-            &support_card_names,
-            &confirmed_dates,
-            &unique_anchors,
-            observed_rate,
-        )
-    }));
+    events.extend(
+        timeline_character_banners
+            .iter()
+            .filter(|banner| {
+                !confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Character, banner.gacha_id)
+            })
+            .map(|banner| {
+                character_event(
+                    banner,
+                    &character_names,
+                    &confirmed_dates,
+                    &unique_anchors,
+                    observed_rate,
+                )
+            }),
+    );
+    events.extend(
+        timeline_support_banners
+            .iter()
+            .filter(|banner| {
+                !confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Support, banner.gacha_id)
+            })
+            .map(|banner| {
+                support_event(
+                    banner,
+                    &support_names,
+                    &support_card_names,
+                    &confirmed_dates,
+                    &unique_anchors,
+                    observed_rate,
+                )
+            }),
+    );
+    events.extend(
+        additional_gacha_banners
+            .iter()
+            .filter(|banner| {
+                let kind = match banner.kind {
+                    AdditionalGachaKind::Character => ConfirmedTimelineKind::Character,
+                    AdditionalGachaKind::Support => ConfirmedTimelineKind::Support,
+                    AdditionalGachaKind::Paid => ConfirmedTimelineKind::Paid,
+                    AdditionalGachaKind::Unknown => return true,
+                };
+                !confirmed_dates.is_hidden_banner(kind, banner.gacha_id)
+            })
+            .filter_map(|banner| {
+                additional_gacha_event(
+                    banner,
+                    &support_names,
+                    &support_card_names,
+                    &confirmed_dates,
+                    &unique_anchors,
+                    observed_rate,
+                )
+            }),
+    );
     events.extend(paid_events(
         &timeline_paid_banners,
         &character_names,
@@ -687,6 +715,7 @@ pub fn generate(
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
+    align_paid_banners_with_same_day_primary(&mut events);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
     let anniversaries = timeline_anniversaries(
@@ -1387,6 +1416,9 @@ fn paid_events(
     let mut bundled_by_month: BTreeMap<String, Vec<&TimelinePaidBanner>> = BTreeMap::new();
 
     for banner in banners {
+        if confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Paid, banner.gacha_id) {
+            continue;
+        }
         if !banner.pickup_card_ids.is_empty() || banner.gacha_type != 14 {
             events.push(paid_event(
                 banner,
@@ -2216,6 +2248,54 @@ fn apply_grouped_event_adjustment(events: &mut [BannerTimelineEvent]) {
     }
 }
 
+fn align_paid_banners_with_same_day_primary(events: &mut [BannerTimelineEvent]) {
+    let primary_dates = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event.event_type,
+                BannerTimelineEventType::CharacterBanner
+                    | BannerTimelineEventType::SupportCardBanner
+            )
+        })
+        .fold(
+            BTreeMap::<DateTime<Utc>, DateTime<Utc>>::new(),
+            |mut dates, event| {
+                let jp_date = normalize_to_midnight_utc(event.jp_release_date);
+                dates
+                    .entry(jp_date)
+                    .and_modify(|global_date| {
+                        *global_date = (*global_date).max(event.global_release_date)
+                    })
+                    .or_insert(event.global_release_date);
+                dates
+            },
+        );
+
+    for event in events.iter_mut().filter(|event| {
+        event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
+    }) {
+        let jp_date = normalize_to_midnight_utc(event.jp_release_date);
+        let Some(primary_date) = primary_dates.get(&jp_date).copied() else {
+            continue;
+        };
+        if event.global_release_date >= primary_date {
+            continue;
+        }
+
+        let shift = primary_date - event.global_release_date;
+        event.global_release_date += shift;
+        event.estimated_end_date += shift;
+        event.prediction.schedule_adjustment_days = Some(
+            event
+                .prediction
+                .schedule_adjustment_days
+                .unwrap_or_default()
+                + shift.num_days(),
+        );
+    }
+}
+
 fn grouped_event_patterns(
     events: &[BannerTimelineEvent],
 ) -> BTreeMap<(BannerTimelineEventType, i64), i64> {
@@ -2761,6 +2841,7 @@ fn build_confirmed_date_lookup(
         news_events: BTreeMap::new(),
         anniversary: BTreeMap::new(),
         closed_global_months: BTreeSet::new(),
+        hidden: BTreeSet::new(),
     };
 
     for banner in character_banners {
@@ -2806,49 +2887,53 @@ fn build_confirmed_date_lookup(
 
     for confirmed_dates_csv in confirmed_banner_dates_csv_sources()? {
         for confirmed_date in parse_confirmed_banner_dates(&confirmed_dates_csv)? {
-            lookup.closed_global_months.insert((
-                confirmed_date.global_date.year(),
-                confirmed_date.global_date.month(),
-            ));
+            let hidden_key = (confirmed_date.kind, confirmed_date.key.clone());
+            let Some(global_date) = confirmed_date.global_date else {
+                lookup.hidden.insert(hidden_key);
+                lookup.remove_confirmation(confirmed_date.kind, &confirmed_date.key);
+                continue;
+            };
+            lookup.hidden.remove(&hidden_key);
+            lookup
+                .closed_global_months
+                .insert((global_date.year(), global_date.month()));
             match confirmed_date.kind {
                 ConfirmedTimelineKind::Character => {
                     if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup
-                            .character
-                            .insert(gacha_id, confirmed_date.global_date);
+                        lookup.character.insert(gacha_id, global_date);
                     }
                 }
                 ConfirmedTimelineKind::Support => {
                     if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup.support.insert(gacha_id, confirmed_date.global_date);
+                        lookup.support.insert(gacha_id, global_date);
                     }
                 }
                 ConfirmedTimelineKind::Paid => {
                     if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup.paid.insert(gacha_id, confirmed_date.global_date);
+                        lookup.paid.insert(gacha_id, global_date);
                     }
                 }
                 ConfirmedTimelineKind::Story => {
                     lookup
                         .story
-                        .insert(image_key(&confirmed_date.key), confirmed_date.global_date);
+                        .insert(image_key(&confirmed_date.key), global_date);
                 }
                 ConfirmedTimelineKind::Champions => {
                     lookup.champions.insert(
                         indexed_event_key("champions_meeting", &confirmed_date.key),
-                        confirmed_date.global_date,
+                        global_date,
                     );
                 }
                 ConfirmedTimelineKind::Legend => {
                     lookup.legend.insert(
                         indexed_event_key("legend_race", &confirmed_date.key),
-                        confirmed_date.global_date,
+                        global_date,
                     );
                 }
                 ConfirmedTimelineKind::Campaign => {
                     lookup
                         .campaign
-                        .insert(image_key(&confirmed_date.key), confirmed_date.global_date);
+                        .insert(image_key(&confirmed_date.key), global_date);
                 }
                 ConfirmedTimelineKind::LeagueOfHeroes
                 | ConfirmedTimelineKind::MastersChallenge
@@ -2857,13 +2942,11 @@ fn build_confirmed_date_lookup(
                 | ConfirmedTimelineKind::StrongestTeam
                 | ConfirmedTimelineKind::RacingCarnival
                 | ConfirmedTimelineKind::TrainingScenario => {
-                    lookup
-                        .news_events
-                        .insert(confirmed_date.key, confirmed_date.global_date);
+                    lookup.news_events.insert(confirmed_date.key, global_date);
                 }
                 ConfirmedTimelineKind::Anniversary => {
                     if let Some(index) = parse_confirmed_anniversary_index(&confirmed_date.key) {
-                        lookup.anniversary.insert(index, confirmed_date.global_date);
+                        lookup.anniversary.insert(index, global_date);
                     }
                 }
             }
@@ -2871,6 +2954,59 @@ fn build_confirmed_date_lookup(
     }
 
     Ok(lookup)
+}
+
+impl ConfirmedDateLookup {
+    fn is_hidden_banner(&self, kind: ConfirmedTimelineKind, gacha_id: i64) -> bool {
+        self.hidden.contains(&(kind, gacha_id.to_string()))
+    }
+
+    fn remove_confirmation(&mut self, kind: ConfirmedTimelineKind, key: &str) {
+        match kind {
+            ConfirmedTimelineKind::Character => {
+                if let Some(gacha_id) = parse_confirmed_banner_id(key) {
+                    self.character.remove(&gacha_id);
+                }
+            }
+            ConfirmedTimelineKind::Support => {
+                if let Some(gacha_id) = parse_confirmed_banner_id(key) {
+                    self.support.remove(&gacha_id);
+                }
+            }
+            ConfirmedTimelineKind::Paid => {
+                if let Some(gacha_id) = parse_confirmed_banner_id(key) {
+                    self.paid.remove(&gacha_id);
+                }
+            }
+            ConfirmedTimelineKind::Story => {
+                self.story.remove(&image_key(key));
+            }
+            ConfirmedTimelineKind::Champions => {
+                self.champions
+                    .remove(&indexed_event_key("champions_meeting", key));
+            }
+            ConfirmedTimelineKind::Legend => {
+                self.legend.remove(&indexed_event_key("legend_race", key));
+            }
+            ConfirmedTimelineKind::Campaign => {
+                self.campaign.remove(&image_key(key));
+            }
+            ConfirmedTimelineKind::LeagueOfHeroes
+            | ConfirmedTimelineKind::MastersChallenge
+            | ConfirmedTimelineKind::TrainerSkillsTest
+            | ConfirmedTimelineKind::FactorResearch
+            | ConfirmedTimelineKind::StrongestTeam
+            | ConfirmedTimelineKind::RacingCarnival
+            | ConfirmedTimelineKind::TrainingScenario => {
+                self.news_events.remove(key);
+            }
+            ConfirmedTimelineKind::Anniversary => {
+                if let Some(index) = parse_confirmed_anniversary_index(key) {
+                    self.anniversary.remove(&index);
+                }
+            }
+        }
+    }
 }
 
 fn matching_pickup_candidates(actual: &[i64], candidates: &[i64]) -> bool {
@@ -2964,7 +3100,7 @@ fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate
         let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
         if fields.len() != 3 {
             anyhow::bail!(
-                "confirmed_global_banner_dates.csv line {line_number} must be type,banner,date"
+                "confirmed_global_banner_dates.csv line {line_number} must be type,banner,date-or-hidden"
             );
         }
 
@@ -2984,12 +3120,19 @@ fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate
         dates.push(ConfirmedTimelineDate {
             kind,
             key,
-            global_date: parse_confirmed_global_date(fields[2]).with_context(|| {
-                format!(
-                    "invalid confirmed timeline date on line {line_number}: {}",
-                    fields[2]
-                )
-            })?,
+            global_date: if matches!(
+                fields[2].to_ascii_lowercase().as_str(),
+                "hidden" | "hide" | "excluded" | "exclude"
+            ) {
+                None
+            } else {
+                Some(parse_confirmed_global_date(fields[2]).with_context(|| {
+                    format!(
+                        "invalid confirmed timeline date or hidden value on line {line_number}: {}",
+                        fields[2]
+                    )
+                })?)
+            },
         });
     }
 
@@ -4643,16 +4786,16 @@ fn round_rate(rate: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        annotate_calendar_likelihoods, annotate_rerun_banners, apply_closed_schedule_adjustment,
-        apply_family_adjustment, build_anniversary_schedule_anchors, build_confirmed_date_lookup,
-        calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, gacha_type_name, latest_closed_global_month,
-        legend_boss_metadata, load_bundled_support_card_names, load_timeline_campaigns,
-        load_timeline_character_banners, load_timeline_legend_races, load_timeline_paid_banners,
-        load_timeline_story_events, load_timeline_support_banners, load_umapyoi_support_card_names,
-        load_umapyoi_support_character_names, merge_global_mission_campaigns,
-        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
-        parse_confirmed_banner_dates, standardized_jp_mission_title,
+        align_paid_banners_with_same_day_primary, annotate_calendar_likelihoods,
+        annotate_rerun_banners, apply_closed_schedule_adjustment, apply_family_adjustment,
+        build_anniversary_schedule_anchors, build_confirmed_date_lookup, calculate_global_date,
+        calculate_recent_acceleration_rate, first_release_after_global_month, gacha_type_name,
+        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
+        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
+        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
+        load_umapyoi_support_card_names, load_umapyoi_support_character_names,
+        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
+        monotonic_schedule_anchors, parse_confirmed_banner_dates, standardized_jp_mission_title,
         timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
         CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
         DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
@@ -4698,14 +4841,15 @@ mod tests {
             legend,legend_race_12,2026-06-07
             league_of_heroes,2023-05-12,2026-08-15
             anniversary,1,2025-10-26
+            character,2022_30130.webp,hidden
             "#,
         )
         .expect("test confirmed date CSV should parse");
 
-        assert_eq!(dates.len(), 8);
+        assert_eq!(dates.len(), 9);
         assert_eq!(dates[0].kind, ConfirmedTimelineKind::Character);
         assert_eq!(dates[0].key, "30100");
-        assert_eq!(dates[0].global_date, utc_date(2026, 6, 18, 22));
+        assert_eq!(dates[0].global_date, Some(utc_date(2026, 6, 18, 22)));
         assert_eq!(dates[1].kind, ConfirmedTimelineKind::Support);
         assert_eq!(dates[1].key, "30101");
         assert_eq!(dates[2].kind, ConfirmedTimelineKind::Paid);
@@ -4720,6 +4864,9 @@ mod tests {
         assert_eq!(dates[6].key, "league-of-heroes-2023-05-12");
         assert_eq!(dates[7].kind, ConfirmedTimelineKind::Anniversary);
         assert_eq!(dates[7].key, "1");
+        assert_eq!(dates[8].kind, ConfirmedTimelineKind::Character);
+        assert_eq!(dates[8].key, "30130");
+        assert_eq!(dates[8].global_date, None);
     }
 
     #[test]
@@ -5255,6 +5402,7 @@ mod tests {
             news_events: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months,
+            hidden: BTreeSet::new(),
         };
 
         assert_eq!(latest_closed_global_month(&lookup), Some((2026, 6)));
@@ -5538,6 +5686,62 @@ mod tests {
         assert_eq!(story_prediction.schedule_adjustment_days, None);
     }
 
+    #[test]
+    fn paid_banner_cannot_precede_same_day_primary_banner() {
+        let jp_date = utc_date(2023, 2, 24, 3);
+        let primary_date = utc_date(2026, 12, 3, 22);
+        let mut support = test_timeline_event_with_type(
+            "support-banner-2023_30151",
+            BannerTimelineEventType::SupportCardBanner,
+            jp_date,
+            primary_date,
+            false,
+        );
+        support.estimated_end_date = utc_date(2026, 12, 17, 22);
+        let mut paid = test_timeline_event_with_type(
+            "paid-banner-50016",
+            BannerTimelineEventType::PaidBanner,
+            jp_date,
+            utc_date(2026, 11, 21, 22),
+            false,
+        );
+        paid.estimated_end_date = utc_date(2027, 1, 1, 22);
+        paid.prediction.schedule_adjustment_days = Some(-12);
+        let mut events = vec![paid, support];
+
+        align_paid_banners_with_same_day_primary(&mut events);
+
+        assert_eq!(events[0].global_release_date, primary_date);
+        assert_eq!(events[0].estimated_end_date, utc_date(2027, 1, 13, 22));
+        assert_eq!(events[0].prediction.schedule_adjustment_days, Some(0));
+    }
+
+    #[test]
+    fn confirmed_paid_banner_keeps_its_date() {
+        let jp_date = utc_date(2023, 2, 24, 3);
+        let primary_date = utc_date(2026, 12, 3, 22);
+        let support = test_timeline_event_with_type(
+            "support-banner-2023_30151",
+            BannerTimelineEventType::SupportCardBanner,
+            jp_date,
+            primary_date,
+            false,
+        );
+        let paid_date = utc_date(2026, 11, 21, 22);
+        let paid = test_timeline_event_with_type(
+            "paid-banner-50016",
+            BannerTimelineEventType::PaidBanner,
+            jp_date,
+            paid_date,
+            true,
+        );
+        let mut events = vec![paid, support];
+
+        align_paid_banners_with_same_day_primary(&mut events);
+
+        assert_eq!(events[0].global_release_date, paid_date);
+    }
+
     fn test_timeline_event(
         id: &str,
         jp_release_date: chrono::DateTime<chrono::Utc>,
@@ -5565,6 +5769,7 @@ mod tests {
             news_events: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months: BTreeSet::new(),
+            hidden: BTreeSet::new(),
         }
     }
 
