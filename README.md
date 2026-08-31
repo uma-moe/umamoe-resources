@@ -208,7 +208,7 @@ Generation emits `character_names.json` from the bundled `src/character_names.js
 
 `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` are generated from `master.mdb` and the bundled character-name mapping only. No external frontend data directory is read during generation.
 
-Confirmed global timeline dates for `banner_timeline.json` live in `src/jp_data/confirmed_global_banner_dates.csv`. To confirm a newly announced schedule entry, append one line:
+Confirmed global timeline dates and visibility overrides for `banner_timeline.json` live in `src/jp_data/confirmed_global_banner_dates.csv`. To confirm a newly announced schedule entry, append one line:
 
 ```csv
 character,30104,2026-07-02
@@ -226,6 +226,15 @@ racing_carnival,2024-10-11,2026-12-15
 training_scenario,2022-08-24,2026-12-20
 anniversary,1,2025-10-26
 ```
+
+To omit a JP banner that Global may skip, use `hidden` in place of the date:
+
+```csv
+character,2022_30130.webp,hidden
+support,2022_30131.webp,hidden
+```
+
+Hidden rows are not emitted in `banner_timeline.json` and do not participate in banner-date calibration. Sources are applied in order, so a later dated row for the same type and gacha ID restores and confirms the banner if it is announced after all.
 
 Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. Anniversary rows use the marker index, where `1` is the first half-anniversary. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
 

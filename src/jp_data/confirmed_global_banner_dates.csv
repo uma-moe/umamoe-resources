@@ -1,7 +1,7 @@
 # Confirmed global timeline dates used by banner_timeline.json.
 #
 # Format:
-# type,key,date
+# type,key,date-or-hidden
 #
 # type: character, support, paid, story, champions, legend, campaign,
 # league_of_heroes, masters_challenge, trainer_skills_test, factor_research,
@@ -12,6 +12,7 @@
 # key: for news-derived sections, use the JP start date or full key like league-of-heroes-2023-05-12
 # key: for anniversary, use the marker index; 1 is the first half-anniversary
 # date: YYYY-MM-DD; generated timestamps use 22:00 UTC for that date
+# hidden: omit the matching timeline row; a later dated row restores it
 #
 # Schedule months are closed automatically. If this file contains any timeline
 # entry in a global month, the predictor assumes that month was published as a
@@ -26,6 +27,10 @@
 # league_of_heroes,2023-05-12,2026-08-15
 # training_scenario,2022-08-24,2026-12-20
 # anniversary,1,2025-10-26
+
+# These optional JP reruns are not expected on Global unless later confirmed.
+character,2022_30130.webp,hidden
+support,2022_30131.webp,hidden
 
 anniversary,1,2025-10-26
 anniversary,2,2026-03-02
