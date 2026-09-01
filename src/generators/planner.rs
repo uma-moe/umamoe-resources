@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 35;
+const ALGORITHM_VERSION: u8 = 36;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -37,6 +37,7 @@ const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_soc
 const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
 const JP_MASTER_REWARDS: &[u8] = include_bytes!("../jp_data/planner_master_rewards.json");
+const JP_CAMPAIGN_REWARDS: &[u8] = include_bytes!("../jp_data/planner_campaign_rewards.json");
 
 #[derive(Debug)]
 pub struct GeneratedPlanner {
@@ -533,6 +534,7 @@ pub fn version_hash() -> String {
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
     digest.update(JP_MASTER_REWARDS);
+    digest.update(JP_CAMPAIGN_REWARDS);
     hex::encode(digest.finalize())
 }
 
@@ -3065,6 +3067,7 @@ fn load_master_rewards(
     if jp_connection.is_none() {
         load_master_reward_catalog(timeline, &mut rewards)?;
     }
+    load_campaign_reward_catalog(timeline, &mut rewards)?;
     load_login_bonus_rewards_for(
         connection,
         timeline,
@@ -3087,6 +3090,64 @@ fn load_master_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>
     let rows: Vec<PlannerRewardCatalogRow> = serde_json::from_slice(JP_MASTER_REWARDS)
         .context("failed to parse bundled JP planner reward catalogue")?;
     append_master_reward_catalog_rows(timeline, rewards, rows)
+}
+
+fn load_campaign_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>) -> Result<()> {
+    let rows: Vec<PlannerRewardCatalogRow> = serde_json::from_slice(JP_CAMPAIGN_REWARDS)
+        .context("failed to parse bundled JP campaign reward catalogue")?;
+    let timeline_ends = timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|event| {
+            Some((
+                event.get("id")?.as_str()?.to_string(),
+                event
+                    .get("estimated_end_date")
+                    .or_else(|| event.get("global_release_date"))?
+                    .as_str()?
+                    .to_string(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for row in rows {
+        let currency = catalog_currency(&row.currency)?;
+        let assumption = catalog_assumption(&row.assumption)?;
+        if rewards.iter().any(|reward| {
+            reward.provenance == "global_master"
+                && reward.event_id == row.event_id
+                && reward.currency == currency
+                && reward.amount == row.amount
+        }) {
+            continue;
+        }
+        let available_at = row
+            .event_id
+            .as_ref()
+            .and_then(|event_id| timeline_ends.get(event_id))
+            .cloned()
+            .unwrap_or(row.available_at);
+        rewards.push(PlannerReward {
+            id: format!("campaign-catalog-{}", row.id),
+            label: row.label,
+            event_id: row.event_id,
+            gacha_id: row.gacha_id,
+            currency,
+            amount: row.amount,
+            available_at,
+            available_until: None,
+            provenance: "jp_campaign_catalog",
+            assumption,
+            default_enabled: row.default_enabled,
+            source_url: row.source_url,
+            source_items: row.source_items,
+            confidence: "projected_parity",
+            evidence: row.evidence,
+        });
+    }
+    Ok(())
 }
 
 fn append_master_reward_catalog_rows(
@@ -3237,6 +3298,7 @@ fn catalog_assumption(value: &str) -> Result<&'static str> {
         "jp_reward_parity_scenario_evaluation_thresholds" => {
             Ok("jp_reward_parity_scenario_evaluation_thresholds")
         }
+        "all_campaign_rewards" => Ok("all_campaign_rewards"),
         "qualitative_only" => Ok("qualitative_only"),
         "racing_carnival_bonus_skill_mission" => Ok("racing_carnival_bonus_skill_mission"),
         "temporary_character_story_read" => Ok("temporary_character_story_read"),
@@ -8097,12 +8159,13 @@ mod tests {
         extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
         has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
         is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
-        load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
-        load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
-        load_gachas, load_general_event_mission_items, load_global_news_archive,
-        load_global_news_rewards, load_global_social_rewards, load_login_bonus_rewards_for,
-        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
-        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
+        load_campaign_reward_catalog, load_competitive_reward_metadata, load_competitive_variants,
+        load_competitive_variants_for, load_daily_pack_rules, load_event_exchange_rewards,
+        load_factor_research_rewards_for, load_gachas, load_general_event_mission_items,
+        load_global_news_archive, load_global_news_rewards, load_global_social_rewards,
+        load_login_bonus_rewards_for, load_mission_campaign_rewards,
+        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
+        load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, prefer_detailed_gift_sections, prefer_global_news_over_jp_news,
@@ -8197,6 +8260,52 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("bundled JP master catalogue"));
+    }
+
+    #[test]
+    fn bundled_campaign_catalog_exposes_uma_sanpo_rewards() {
+        let timeline = json!({"events": [
+            {
+                "id": "news-event-uma-sanpo-2022-10-19",
+                "type": "campaign",
+                "global_release_date": "2026-09-01T22:00:00Z",
+                "estimated_end_date": "2026-09-10T22:00:00Z"
+            },
+            {
+                "id": "news-event-holiday-celebration-2022-11-28",
+                "type": "campaign",
+                "global_release_date": "2026-09-28T22:00:00Z",
+                "estimated_end_date": "2026-10-12T22:00:00Z"
+            }
+        ]});
+        let mut rewards = Vec::new();
+
+        load_campaign_reward_catalog(&timeline, &mut rewards).unwrap();
+
+        assert_eq!(rewards.len(), 4);
+        let jewels = rewards
+            .iter()
+            .find(|reward| reward.id.ends_with("free-jewels"))
+            .expect("Uma Sanpo jewel total should be present");
+        assert_eq!(jewels.amount, Some(150));
+        assert_eq!(jewels.available_at, "2026-09-10T22:00:00Z");
+        assert_eq!(jewels.provenance, "jp_campaign_catalog");
+
+        let details = rewards
+            .iter()
+            .find(|reward| reward.id.ends_with("item-details"))
+            .expect("Uma Sanpo item details should be present");
+        assert_eq!(details.source_items.len(), 11);
+        assert!(details
+            .source_items
+            .iter()
+            .any(|item| item.item_category == 91 && item.item_id == 59 && item.amount == 40_000));
+
+        let holiday = rewards
+            .iter()
+            .find(|reward| reward.id.contains("holiday-celebration"))
+            .expect("Holiday Celebration gifts should be linked");
+        assert_eq!(holiday.available_at, "2026-10-12T22:00:00Z");
     }
 
     #[test]

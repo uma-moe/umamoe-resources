@@ -1,0 +1,128 @@
+[
+  {
+    "id": "uma-sanpo-2022-10-19-free-jewels",
+    "label": "Let's Go! Uma Outing! rewards",
+    "event_id": "news-event-uma-sanpo-2022-10-19",
+    "currency": "free_jewels",
+    "amount": 150,
+    "available_at": "2022-10-28T02:59:59Z",
+    "assumption": "all_campaign_rewards",
+    "default_enabled": false,
+    "source_url": "https://umamusume.wikiru.jp/index.php?%E3%82%A6%E3%83%9E%E3%81%95%E3%82%93%E3%81%BD%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%9A%E3%83%BC%E3%83%B3_2022-10",
+    "source_items": [
+      {
+        "item_category": 90,
+        "item_id": 43,
+        "amount": 150
+      }
+    ],
+    "evidence": "Three destinations each offer 50 jewels once"
+  },
+  {
+    "id": "uma-sanpo-2022-10-19-gold-crystal-shard",
+    "label": "Let's Go! Uma Outing! rewards",
+    "event_id": "news-event-uma-sanpo-2022-10-19",
+    "currency": "gold_crystal",
+    "amount": 1,
+    "available_at": "2022-10-28T02:59:59Z",
+    "assumption": "all_campaign_rewards",
+    "default_enabled": false,
+    "source_url": "https://umamusume.wikiru.jp/index.php?%E3%82%A6%E3%83%9E%E3%81%95%E3%82%93%E3%81%BD%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%9A%E3%83%BC%E3%83%B3_2022-10",
+    "source_items": [
+      {
+        "item_category": 164,
+        "item_id": 150,
+        "amount": 1
+      }
+    ],
+    "evidence": "The food destinations include one Gold Crystal Shard"
+  },
+  {
+    "id": "uma-sanpo-2022-10-19-item-details",
+    "label": "Let's Go! Uma Outing! reward details",
+    "event_id": "news-event-uma-sanpo-2022-10-19",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2022-10-28T02:59:59Z",
+    "assumption": "all_campaign_rewards",
+    "default_enabled": false,
+    "source_url": "https://umamusume.wikiru.jp/index.php?%E3%82%A6%E3%83%9E%E3%81%95%E3%82%93%E3%81%BD%E3%82%AD%E3%83%A3%E3%83%B3%E3%83%9A%E3%83%BC%E3%83%B3_2022-10",
+    "source_items": [
+      {
+        "item_category": 20,
+        "item_id": 32,
+        "amount": 5
+      },
+      {
+        "item_category": 20,
+        "item_id": 34,
+        "amount": 5
+      },
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 40000
+      },
+      {
+        "item_category": 93,
+        "item_id": 44,
+        "amount": 3
+      },
+      {
+        "item_category": 97,
+        "item_id": 115,
+        "amount": 3
+      },
+      {
+        "item_category": 34,
+        "item_id": 95,
+        "amount": 5
+      },
+      {
+        "item_category": 103,
+        "item_id": 98,
+        "amount": 1000
+      },
+      {
+        "item_category": 11,
+        "item_id": 162,
+        "amount": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 161,
+        "amount": 1
+      },
+      {
+        "item_category": 11,
+        "item_id": 160,
+        "amount": 1
+      },
+      {
+        "item_category": 30,
+        "item_id": 110,
+        "amount": 20000
+      }
+    ],
+    "evidence": "Exact one-time reward choices across food, outdoor, and indoor destinations"
+  },
+  {
+    "id": "holiday-celebration-2022-part-1-gifts",
+    "label": "Holiday Celebration Part 1 gifts",
+    "event_id": "news-event-holiday-celebration-2022-11-28",
+    "currency": "free_jewels",
+    "amount": null,
+    "available_at": "2022-12-12T03:00:00Z",
+    "assumption": "all_campaign_rewards",
+    "default_enabled": false,
+    "source_url": "https://umapyoi.net/news/1079?lang=jp",
+    "source_items": [
+      {
+        "item_category": 91,
+        "item_id": 59,
+        "amount": 50000
+      }
+    ],
+    "evidence": "Ten scheduled gifts of 5,000 monies during Holiday Celebration Part 1"
+  }
+]
