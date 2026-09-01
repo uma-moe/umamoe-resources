@@ -47,7 +47,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 29;
+const TIMELINE_ALGORITHM_VERSION: u8 = 30;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -1274,6 +1274,10 @@ fn campaign_link_family(value: &str) -> Option<&'static str> {
         Some("training-the-trainer")
     } else if title.contains("release celebration") {
         Some("release-celebration")
+    } else if title.contains("uma sanpo") || title.contains("uma outing") {
+        Some("uma-outing")
+    } else if title.contains("christmas campaign") || title.contains("holiday celebration") {
+        Some("holiday-celebration")
     } else {
         None
     }
@@ -1302,6 +1306,8 @@ fn news_event_asset_path(event: &NewsTimelineEvent) -> String {
         NewsTimelineKind::FactorResearch => "factor-research",
         NewsTimelineKind::StrongestTeam => "strongest-team",
         NewsTimelineKind::RacingCarnival => "racing-carnival",
+        NewsTimelineKind::UmaSanpo => "uma-sanpo",
+        NewsTimelineKind::HolidayCelebration => "holiday-celebration",
     };
     format!(
         "assets/timeline-images/events/{family}/{}.webp",
@@ -1357,8 +1363,18 @@ fn news_timeline_event(
             "racing_carnival",
             "racing-carnival",
         ),
+        NewsTimelineKind::UmaSanpo => (
+            BannerTimelineEventType::Campaign,
+            "campaign_news",
+            "uma-outing",
+        ),
+        NewsTimelineKind::HolidayCelebration => (
+            BannerTimelineEventType::Campaign,
+            "campaign_news",
+            "holiday-celebration",
+        ),
     };
-    let confirmed_global_date = confirmed_dates.news_events.get(&event.key).copied();
+    let confirmed_global_date = confirmed_news_event_date(event, confirmed_dates);
     let prediction = apply_family_adjustment(
         calculate_global_date(
             event.start_at,
@@ -1399,6 +1415,19 @@ fn news_timeline_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+    }
+}
+
+fn confirmed_news_event_date(
+    event: &NewsTimelineEvent,
+    confirmed_dates: &ConfirmedDateLookup,
+) -> Option<DateTime<Utc>> {
+    match event.kind {
+        NewsTimelineKind::UmaSanpo | NewsTimelineKind::HolidayCelebration => confirmed_dates
+            .campaign
+            .get(&image_key(&event.key))
+            .copied(),
+        _ => confirmed_dates.news_events.get(&event.key).copied(),
     }
 }
 
@@ -1993,7 +2022,7 @@ fn build_family_adjustment_models(
     }
 
     for event in news_events {
-        if let Some(global) = confirmed_dates.news_events.get(&event.key).copied() {
+        if let Some(global) = confirmed_news_event_date(event, confirmed_dates) {
             let event_type = match event.kind {
                 NewsTimelineKind::LeagueOfHeroes => BannerTimelineEventType::LeagueOfHeroes,
                 NewsTimelineKind::ChampionsMeeting => BannerTimelineEventType::ChampionsMeeting,
@@ -2003,6 +2032,9 @@ fn build_family_adjustment_models(
                 NewsTimelineKind::FactorResearch => BannerTimelineEventType::FactorResearch,
                 NewsTimelineKind::StrongestTeam => BannerTimelineEventType::StrongestTeam,
                 NewsTimelineKind::RacingCarnival => BannerTimelineEventType::RacingCarnival,
+                NewsTimelineKind::UmaSanpo | NewsTimelineKind::HolidayCelebration => {
+                    BannerTimelineEventType::Campaign
+                }
             };
             push_family_adjustment_sample(
                 &mut samples,

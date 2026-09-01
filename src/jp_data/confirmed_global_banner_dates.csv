@@ -7,7 +7,7 @@
 # league_of_heroes, masters_challenge, trainer_skills_test, factor_research,
 # strongest_team, racing_carnival, training_scenario, or anniversary
 # key: for banners, a bare gacha id, image stem, .png, or .webp all work
-# key: for story/campaign, use the image stem, .png, or .webp
+# key: for story/campaign, use the image stem, filename, or a full news-derived campaign key
 # key: for champions/legend, use the 0-based index or full key like champions_meeting_0
 # key: for news-derived sections, use the JP start date or full key like league-of-heroes-2023-05-12
 # key: for anniversary, use the marker index; 1 is the first half-anniversary
@@ -156,6 +156,10 @@ story,03_tonight_at_the_ligne_droite_banner,2026-04-05
 story,05_silks_and_three_riddles_banner,2026-05-18
 story,06_seek_solve_summer_walk_banner,2026-06-11
 story,07_super_smashing_summer_vacation_banner,2026-07-02
+
+# Confirmed by the official Global announcement and published campaign banners.
+campaign,uma-sanpo-2022-10-19,2026-09-01
+campaign,holiday-celebration-2022-11-28,2026-09-28
 
 champions,0,2025-08-17
 champions,1,2025-09-07

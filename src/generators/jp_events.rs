@@ -8,7 +8,7 @@ const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json")
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
-const ALGORITHM_VERSION: u8 = 5;
+const ALGORITHM_VERSION: u8 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -20,6 +20,8 @@ pub enum NewsTimelineKind {
     FactorResearch,
     StrongestTeam,
     RacingCarnival,
+    UmaSanpo,
+    HolidayCelebration,
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +111,8 @@ pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
         NewsTimelineKind::FactorResearch,
         NewsTimelineKind::StrongestTeam,
         NewsTimelineKind::RacingCarnival,
+        NewsTimelineKind::UmaSanpo,
+        NewsTimelineKind::HolidayCelebration,
     ] {
         let family_posts = posts
             .iter()
@@ -344,6 +348,10 @@ fn title_matches_kind(kind: NewsTimelineKind, title: &str) -> bool {
         }
         NewsTimelineKind::StrongestTeam => title.contains("strongest team"),
         NewsTimelineKind::RacingCarnival => title.contains("racing carnival"),
+        NewsTimelineKind::UmaSanpo => {
+            title.contains("uma-sanpo campaign") || title.contains("uma sanpo campaign")
+        }
+        NewsTimelineKind::HolidayCelebration => title.contains("christmas campaign"),
     }
 }
 
@@ -439,6 +447,17 @@ fn is_start_post(kind: NewsTimelineKind, title: &str) -> bool {
         NewsTimelineKind::RacingCarnival => {
             title.contains("racing carnival") && title.contains("underway")
         }
+        NewsTimelineKind::UmaSanpo => {
+            (title.contains("uma-sanpo campaign") || title.contains("uma sanpo campaign"))
+                && (title.contains("underway")
+                    || title.contains("was held")
+                    || title.contains("has begun"))
+        }
+        NewsTimelineKind::HolidayCelebration => {
+            title.starts_with("christmas campaign vol.")
+                || (title.starts_with("christmas campaign")
+                    && (title.contains("was held") || title.contains("has begun")))
+        }
     }
 }
 
@@ -484,6 +503,8 @@ fn kind_key(kind: NewsTimelineKind) -> &'static str {
         NewsTimelineKind::FactorResearch => "factor-research",
         NewsTimelineKind::StrongestTeam => "strongest-team",
         NewsTimelineKind::RacingCarnival => "racing-carnival",
+        NewsTimelineKind::UmaSanpo => "uma-sanpo",
+        NewsTimelineKind::HolidayCelebration => "holiday-celebration",
     }
 }
 
@@ -497,6 +518,8 @@ fn kind_title(kind: NewsTimelineKind) -> &'static str {
         NewsTimelineKind::FactorResearch => "Agnes Tachyon's Factor Research",
         NewsTimelineKind::StrongestTeam => "Aim! The Strongest Team",
         NewsTimelineKind::RacingCarnival => "Racing Carnival",
+        NewsTimelineKind::UmaSanpo => "Let's Go! Uma Outing!",
+        NewsTimelineKind::HolidayCelebration => "Holiday Celebration",
     }
 }
 
@@ -523,6 +546,16 @@ fn timeline_event_title(kind: NewsTimelineKind, source_title: &str) -> String {
                     .trim_start_matches("The ")
                     .to_string()
             }),
+        NewsTimelineKind::HolidayCelebration => {
+            let lower = source_title.to_ascii_lowercase();
+            if lower.contains("vol. 1") || lower.contains("vol.1") {
+                "Holiday Celebration Part 1".to_string()
+            } else if lower.contains("vol. 2") || lower.contains("vol.2") {
+                "Holiday Celebration Part 2".to_string()
+            } else {
+                kind_title(kind).to_string()
+            }
+        }
         _ => kind_title(kind).to_string(),
     }
 }
@@ -644,6 +677,8 @@ fn default_duration_days(kind: NewsTimelineKind) -> i64 {
         NewsTimelineKind::FactorResearch => 10,
         NewsTimelineKind::StrongestTeam => 8,
         NewsTimelineKind::RacingCarnival => 7,
+        NewsTimelineKind::UmaSanpo => 9,
+        NewsTimelineKind::HolidayCelebration => 14,
     }
 }
 
@@ -652,6 +687,8 @@ fn maximum_duration_days(kind: NewsTimelineKind) -> i64 {
         NewsTimelineKind::ChampionsMeeting => 8,
         NewsTimelineKind::TrainingScenario => 2,
         NewsTimelineKind::MastersChallenge => 120,
+        NewsTimelineKind::UmaSanpo => 12,
+        NewsTimelineKind::HolidayCelebration => 31,
         _ => 20,
     }
 }
@@ -1016,6 +1053,28 @@ mod tests {
                 .count()
                 >= 10
         );
+    }
+
+    #[test]
+    fn extracts_player_facing_campaign_families() {
+        let events = super::timeline_events().expect("news timeline events should extract");
+        let uma_sanpo = events
+            .iter()
+            .find(|event| event.key == "uma-sanpo-2022-10-19")
+            .expect("the first Uma Sanpo campaign should be present");
+        assert_eq!(uma_sanpo.kind, NewsTimelineKind::UmaSanpo);
+        assert_eq!(uma_sanpo.title, "Let's Go! Uma Outing!");
+        assert_eq!(uma_sanpo.source_post_id, 1010);
+        assert_eq!((uma_sanpo.end_at - uma_sanpo.start_at).num_days(), 9);
+
+        let holiday = events
+            .iter()
+            .find(|event| event.key == "holiday-celebration-2022-11-28")
+            .expect("Holiday Celebration Part 1 should be present");
+        assert_eq!(holiday.kind, NewsTimelineKind::HolidayCelebration);
+        assert_eq!(holiday.title, "Holiday Celebration Part 1");
+        assert_eq!(holiday.source_post_id, 1079);
+        assert_eq!((holiday.end_at - holiday.start_at).num_days(), 14);
     }
 
     #[test]
