@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 36;
+const ALGORITHM_VERSION: u8 = 37;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -7920,6 +7920,18 @@ fn planner_date_after_days(value: &str, days: i64) -> String {
 }
 
 fn same_news_page(left: &str, right: &str) -> bool {
+    let announce_id = |url: &str| {
+        url.split('?')
+            .next()?
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()?
+            .parse::<i64>()
+            .ok()
+    };
+    if let (Some(left), Some(right)) = (announce_id(left), announce_id(right)) {
+        return left == right;
+    }
     left.split('?').next().unwrap_or(left).trim_end_matches('/')
         == right
             .split('?')
@@ -10718,6 +10730,18 @@ mod tests {
             .unwrap()
             .summary
             .contains("1200"));
+    }
+
+    #[test]
+    fn localized_news_urls_keep_the_same_event_link() {
+        assert!(super::same_news_page(
+            "https://umapyoi.net/en/news/994",
+            "https://umapyoi.net/news/994?lang=jp"
+        ));
+        assert!(!super::same_news_page(
+            "https://umapyoi.net/en/news/994",
+            "https://umapyoi.net/news/1013?lang=jp"
+        ));
     }
 
     #[test]
