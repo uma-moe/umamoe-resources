@@ -548,9 +548,12 @@ pub fn generate(
     let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
     merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
     reuse_champions_meeting_image_paths(&mut timeline_champions_meetings);
-    merge_campaign_news(
-        &mut timeline_campaigns,
-        &crate::generators::jp_events::campaign_timeline_metadata()?,
+    let news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
+    let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
+    append_unmatched_campaign_news(
+        &mut news_timeline_events,
+        &news_campaigns,
+        &matched_campaign_posts,
     );
     merge_legend_race_news(
         &mut timeline_legend_races,
@@ -1308,6 +1311,7 @@ fn news_event_asset_path(event: &NewsTimelineEvent) -> String {
         NewsTimelineKind::RacingCarnival => "racing-carnival",
         NewsTimelineKind::UmaSanpo => "uma-sanpo",
         NewsTimelineKind::HolidayCelebration => "holiday-celebration",
+        NewsTimelineKind::Campaign => "campaign",
     };
     format!(
         "assets/timeline-images/events/{family}/{}.webp",
@@ -1373,6 +1377,11 @@ fn news_timeline_event(
             "campaign_news",
             "holiday-celebration",
         ),
+        NewsTimelineKind::Campaign => (
+            BannerTimelineEventType::Campaign,
+            "campaign_news",
+            "campaign",
+        ),
     };
     let confirmed_global_date = confirmed_news_event_date(event, confirmed_dates);
     let prediction = apply_family_adjustment(
@@ -1423,7 +1432,9 @@ fn confirmed_news_event_date(
     confirmed_dates: &ConfirmedDateLookup,
 ) -> Option<DateTime<Utc>> {
     match event.kind {
-        NewsTimelineKind::UmaSanpo | NewsTimelineKind::HolidayCelebration => confirmed_dates
+        NewsTimelineKind::UmaSanpo
+        | NewsTimelineKind::HolidayCelebration
+        | NewsTimelineKind::Campaign => confirmed_dates
             .campaign
             .get(&image_key(&event.key))
             .copied(),
@@ -2032,9 +2043,9 @@ fn build_family_adjustment_models(
                 NewsTimelineKind::FactorResearch => BannerTimelineEventType::FactorResearch,
                 NewsTimelineKind::StrongestTeam => BannerTimelineEventType::StrongestTeam,
                 NewsTimelineKind::RacingCarnival => BannerTimelineEventType::RacingCarnival,
-                NewsTimelineKind::UmaSanpo | NewsTimelineKind::HolidayCelebration => {
-                    BannerTimelineEventType::Campaign
-                }
+                NewsTimelineKind::UmaSanpo
+                | NewsTimelineKind::HolidayCelebration
+                | NewsTimelineKind::Campaign => BannerTimelineEventType::Campaign,
             };
             push_family_adjustment_sample(
                 &mut samples,
@@ -3910,23 +3921,30 @@ fn reuse_champions_meeting_image_paths(events: &mut [TimelineChampionsMeeting]) 
 fn merge_campaign_news(
     campaigns: &mut [TimelineCampaign],
     news_campaigns: &[CampaignTimelineMetadata],
-) {
+) -> BTreeSet<i64> {
+    let mut matched = BTreeSet::new();
     for campaign in campaigns {
-        // Curated titles disambiguate campaign rows that share a release day. A
-        // date-only news match must never replace that semantic identity.
-        if campaign.title.is_some() {
-            continue;
-        }
         let jp_day = normalize_to_midnight_utc(campaign.start_at);
+        let family = campaign.title.as_deref().and_then(campaign_link_family);
         let Some(news) = news_campaigns
             .iter()
             .filter(|news| normalize_to_midnight_utc(news.start_at) == jp_day)
+            .filter(|news| {
+                campaign.title.is_none()
+                    || family
+                        .is_some_and(|family| campaign_link_family(&news.title) == Some(family))
+            })
             .max_by_key(|news| campaign_news_priority(&news.title))
         else {
             continue;
         };
-        campaign.title = Some(news.title.clone());
-        campaign.description = news.description.clone();
+        matched.insert(news.source_post_id);
+        if campaign.title.is_none() {
+            campaign.title = Some(news.title.clone());
+        }
+        if campaign.description.is_none() {
+            campaign.description = news.description.clone();
+        }
         if let Some(image_url) = news.image_url.clone() {
             campaign.image_url = Some(image_url);
             campaign.image_path = Some(format!(
@@ -3935,6 +3953,36 @@ fn merge_campaign_news(
             ));
         }
     }
+    matched
+}
+
+fn append_unmatched_campaign_news(
+    events: &mut Vec<NewsTimelineEvent>,
+    campaigns: &[CampaignTimelineMetadata],
+    matched: &BTreeSet<i64>,
+) {
+    let represented = events
+        .iter()
+        .map(|event| event.source_post_id)
+        .collect::<BTreeSet<_>>();
+    events.extend(
+        campaigns
+            .iter()
+            .filter(|campaign| campaign.image_url.is_some())
+            .filter(|campaign| !matched.contains(&campaign.source_post_id))
+            .filter(|campaign| !represented.contains(&campaign.source_post_id))
+            .map(|campaign| NewsTimelineEvent {
+                key: format!("campaign-{}", campaign.source_post_id),
+                kind: NewsTimelineKind::Campaign,
+                title: campaign.title.clone(),
+                start_at: campaign.start_at,
+                // ponytail: news has no normalized end field; parse article ranges if 14 days proves inaccurate.
+                end_at: campaign.start_at + Duration::days(14),
+                image_url: campaign.image_url.clone(),
+                description: campaign.description.clone(),
+                source_post_id: campaign.source_post_id,
+            }),
+    );
 }
 
 fn campaign_news_priority(title: &str) -> (u8, usize) {
@@ -4819,15 +4867,16 @@ fn round_rate(rate: f64) -> f64 {
 mod tests {
     use super::{
         align_paid_banners_with_same_day_primary, annotate_calendar_likelihoods,
-        annotate_rerun_banners, apply_closed_schedule_adjustment, apply_family_adjustment,
-        build_anniversary_schedule_anchors, build_confirmed_date_lookup, calculate_global_date,
-        calculate_recent_acceleration_rate, first_release_after_global_month, gacha_type_name,
-        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
-        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
-        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
-        load_umapyoi_support_card_names, load_umapyoi_support_character_names,
-        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
-        monotonic_schedule_anchors, parse_confirmed_banner_dates, standardized_jp_mission_title,
+        annotate_rerun_banners, append_unmatched_campaign_news, apply_closed_schedule_adjustment,
+        apply_family_adjustment, build_anniversary_schedule_anchors, build_confirmed_date_lookup,
+        calculate_global_date, calculate_recent_acceleration_rate,
+        first_release_after_global_month, gacha_type_name, latest_closed_global_month,
+        legend_boss_metadata, load_bundled_support_card_names, load_timeline_campaigns,
+        load_timeline_character_banners, load_timeline_legend_races, load_timeline_paid_banners,
+        load_timeline_story_events, load_timeline_support_banners, load_umapyoi_support_card_names,
+        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
+        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
+        parse_confirmed_banner_dates, standardized_jp_mission_title,
         timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
         CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
         DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
@@ -4835,7 +4884,9 @@ mod tests {
         TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
-    use crate::generators::jp_events::LegendRaceTimelineMetadata;
+    use crate::generators::jp_events::{
+        campaign_timeline_metadata, timeline_events, LegendRaceTimelineMetadata, NewsTimelineKind,
+    };
     use chrono::Duration;
     use rusqlite::Connection;
     use std::collections::{BTreeMap, BTreeSet};
@@ -5217,6 +5268,33 @@ mod tests {
             race.image_url.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_URL)
                 && race.image_path.as_deref() == Some(super::LEGEND_RACE_FALLBACK_IMAGE_PATH)
         }));
+    }
+
+    #[test]
+    fn campaign_news_enriches_master_assets_and_adds_only_unmatched_posts() {
+        let mut campaigns = load_timeline_campaigns(&mission_connection())
+            .expect("campaign timeline data should load");
+        let news = campaign_timeline_metadata().expect("campaign news should load");
+        let matched = merge_campaign_news(&mut campaigns, &news);
+        assert!(campaigns
+            .iter()
+            .any(|campaign| campaign.title.is_some() && campaign.image_url.is_some()));
+
+        let mut events = timeline_events().expect("specialized news events should load");
+        append_unmatched_campaign_news(&mut events, &news, &matched);
+        assert!(events.iter().any(|event| {
+            event.kind == NewsTimelineKind::Campaign
+                && event.image_url.is_some()
+                && (event.end_at - event.start_at).num_days() == 14
+        }));
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.source_post_id)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            events.len()
+        );
     }
 
     #[test]
