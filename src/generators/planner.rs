@@ -490,6 +490,14 @@ struct GlobalNewsSnapshot {
     raw: Value,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct GlobalNewsTimelineMetadata {
+    pub start_at: DateTime<Utc>,
+    pub end_at: Option<DateTime<Utc>>,
+    pub title: String,
+    pub description: Option<String>,
+}
+
 #[derive(Debug)]
 pub struct GlobalNewsRewardAudit {
     pub checked_posts: usize,
@@ -1541,6 +1549,63 @@ fn load_archive() -> Result<Archive> {
 fn load_global_news_archive() -> Result<GlobalNewsArchive> {
     serde_json::from_slice(GLOBAL_NEWS_ARCHIVE)
         .context("failed to parse official Global news archive")
+}
+
+pub(crate) fn load_global_news_timeline_metadata(
+) -> Result<BTreeMap<i64, GlobalNewsTimelineMetadata>> {
+    Ok(global_news_timeline_metadata(&load_global_news_archive()?))
+}
+
+fn global_news_timeline_metadata(
+    archive: &GlobalNewsArchive,
+) -> BTreeMap<i64, GlobalNewsTimelineMetadata> {
+    archive
+        .posts
+        .iter()
+        .filter_map(|post| {
+            let raw = &post.snapshots.last()?.raw;
+            let posted_at = raw
+                .get("post_at")
+                .and_then(normalize_global_news_timestamp_value)
+                .and_then(|value| DateTime::parse_from_rfc3339(&value).ok())?
+                .with_timezone(&Utc);
+            let message = raw.get("message").and_then(Value::as_str).unwrap_or("");
+            let text = html_to_text(message);
+            let posted_at_rfc3339 = posted_at.to_rfc3339();
+            let periods = text
+                .lines()
+                .filter_map(|line| global_period_window(line.trim(), &posted_at_rfc3339))
+                .collect::<Vec<_>>();
+            let start_at = periods
+                .iter()
+                .map(|(start, _)| *start)
+                .min()
+                .unwrap_or(posted_at);
+            let end_at = periods.iter().map(|(_, end)| *end).max();
+            Some((
+                post.announce_id,
+                GlobalNewsTimelineMetadata {
+                    start_at,
+                    end_at,
+                    title: raw.get("title")?.as_str()?.to_string(),
+                    description: summarize_global_news(message),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn summarize_global_news(message: &str) -> Option<String> {
+    let end = ["<h2", "<h3", "<figure"]
+        .into_iter()
+        .filter_map(|marker| message.find(marker))
+        .min()
+        .unwrap_or(message.len());
+    let mut summary = html_to_text(&message[..end]).replace('\n', " ");
+    if summary.chars().count() > 360 {
+        summary = summary.chars().take(357).collect::<String>() + "...";
+    }
+    (!summary.is_empty()).then_some(summary)
 }
 
 pub fn audit_global_news_reward_archive(path: &Path) -> Result<GlobalNewsRewardAudit> {
@@ -8157,13 +8222,13 @@ mod tests {
         extract_global_login_bonus_total, extract_global_period_login_bonus,
         extract_login_bonus_total, extract_month_day_time, extract_news_free_pull_claims,
         extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
-        has_cost_context, has_sales_context, html_to_text, is_global_correction_notice,
-        is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
-        load_campaign_reward_catalog, load_competitive_reward_metadata, load_competitive_variants,
-        load_competitive_variants_for, load_daily_pack_rules, load_event_exchange_rewards,
-        load_factor_research_rewards_for, load_gachas, load_general_event_mission_items,
-        load_global_news_archive, load_global_news_rewards, load_global_social_rewards,
-        load_login_bonus_rewards_for, load_mission_campaign_rewards,
+        global_news_timeline_metadata, has_cost_context, has_sales_context, html_to_text,
+        is_global_correction_notice, is_projectable_jp_news_reward, jewel_amounts_from_line,
+        load_archive, load_campaign_reward_catalog, load_competitive_reward_metadata,
+        load_competitive_variants, load_competitive_variants_for, load_daily_pack_rules,
+        load_event_exchange_rewards, load_factor_research_rewards_for, load_gachas,
+        load_general_event_mission_items, load_global_news_archive, load_global_news_rewards,
+        load_global_social_rewards, load_login_bonus_rewards_for, load_mission_campaign_rewards,
         load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
         load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
@@ -8178,7 +8243,7 @@ mod tests {
         PlannerGachaShard, PlannerReward, PlannerRewardCatalogRow, PlannerSourceItem, TimelineLink,
         TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
     };
-    use chrono::NaiveDate;
+    use chrono::{NaiveDate, TimeZone, Utc};
     use rusqlite::Connection;
     use serde_json::json;
     use std::collections::{BTreeMap, BTreeSet};
@@ -8770,6 +8835,23 @@ mod tests {
         post.page_url = "https://umapyoi.net/news/en/994".to_string();
         post.snapshots[0].raw["post_at"] = json!(1_787_781_600_i64);
         let archive = GlobalNewsArchive { posts: vec![post] };
+        let timeline_dates = global_news_timeline_metadata(&archive);
+        assert_eq!(
+            timeline_dates[&994].start_at,
+            Utc.with_ymd_and_hms(2026, 8, 26, 22, 0, 0).unwrap()
+        );
+        assert_eq!(
+            timeline_dates[&994].end_at,
+            Some(Utc.with_ymd_and_hms(2026, 12, 30, 14, 59, 0).unwrap())
+        );
+        assert_eq!(
+            timeline_dates[&994].title,
+            "A special Umayuru Celebration has begun!"
+        );
+        assert!(timeline_dates[&994]
+            .description
+            .as_deref()
+            .is_some_and(|description| description.starts_with("Umayuru Login Bonus has begun!")));
         let rewards = load_global_news_rewards(
             &archive,
             &Archive { news: Vec::new() },
