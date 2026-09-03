@@ -7412,6 +7412,8 @@ fn load_news_rewards(archive: &Archive, timeline: &Value) -> Vec<PlannerReward> 
         }
         let event_link = match_news_event(post, title, timeline);
         let linked_event_id = event_link.as_ref().map(|link| link.event_id.clone());
+        let anniversary_reward_defaults_on =
+            linked_event_id.is_some() && title.to_ascii_lowercase().contains("anniversary");
         let linked_available_at = event_link
             .as_ref()
             .map(|link| link.end_date.clone())
@@ -7434,7 +7436,7 @@ fn load_news_rewards(archive: &Archive, timeline: &Value) -> Vec<PlannerReward> 
                 available_until: None,
                 provenance: "jp_news",
                 assumption: "all_login_days_jp_parity",
-                default_enabled: false,
+                default_enabled: anniversary_reward_defaults_on,
                 source_url: Some(post.page_url.clone()),
                 source_items: Vec::new(),
                 confidence: "exact_source_text",
@@ -7516,7 +7518,7 @@ fn load_news_rewards(archive: &Archive, timeline: &Value) -> Vec<PlannerReward> 
                         available_until: None,
                         provenance: "jp_news",
                         assumption: "jp_reward_parity",
-                        default_enabled: false,
+                        default_enabled: anniversary_reward_defaults_on,
                         source_url: Some(post.page_url.clone()),
                         source_items: Vec::new(),
                         confidence: "exact_source_text",
@@ -10687,6 +10689,7 @@ mod tests {
             .unwrap();
         assert_eq!(login.event_id.as_deref(), Some("campaign-217"));
         assert_eq!(login.amount, Some(1200));
+        assert!(login.default_enabled);
         assert_eq!(login.available_at, "2026-09-02T22:00:00+00:00");
         let mission = rewards
             .iter()
@@ -10730,6 +10733,36 @@ mod tests {
             .unwrap()
             .summary
             .contains("1200"));
+    }
+
+    #[test]
+    fn exact_linked_anniversary_gifts_default_on() {
+        let archive = Archive {
+            news: vec![ArchiveNews {
+                post_id: 1194,
+                page_url: "https://umapyoi.net/news/1194?lang=jp".to_string(),
+                title: Some("2nd Anniversary Campaign Vol. 2".to_string()),
+                posted_at: Some("2023-02-24T03:00:00Z".to_string()),
+                event_types: vec!["campaign".to_string()],
+                raw: json!({"message_english": "Gift Contents\nJewel 3000"}),
+            }],
+        };
+        let timeline = json!({"events":[{
+            "id":"campaign-302", "type":"campaign",
+            "title":"2nd Anniversary Campaign Vol. 2",
+            "jp_release_date":"2023-02-24T03:00:00Z",
+            "global_release_date":"2026-12-04T00:00:00Z",
+            "estimated_end_date":"2027-01-07T00:00:00Z",
+            "umapyoi_url":"https://umapyoi.net/news/1194?lang=jp"
+        }]});
+
+        let reward = load_news_rewards(&archive, &timeline)
+            .into_iter()
+            .find(|reward| reward.amount == Some(3000))
+            .unwrap();
+
+        assert!(reward.default_enabled);
+        assert_eq!(reward.event_id.as_deref(), Some("campaign-302"));
     }
 
     #[test]
