@@ -13,7 +13,7 @@ const ARCHIVE_VERSION: u8 = 1;
 const PAGE_SIZE: usize = 32;
 const MAX_PAGES: usize = 100;
 const REQUEST_INTERVAL: Duration = Duration::from_millis(150);
-const UMAPYOI_EN_NEWS_ROOT: &str = "https://umapyoi.net/news/en";
+const UMAPYOI_EN_NEWS_ROOT: &str = "https://umapyoi.net/en/news";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalNewsArchive {
@@ -122,7 +122,7 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
     })
 }
 
-fn umapyoi_en_page_url(announce_id: i64) -> String {
+pub(crate) fn umapyoi_en_page_url(announce_id: i64) -> String {
     format!("{UMAPYOI_EN_NEWS_ROOT}/{announce_id}")
 }
 
@@ -259,6 +259,6 @@ mod tests {
 
     #[test]
     fn english_news_pages_link_to_umapyoi_frontend() {
-        assert_eq!(umapyoi_en_page_url(108), "https://umapyoi.net/news/en/108");
+        assert_eq!(umapyoi_en_page_url(108), "https://umapyoi.net/en/news/108");
     }
 }
