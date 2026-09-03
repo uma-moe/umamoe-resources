@@ -48,7 +48,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 31;
+const TIMELINE_ALGORITHM_VERSION: u8 = 32;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -548,10 +548,21 @@ pub fn generate(
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
+    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
+    let confirmed_dates = build_confirmed_date_lookup(
+        character_banners,
+        support_banners,
+        paid_banners,
+        &timeline_character_banners,
+        &timeline_support_banners,
+        &timeline_paid_banners,
+        &additional_gacha_banners,
+    )?;
     let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
     merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
     reuse_champions_meeting_image_paths(&mut timeline_champions_meetings);
-    let news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
+    let mut news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
+    news_campaigns.retain(|campaign| include_jp_campaign(campaign, &confirmed_dates));
     let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
     append_unmatched_campaign_news(
         &mut news_timeline_events,
@@ -562,19 +573,9 @@ pub fn generate(
         &mut timeline_legend_races,
         &crate::generators::jp_events::legend_race_timeline_metadata()?,
     );
-    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
     let character_names = common::load_character_name_map(connection)?;
     let support_names = load_support_card_names(connection, &character_names)?;
     let support_card_names = load_support_card_specific_names(connection)?;
-    let confirmed_dates = build_confirmed_date_lookup(
-        character_banners,
-        support_banners,
-        paid_banners,
-        &timeline_character_banners,
-        &timeline_support_banners,
-        &timeline_paid_banners,
-        &additional_gacha_banners,
-    )?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
         &timeline_support_banners,
@@ -3994,6 +3995,27 @@ fn merge_campaign_news(
     matched
 }
 
+fn include_jp_campaign(
+    campaign: &CampaignTimelineMetadata,
+    confirmed_dates: &ConfirmedDateLookup,
+) -> bool {
+    if confirmed_dates
+        .global_news
+        .contains_key(&campaign.source_post_id)
+    {
+        return true;
+    }
+    let title = campaign.title.to_lowercase();
+    let is_umayuru = ["umayuru", "uma-yuru", "uma yuru"]
+        .iter()
+        .any(|name| title.contains(name));
+    is_umayuru
+        || !(title.contains("collab")
+            || title.contains(" x ")
+            || title.contains(" | ")
+            || title.contains('×'))
+}
+
 fn append_unmatched_campaign_news(
     events: &mut Vec<NewsTimelineEvent>,
     campaigns: &[CampaignTimelineMetadata],
@@ -4909,18 +4931,19 @@ mod tests {
         annotate_rerun_banners, append_unmatched_campaign_news, apply_closed_schedule_adjustment,
         apply_family_adjustment, build_anniversary_schedule_anchors, build_confirmed_date_lookup,
         calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, gacha_type_name, latest_closed_global_month,
-        legend_boss_metadata, load_bundled_support_card_names, load_timeline_campaigns,
-        load_timeline_character_banners, load_timeline_legend_races, load_timeline_paid_banners,
-        load_timeline_story_events, load_timeline_support_banners, load_umapyoi_support_card_names,
-        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
-        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
-        news_timeline_event, parse_confirmed_banner_dates, standardized_jp_mission_title,
-        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
-        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
-        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
-        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
-        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
+        first_release_after_global_month, gacha_type_name, include_jp_campaign,
+        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
+        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
+        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
+        load_umapyoi_support_card_names, load_umapyoi_support_character_names, merge_campaign_news,
+        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
+        monotonic_schedule_anchors, news_timeline_event, parse_confirmed_banner_dates,
+        standardized_jp_mission_title, timeline_anniversaries_through, utc_date,
+        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
+        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
+        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
+        TimelineCampaign, TimelineCharacterBanner, TimelineSupportBanner,
+        FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
@@ -5388,6 +5411,34 @@ mod tests {
             Some("Official EN description")
         );
         assert_eq!(timeline_event.prediction.kind, PredictionKind::Confirmed);
+    }
+
+    #[test]
+    fn jp_only_external_collaborations_stay_out_until_en_news_exists() {
+        let campaigns = campaign_timeline_metadata().expect("campaign news should load");
+        let number = campaigns
+            .iter()
+            .find(|campaign| campaign.source_post_id == 1013)
+            .expect("Number collaboration should exist in JP news");
+        let umayuru = campaigns
+            .iter()
+            .find(|campaign| campaign.source_post_id == 994)
+            .expect("Umayuru campaign should exist in JP news");
+        let mut confirmed = empty_confirmed_date_lookup();
+
+        assert!(!include_jp_campaign(number, &confirmed));
+        assert!(include_jp_campaign(umayuru, &confirmed));
+
+        confirmed.global_news.insert(
+            1013,
+            GlobalNewsTimelineMetadata {
+                start_at: utc_date(2026, 10, 20, 3),
+                end_at: None,
+                title: number.title.clone(),
+                description: None,
+            },
+        );
+        assert!(include_jp_campaign(number, &confirmed));
     }
 
     #[test]
