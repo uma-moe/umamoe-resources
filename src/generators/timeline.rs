@@ -4,6 +4,7 @@ use crate::generators::jp_events::{
     AdditionalGachaBanner, AdditionalGachaKind, CampaignTimelineMetadata,
     LegendRaceTimelineMetadata, NewsTimelineEvent, NewsTimelineKind,
 };
+use crate::generators::planner::GlobalNewsTimelineMetadata;
 use anyhow::{Context, Result};
 use chrono::{
     DateTime, Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc,
@@ -47,7 +48,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 30;
+const TIMELINE_ALGORITHM_VERSION: u8 = 32;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -259,6 +260,7 @@ struct ConfirmedDateLookup {
     legend: BTreeMap<String, DateTime<Utc>>,
     campaign: BTreeMap<String, DateTime<Utc>>,
     news_events: BTreeMap<String, DateTime<Utc>>,
+    global_news: BTreeMap<i64, GlobalNewsTimelineMetadata>,
     anniversary: BTreeMap<u32, DateTime<Utc>>,
     closed_global_months: BTreeSet<(i32, u32)>,
     hidden: BTreeSet<(ConfirmedTimelineKind, String)>,
@@ -380,6 +382,7 @@ struct TimelineCampaign {
     image_path: Option<String>,
     confirmed_global_start: Option<DateTime<Utc>>,
     confirmed_global_end: Option<DateTime<Utc>>,
+    source_post_id: Option<i64>,
 }
 
 #[derive(Debug, Clone)]
@@ -545,10 +548,21 @@ pub fn generate(
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
+    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
+    let confirmed_dates = build_confirmed_date_lookup(
+        character_banners,
+        support_banners,
+        paid_banners,
+        &timeline_character_banners,
+        &timeline_support_banners,
+        &timeline_paid_banners,
+        &additional_gacha_banners,
+    )?;
     let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
     merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
     reuse_champions_meeting_image_paths(&mut timeline_champions_meetings);
-    let news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
+    let mut news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
+    news_campaigns.retain(|campaign| include_jp_campaign(campaign, &confirmed_dates));
     let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
     append_unmatched_campaign_news(
         &mut news_timeline_events,
@@ -559,19 +573,9 @@ pub fn generate(
         &mut timeline_legend_races,
         &crate::generators::jp_events::legend_race_timeline_metadata()?,
     );
-    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
     let character_names = common::load_character_name_map(connection)?;
     let support_names = load_support_card_names(connection, &character_names)?;
     let support_card_names = load_support_card_specific_names(connection)?;
-    let confirmed_dates = build_confirmed_date_lookup(
-        character_banners,
-        support_banners,
-        paid_banners,
-        &timeline_character_banners,
-        &timeline_support_banners,
-        &timeline_paid_banners,
-        &additional_gacha_banners,
-    )?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
         &timeline_support_banners,
@@ -713,7 +717,7 @@ pub fn generate(
         )
     }));
 
-    attach_umapyoi_urls(&mut events)?;
+    attach_umapyoi_urls(&mut events, &confirmed_dates)?;
     annotate_rerun_banners(&mut events);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
@@ -1081,7 +1085,10 @@ fn rerun_candidate(event: &BannerTimelineEvent) -> bool {
     ) && matches!(event.gacha_type, Some(3 | 11 | 12))
 }
 
-fn attach_umapyoi_urls(events: &mut [BannerTimelineEvent]) -> Result<()> {
+fn attach_umapyoi_urls(
+    events: &mut [BannerTimelineEvent],
+    confirmed_dates: &ConfirmedDateLookup,
+) -> Result<()> {
     let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
         .context("failed to parse bundled umapyoi archive for timeline source links")?;
     let posts = archive
@@ -1108,7 +1115,8 @@ fn attach_umapyoi_urls(events: &mut [BannerTimelineEvent]) -> Result<()> {
     }
 
     for event in events {
-        let direct = announcement_post_id(&event.image)
+        let direct_post_id = announcement_post_id(&event.image);
+        let direct = direct_post_id
             .and_then(|post_id| by_id.get(&post_id).copied())
             .or_else(|| {
                 event
@@ -1116,11 +1124,18 @@ fn attach_umapyoi_urls(events: &mut [BannerTimelineEvent]) -> Result<()> {
                     .and_then(|gacha_id| by_gacha_id.get(&gacha_id).copied())
             });
         let matched = direct.or_else(|| best_umapyoi_post_for_event(event, &posts));
-        event.umapyoi_url = matched
-            .and_then(|post| post.get("page_url"))
-            .and_then(serde_json::Value::as_str)
-            .filter(|url| url.starts_with("https://umapyoi.net/news/"))
-            .map(str::to_string);
+        let matched_post_id =
+            direct_post_id.or_else(|| matched.and_then(|post| post.get("post_id")?.as_i64()));
+        event.umapyoi_url = matched_post_id
+            .filter(|post_id| confirmed_dates.global_news.contains_key(post_id))
+            .map(crate::global_news::umapyoi_en_page_url)
+            .or_else(|| {
+                matched
+                    .and_then(|post| post.get("page_url"))
+                    .and_then(serde_json::Value::as_str)
+                    .filter(|url| url.starts_with("https://umapyoi.net/news/"))
+                    .map(str::to_string)
+            });
     }
     Ok(())
 }
@@ -1395,7 +1410,11 @@ fn news_timeline_event(
         event.start_at,
         family_adjustments,
     );
-    let duration = banner_duration_days(event.start_at, event.end_at).max(1);
+    let official_global = confirmed_dates.global_news.get(&event.source_post_id);
+    let official_global_end = official_global.and_then(|metadata| metadata.end_at);
+    let duration = official_global_end
+        .map(|end| banner_duration_days(prediction.global_date, end).max(1))
+        .unwrap_or_else(|| banner_duration_days(event.start_at, event.end_at).max(1));
     let image = event.image_url.clone().unwrap_or_default();
     BannerTimelineEvent {
         id: format!("news-event-{}", event.key),
@@ -1409,11 +1428,16 @@ fn news_timeline_event(
         year: None,
         image: image.clone(),
         image_path: (!image.is_empty()).then(|| news_event_asset_path(event)),
-        title: event.title.clone(),
-        description: event.description.clone(),
+        title: official_global
+            .map(|metadata| metadata.title.clone())
+            .unwrap_or_else(|| event.title.clone()),
+        description: official_global
+            .and_then(|metadata| metadata.description.clone())
+            .or_else(|| event.description.clone()),
         jp_release_date: event.start_at,
         global_release_date: prediction.global_date,
-        estimated_end_date: calculate_end_date(prediction.global_date, duration),
+        estimated_end_date: official_global_end
+            .unwrap_or_else(|| calculate_end_date(prediction.global_date, duration)),
         is_confirmed: confirmed_global_date.is_some(),
         banner_duration_days: duration,
         tags: vec!["event", tag, "umapyoi-news"],
@@ -1431,15 +1455,19 @@ fn confirmed_news_event_date(
     event: &NewsTimelineEvent,
     confirmed_dates: &ConfirmedDateLookup,
 ) -> Option<DateTime<Utc>> {
-    match event.kind {
-        NewsTimelineKind::UmaSanpo
-        | NewsTimelineKind::HolidayCelebration
-        | NewsTimelineKind::Campaign => confirmed_dates
-            .campaign
-            .get(&image_key(&event.key))
-            .copied(),
-        _ => confirmed_dates.news_events.get(&event.key).copied(),
-    }
+    confirmed_dates
+        .global_news
+        .get(&event.source_post_id)
+        .map(|dates| dates.start_at)
+        .or_else(|| match event.kind {
+            NewsTimelineKind::UmaSanpo
+            | NewsTimelineKind::HolidayCelebration
+            | NewsTimelineKind::Campaign => confirmed_dates
+                .campaign
+                .get(&image_key(&event.key))
+                .copied(),
+            _ => confirmed_dates.news_events.get(&event.key).copied(),
+        })
 }
 
 fn paid_events(
@@ -1844,13 +1872,22 @@ fn campaign_event(
     observed_rate: f64,
 ) -> BannerTimelineEvent {
     let key = image_key(&event.image);
-    let confirmed_global_date = event.confirmed_global_start.or_else(|| {
-        confirmed_dates
-            .campaign
-            .get(&key)
-            .or_else(|| confirmed_dates.campaign.get(&event.campaign_id.to_string()))
-            .copied()
-    });
+    let official_global_dates = event
+        .source_post_id
+        .and_then(|post_id| confirmed_dates.global_news.get(&post_id));
+    let confirmed_global_date = official_global_dates
+        .map(|dates| dates.start_at)
+        .or(event.confirmed_global_start)
+        .or_else(|| {
+            confirmed_dates
+                .campaign
+                .get(&key)
+                .or_else(|| confirmed_dates.campaign.get(&event.campaign_id.to_string()))
+                .copied()
+        });
+    let confirmed_global_end = official_global_dates
+        .and_then(|dates| dates.end_at)
+        .or(event.confirmed_global_end);
     let prediction = apply_family_adjustment(
         calculate_global_date(
             event.start_at,
@@ -1862,10 +1899,11 @@ fn campaign_event(
         event.start_at,
         family_adjustments,
     );
-    let duration = match (event.confirmed_global_start, event.confirmed_global_end) {
+    let duration = match (confirmed_global_date, confirmed_global_end) {
         (Some(start), Some(end)) => banner_duration_days(start, end),
         _ => banner_duration_days(event.start_at, event.end_at),
-    };
+    }
+    .max(1);
     let adjustment = if is_berlin_dst(prediction.global_date) {
         0
     } else {
@@ -1897,8 +1935,7 @@ fn campaign_event(
         description: event.description.clone(),
         jp_release_date: event.start_at,
         global_release_date: prediction.global_date,
-        estimated_end_date: event
-            .confirmed_global_end
+        estimated_end_date: confirmed_global_end
             .unwrap_or_else(|| calculate_end_date(prediction.global_date, duration + adjustment)),
         is_confirmed: confirmed_global_date.is_some(),
         banner_duration_days: duration,
@@ -2882,6 +2919,7 @@ fn build_confirmed_date_lookup(
         legend: BTreeMap::new(),
         campaign: BTreeMap::new(),
         news_events: BTreeMap::new(),
+        global_news: crate::generators::planner::load_global_news_timeline_metadata()?,
         anniversary: BTreeMap::new(),
         closed_global_months: BTreeSet::new(),
         hidden: BTreeSet::new(),
@@ -3939,6 +3977,7 @@ fn merge_campaign_news(
             continue;
         };
         matched.insert(news.source_post_id);
+        campaign.source_post_id = Some(news.source_post_id);
         if campaign.title.is_none() {
             campaign.title = Some(news.title.clone());
         }
@@ -3954,6 +3993,27 @@ fn merge_campaign_news(
         }
     }
     matched
+}
+
+fn include_jp_campaign(
+    campaign: &CampaignTimelineMetadata,
+    confirmed_dates: &ConfirmedDateLookup,
+) -> bool {
+    if confirmed_dates
+        .global_news
+        .contains_key(&campaign.source_post_id)
+    {
+        return true;
+    }
+    let title = campaign.title.to_lowercase();
+    let is_umayuru = ["umayuru", "uma-yuru", "uma yuru"]
+        .iter()
+        .any(|name| title.contains(name));
+    is_umayuru
+        || !(title.contains("collab")
+            || title.contains(" x ")
+            || title.contains(" | ")
+            || title.contains('×'))
 }
 
 fn append_unmatched_campaign_news(
@@ -4300,6 +4360,7 @@ fn load_timeline_campaigns(connection: &Connection) -> Result<Vec<TimelineCampai
                 image_path: None,
                 confirmed_global_start: None,
                 confirmed_global_end: None,
+                source_post_id: None,
             })
         })
         .collect::<Result<Vec<_>>>()?;
@@ -4870,23 +4931,26 @@ mod tests {
         annotate_rerun_banners, append_unmatched_campaign_news, apply_closed_schedule_adjustment,
         apply_family_adjustment, build_anniversary_schedule_anchors, build_confirmed_date_lookup,
         calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, gacha_type_name, latest_closed_global_month,
-        legend_boss_metadata, load_bundled_support_card_names, load_timeline_campaigns,
-        load_timeline_character_banners, load_timeline_legend_races, load_timeline_paid_banners,
-        load_timeline_story_events, load_timeline_support_banners, load_umapyoi_support_card_names,
-        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
-        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
-        parse_confirmed_banner_dates, standardized_jp_mission_title,
-        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
-        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
-        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
-        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
-        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
+        first_release_after_global_month, gacha_type_name, include_jp_campaign,
+        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
+        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
+        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
+        load_umapyoi_support_card_names, load_umapyoi_support_character_names, merge_campaign_news,
+        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
+        monotonic_schedule_anchors, news_timeline_event, parse_confirmed_banner_dates,
+        standardized_jp_mission_title, timeline_anniversaries_through, utc_date,
+        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
+        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
+        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
+        TimelineCampaign, TimelineCharacterBanner, TimelineSupportBanner,
+        FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
-        campaign_timeline_metadata, timeline_events, LegendRaceTimelineMetadata, NewsTimelineKind,
+        campaign_timeline_metadata, timeline_events, LegendRaceTimelineMetadata, NewsTimelineEvent,
+        NewsTimelineKind,
     };
+    use crate::generators::planner::GlobalNewsTimelineMetadata;
     use chrono::Duration;
     use rusqlite::Connection;
     use std::collections::{BTreeMap, BTreeSet};
@@ -5298,6 +5362,86 @@ mod tests {
     }
 
     #[test]
+    fn official_en_news_dates_override_campaign_projection() {
+        let mut confirmed = empty_confirmed_date_lookup();
+        confirmed.global_news.insert(
+            994,
+            GlobalNewsTimelineMetadata {
+                start_at: utc_date(2026, 8, 26, 22),
+                end_at: Some(utc_date(2026, 12, 30, 14) + Duration::minutes(59)),
+                title: "A special Umayuru Celebration has begun!".to_string(),
+                description: Some("Official EN description".to_string()),
+            },
+        );
+        let jp_start = utc_date(2022, 10, 17, 3);
+        let event = NewsTimelineEvent {
+            key: "campaign-994".to_string(),
+            kind: NewsTimelineKind::Campaign,
+            title: "Campaign to Commemorate the Release of \"Uma-Yuru\"".to_string(),
+            start_at: jp_start,
+            end_at: jp_start + Duration::days(14),
+            image_url: None,
+            description: None,
+            source_post_id: 994,
+        };
+        let timeline_event = news_timeline_event(
+            &event,
+            &confirmed,
+            &[],
+            &FamilyAdjustmentModels {
+                models: BTreeMap::new(),
+            },
+            FALLBACK_ACCELERATION_RATE,
+        );
+
+        assert_eq!(
+            timeline_event.global_release_date,
+            utc_date(2026, 8, 26, 22)
+        );
+        assert_eq!(
+            timeline_event.estimated_end_date,
+            utc_date(2026, 12, 30, 14) + Duration::minutes(59)
+        );
+        assert_eq!(
+            timeline_event.title,
+            "A special Umayuru Celebration has begun!"
+        );
+        assert_eq!(
+            timeline_event.description.as_deref(),
+            Some("Official EN description")
+        );
+        assert_eq!(timeline_event.prediction.kind, PredictionKind::Confirmed);
+    }
+
+    #[test]
+    fn jp_only_external_collaborations_stay_out_until_en_news_exists() {
+        let campaigns = campaign_timeline_metadata().expect("campaign news should load");
+        let number = campaigns
+            .iter()
+            .find(|campaign| campaign.source_post_id == 1013)
+            .expect("Number collaboration should exist in JP news");
+        let umayuru = campaigns
+            .iter()
+            .find(|campaign| campaign.source_post_id == 994)
+            .expect("Umayuru campaign should exist in JP news");
+        let mut confirmed = empty_confirmed_date_lookup();
+
+        assert!(!include_jp_campaign(number, &confirmed));
+        assert!(include_jp_campaign(umayuru, &confirmed));
+
+        confirmed.global_news.insert(
+            1013,
+            GlobalNewsTimelineMetadata {
+                start_at: utc_date(2026, 10, 20, 3),
+                end_at: None,
+                title: number.title.clone(),
+                description: None,
+            },
+        );
+        assert!(include_jp_campaign(number, &confirmed));
+    }
+
+    #[test]
     fn mission_campaigns_match_different_region_ids_by_content() {
         let connection = mission_connection();
         connection
@@ -5327,6 +5471,7 @@ mod tests {
             image_path: None,
             confirmed_global_start: None,
             confirmed_global_end: None,
+            source_post_id: None,
         }];
 
         merge_global_mission_campaigns(&connection, &mut campaigns)
@@ -5510,6 +5655,7 @@ mod tests {
             legend: BTreeMap::new(),
             campaign: BTreeMap::new(),
             news_events: BTreeMap::new(),
+            global_news: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months,
             hidden: BTreeSet::new(),
@@ -5877,6 +6023,7 @@ mod tests {
             legend: BTreeMap::new(),
             campaign: BTreeMap::new(),
             news_events: BTreeMap::new(),
+            global_news: BTreeMap::new(),
             anniversary: BTreeMap::new(),
             closed_global_months: BTreeSet::new(),
             hidden: BTreeSet::new(),
