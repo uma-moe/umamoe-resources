@@ -8,7 +8,7 @@ const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json")
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
-const ALGORITHM_VERSION: u8 = 6;
+const ALGORITHM_VERSION: u8 = 7;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -22,6 +22,7 @@ pub enum NewsTimelineKind {
     RacingCarnival,
     UmaSanpo,
     HolidayCelebration,
+    Campaign,
 }
 
 #[derive(Debug, Clone)]
@@ -164,7 +165,7 @@ pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
         .flatten()
         .filter(|post| has_event_type(post, "campaign"))
         .filter_map(news_post)
-        .filter(|post| is_campaign_post(&post.title))
+        .filter(|post| is_campaign_post(&post.title) && is_campaign_start_post(&post.title))
         .map(|post| CampaignTimelineMetadata {
             start_at: post.posted_at,
             title: standardized_campaign_title(&post.display_title),
@@ -352,6 +353,7 @@ fn title_matches_kind(kind: NewsTimelineKind, title: &str) -> bool {
             title.contains("uma-sanpo campaign") || title.contains("uma sanpo campaign")
         }
         NewsTimelineKind::HolidayCelebration => title.contains("christmas campaign"),
+        NewsTimelineKind::Campaign => false,
     }
 }
 
@@ -387,6 +389,24 @@ fn is_campaign_post(title: &str) -> bool {
         && !title.contains("store")
         && !is_campaign_end_notice(title)
         && !is_promotional_campaign_post(title)
+}
+
+fn is_campaign_start_post(title: &str) -> bool {
+    ![
+        "coming soon",
+        "details",
+        "information",
+        "postponement",
+        "roundup",
+        "scheduled",
+        "starting soon",
+        "summary",
+        "to be held",
+        "will air",
+        "will be held",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker))
 }
 
 fn is_campaign_end_notice(title: &str) -> bool {
@@ -458,6 +478,7 @@ fn is_start_post(kind: NewsTimelineKind, title: &str) -> bool {
                 || (title.starts_with("christmas campaign")
                     && (title.contains("was held") || title.contains("has begun")))
         }
+        NewsTimelineKind::Campaign => false,
     }
 }
 
@@ -505,6 +526,7 @@ fn kind_key(kind: NewsTimelineKind) -> &'static str {
         NewsTimelineKind::RacingCarnival => "racing-carnival",
         NewsTimelineKind::UmaSanpo => "uma-sanpo",
         NewsTimelineKind::HolidayCelebration => "holiday-celebration",
+        NewsTimelineKind::Campaign => "campaign",
     }
 }
 
@@ -520,6 +542,7 @@ fn kind_title(kind: NewsTimelineKind) -> &'static str {
         NewsTimelineKind::RacingCarnival => "Racing Carnival",
         NewsTimelineKind::UmaSanpo => "Let's Go! Uma Outing!",
         NewsTimelineKind::HolidayCelebration => "Holiday Celebration",
+        NewsTimelineKind::Campaign => "Campaign",
     }
 }
 
@@ -679,6 +702,7 @@ fn default_duration_days(kind: NewsTimelineKind) -> i64 {
         NewsTimelineKind::RacingCarnival => 7,
         NewsTimelineKind::UmaSanpo => 9,
         NewsTimelineKind::HolidayCelebration => 14,
+        NewsTimelineKind::Campaign => 14,
     }
 }
 
@@ -689,6 +713,7 @@ fn maximum_duration_days(kind: NewsTimelineKind) -> i64 {
         NewsTimelineKind::MastersChallenge => 120,
         NewsTimelineKind::UmaSanpo => 12,
         NewsTimelineKind::HolidayCelebration => 31,
+        NewsTimelineKind::Campaign => 31,
         _ => 20,
     }
 }
@@ -1157,6 +1182,17 @@ mod tests {
         assert!(campaigns
             .iter()
             .any(|campaign| campaign.source_post_id == 1474));
+        assert!(campaigns
+            .iter()
+            .any(|campaign| campaign.source_post_id == 1010));
+        for preview_post_id in [904, 1009, 1456, 3415] {
+            assert!(
+                campaigns
+                    .iter()
+                    .all(|campaign| campaign.source_post_id != preview_post_id),
+                "campaign preview or roundup {preview_post_id} must not become a timeline event"
+            );
+        }
         for in_game_reward_post_id in [1018, 1133, 1378, 1692, 1712] {
             assert!(
                 campaigns
