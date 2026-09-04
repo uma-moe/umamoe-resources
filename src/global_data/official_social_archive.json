@@ -4743,6 +4743,66 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2095633144921964579",
+      "status_url": "https://x.com/umamusume_eng/status/2095633144921964579",
+      "first_seen_at": "2026-09-04T04:32:01.679601601+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-04T04:32:01.679601601+00:00",
+          "content_hash": "df6545f46b1ee9250f3ed6ec667bba6b76ec58d74eb847ce8c6ae7010b293ada",
+          "raw": {
+            "created_at": "2026-09-03T22:00:51.387+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">The story event Hark Back, Run Forward is set to begin at 10:00 p.m., Sep 7 (UTC)!<br>Stay tuned for an event-exclusive story!<br><br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/RvsJL4gMDR\">pic.twitter.com/RvsJL4gMDR</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2095633144921964579?ref_src=twsrc%5Etfw\">September 3, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2095633144921964579",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2095633144921964579",
+            "status_url": "https://x.com/umamusume_eng/status/2095633144921964579",
+            "text": "The story event Hark Back, Run Forward is set to begin at 10:00 p.m., Sep 7 (UTC)!\nStay tuned for an event-exclusive story!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/RvsJL4gMDR"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2095634230353224014",
+      "status_url": "https://x.com/umamusume_eng/status/2095634230353224014",
+      "first_seen_at": "2026-09-04T04:32:01.679601601+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-04T04:32:01.679601601+00:00",
+          "content_hash": "3998986d703a92d77de9a2b25f1504dd7a31ef04f60e269775161d35dc16f5c2",
+          "raw": {
+            "created_at": "2026-09-03T22:05:10.174+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Event Underway! 🥕<br><br>You can now take on Fine Motion in her Legend Race!<br><br>Challenge her and win to get Star Pieces for [Noble Seamair] Fine Motion!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/anEv1nKCMB\">pic.twitter.com/anEv1nKCMB</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2095634230353224014?ref_src=twsrc%5Etfw\">September 3, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2095634230353224014",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2095634230353224014",
+            "status_url": "https://x.com/umamusume_eng/status/2095634230353224014",
+            "text": "Event Underway! 🥕\nYou can now take on Fine Motion in her Legend Race!\nChallenge her and win to get Star Pieces for [Noble Seamair] Fine Motion!#Umamusume pic.twitter.com/anEv1nKCMB"
+          }
+        }
+      ]
     }
   ]
 }
