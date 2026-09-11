@@ -4803,6 +4803,156 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2097087553874837521",
+      "status_url": "https://x.com/umamusume_eng/status/2097087553874837521",
+      "first_seen_at": "2026-09-11T20:58:42.472021654+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-11T20:58:42.472021654+00:00",
+          "content_hash": "d00757735def235d8e5451ed41d4b82a6bb1cccbdb07f49faf3fbfc801f4567d",
+          "raw": {
+            "created_at": "2026-09-07T22:20:09.503+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Have you completed the Kikuka Sho missions? We&#39;ve sent out a present commemorating the race!<br><br>🎁 Gift Contents:<br>- Monies × 50,000<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/NJ4ga4xCIb\">pic.twitter.com/NJ4ga4xCIb</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2097087553874837521?ref_src=twsrc%5Etfw\">September 7, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2097087553874837521",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2097087553874837521",
+            "status_url": "https://x.com/umamusume_eng/status/2097087553874837521",
+            "text": "Have you completed the Kikuka Sho missions? We've sent out a present commemorating the race!\n🎁 Gift Contents:\n- Monies × 50,000#Umamusume pic.twitter.com/NJ4ga4xCIb"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2097088829568262555",
+      "status_url": "https://x.com/umamusume_eng/status/2097088829568262555",
+      "first_seen_at": "2026-09-11T20:58:42.472021654+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-11T20:58:42.472021654+00:00",
+          "content_hash": "8bee9d00a2a18ea00ebcd3a90a39db0a3bd9bc5372d723903c1d8ccca9766c09",
+          "raw": {
+            "created_at": "2026-09-07T22:25:13.652+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Heads up, Trainers! We&#39;ve just sent out the &quot;Three Cheers for Trainer! September Giveaway&quot; gift, so keep an eye out!<br><br>🎁 Gift Contents:<br>- Carats × 1,250<br>- Support Points × 20,000<br>- Alarm Clocks × 10<br>- Pleasing Parfait × 10<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/Z2XHWEfQEG\">pic.twitter.com/Z2XHWEfQEG</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2097088829568262555?ref_src=twsrc%5Etfw\">September 7, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2097088829568262555",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2097088829568262555",
+            "status_url": "https://x.com/umamusume_eng/status/2097088829568262555",
+            "text": "Heads up, Trainers! We've just sent out the \"Three Cheers for Trainer! September Giveaway\" gift, so keep an eye out!\n🎁 Gift Contents:\n- Carats × 1,250\n- Support Points × 20,000\n- Alarm Clocks × 10\n- Pleasing Parfait × 10#Umamusume pic.twitter.com/Z2XHWEfQEG"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2097444926531530787",
+      "status_url": "https://x.com/umamusume_eng/status/2097444926531530787",
+      "first_seen_at": "2026-09-11T20:58:42.472021654+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-11T20:58:42.472021654+00:00",
+          "content_hash": "f4a012303b838a7f16e9ef0c285d799493e7cc27b83e2359ef7114c2f0c8b998",
+          "raw": {
+            "created_at": "2026-09-08T22:00:13.784+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">🍁 Part 2 of our Fall G1 Event is now underway!<br><br>Trainers will be able to obtain carats and other various helpful items during the event!<br><br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/wKotEXLYCo\">pic.twitter.com/wKotEXLYCo</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2097444926531530787?ref_src=twsrc%5Etfw\">September 8, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2097444926531530787",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2097444926531530787",
+            "status_url": "https://x.com/umamusume_eng/status/2097444926531530787",
+            "text": "🍁 Part 2 of our Fall G1 Event is now underway!\nTrainers will be able to obtain carats and other various helpful items during the event!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/wKotEXLYCo"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2097600057130537369",
+      "status_url": "https://x.com/umamusume_eng/status/2097600057130537369",
+      "first_seen_at": "2026-09-11T20:58:42.472021654+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-11T20:58:42.472021654+00:00",
+          "content_hash": "8bbe7dc2de8e799809365d107d1a74fbfd1b184fc4f4991d60cd9c3efa91b17d",
+          "raw": {
+            "created_at": "2026-09-09T08:16:39.801+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">We&#39;re pleased to announce that Cygames has become a Premium Partner of the Qatar Prix de l&#39;Arc de Triomphe!<br><br>Life-sized figures of Gold Ship and Orfevre will be on display at ParisLongchamp Racecourse. Join us on Oct 4 for a race to remember!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://x.com/francegalop?ref_src=twsrc%5Etfw\">@francegalop</a> <a href=\"https://t.co/5sLXVfyl3f\">https://t.co/5sLXVfyl3f</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2097600057130537369?ref_src=twsrc%5Etfw\">September 9, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2097600057130537369",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2097600057130537369",
+            "status_url": "https://x.com/umamusume_eng/status/2097600057130537369",
+            "text": "We're pleased to announce that Cygames has become a Premium Partner of the Qatar Prix de l'Arc de Triomphe!\nLife-sized figures of Gold Ship and Orfevre will be on display at ParisLongchamp Racecourse. Join us on Oct 4 for a race to remember!#Umamusume @francegalop https://t.co/5sLXVfyl3f"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2098230380105200112",
+      "status_url": "https://x.com/umamusume_eng/status/2098230380105200112",
+      "first_seen_at": "2026-09-11T20:58:42.472021654+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-09-11T20:58:42.472021654+00:00",
+          "content_hash": "69ec25c57bf6e3fad812d23aa8cff0e9def889ca111c381bb21d52760d1a7333",
+          "raw": {
+            "created_at": "2026-09-11T02:01:20.509+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">The story event Hark Back, Run Forward is now available!<br><br>Get event-exclusive Support Cards as rewards for progressing through the story! For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/vPHIUa6xcc\">pic.twitter.com/vPHIUa6xcc</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2098230380105200112?ref_src=twsrc%5Etfw\">September 11, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2098230380105200112",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2098230380105200112",
+            "status_url": "https://x.com/umamusume_eng/status/2098230380105200112",
+            "text": "The story event Hark Back, Run Forward is now available!\nGet event-exclusive Support Cards as rewards for progressing through the story! For more details, please check the in-game notice.#Umamusume pic.twitter.com/vPHIUa6xcc"
+          }
+        }
+      ]
     }
   ]
 }
