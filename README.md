@@ -111,6 +111,29 @@ Useful routes:
 - `/resources/{version}/skills.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/simulator_course_geometry.json.gz` -
   all current courses' 1,001-frame world transforms in one `courses` array
+- `/resources/{version}/simulator_course_lanes.json.gz` - retained finish-line
+  continuation lanes and their shared transform assets
+
+The simulator on the separate host reads this API directly over the subnet.
+Deployment publishes the existing internal container listener (`3204`) at
+`192.168.100.2:3004` for production and `192.168.100.2:3104` for beta. The existing
+public Nginx upstreams remain on `127.0.0.1:3004` and `127.0.0.1:3104` against
+container port `3000`. Allow the simulator host (`192.168.100.1`) through the
+Docker firewall path to the private resource ports. No Nginx route or service
+authentication key is needed for the subnet connection.
+
+`master.path` in the manifest points to
+`/resources/simulator/{version}/master.mdb.gz`, available **only on the internal
+listener**. `master.bytes` and `master.sha256` describe the uncompressed SQLite
+database. Generation exports all resources from these exact database bytes and
+includes their hash in the version. This avoids mixing a refreshed live database
+with resources from an earlier export. The database is not a public artifact.
+
+The manifest supports `ETag` and `If-None-Match` (`304` when unchanged). The
+simulator checks every five minutes, downloads only changed simulator artifacts,
+validates them and switches complete snapshots. Deploy this resource API update
+before starting a simulator with an empty cache. Its required files are courses,
+skills, course geometry, continuation lanes and the versioned master database.
 
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
 

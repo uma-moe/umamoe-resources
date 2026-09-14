@@ -219,6 +219,7 @@ jobs:
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
             -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
+            -p "192.168.100.2:${host_port}:${internal_app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             "$image_tag"
@@ -377,6 +378,7 @@ jobs:
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
             -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
+            -p "192.168.100.2:${host_port}:${internal_app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             "$image_tag"

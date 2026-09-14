@@ -82,6 +82,9 @@ pub fn generate_all(
     ];
 
     public.push(simulator_course_geometry::generate(&simulator_courses)?);
+    public.push(simulator_course_geometry::generateLanes(
+        &simulator_courses,
+    )?);
 
     public.push(output(
         "character_names.json",

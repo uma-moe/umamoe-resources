@@ -11,6 +11,7 @@ use super::ResourceOutput;
 const SCHEMA_VERSION: u32 = 1;
 const KEYFRAME_COUNT: usize = 1_001;
 const SOURCE_BYTES: &[u8] = include_bytes!("../global_data/simulator_course_geometry.json.gz");
+const LANE_SOURCE_BYTES: &[u8] = include_bytes!("../global_data/simulator_course_lanes.json.gz");
 
 #[derive(Debug, Deserialize)]
 struct SourceGeometrySet {
@@ -60,7 +61,42 @@ pub fn version_hash() -> Result<String> {
     digest.update(b"simulator_course_geometry.json\0");
     digest.update(SCHEMA_VERSION.to_le_bytes());
     digest.update(bytes);
+    digest.update(LANE_SOURCE_BYTES);
     Ok(hex::encode(digest.finalize()))
+}
+
+/// Retained overrun lanes supplement the normal course geometry without resampling it.
+#[allow(non_snake_case)]
+pub fn generateLanes(courses: &SimulatorCourseSet<'_>) -> Result<ResourceOutput> {
+    let mut bytes = Vec::new();
+    GzDecoder::new(LANE_SOURCE_BYTES).read_to_end(&mut bytes)?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)?;
+    let lanes = value["courses"]
+        .as_array()
+        .context("missing retained lane courses")?;
+    let assets = value["assets"]
+        .as_array()
+        .context("missing retained lane assets")?;
+    for course in &courses.courses {
+        let lane = lanes
+            .iter()
+            .find(|lane| lane["courseId"].as_u64() == Some(u64::from(course.course_id)))
+            .with_context(|| format!("missing overrun lane for course {}", course.course_id))?;
+        let name = lane["overrun"]
+            .as_str()
+            .context("missing overrun asset name")?;
+        anyhow::ensure!(
+            assets
+                .iter()
+                .any(|asset| asset["resourcePath"].as_str() == Some(name)),
+            "missing overrun asset {name}"
+        );
+    }
+
+    Ok(ResourceOutput {
+        file_name: "simulator_course_lanes.json".into(),
+        value,
+    })
 }
 
 fn decode_bundled_source() -> Result<SourceGeometrySet> {
