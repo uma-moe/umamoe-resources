@@ -109,14 +109,16 @@ Useful routes:
 - `/resources/{version}/supports.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/support-cards-db.json.gz` - one-year immutable CDN cache
 - `/resources/{version}/skills.json.gz` - one-year immutable CDN cache
-- `/resources/{version}/simulator_course_geometry_<course-id>.json.gz` -
-  source-backed, independently fetchable 1,001-frame course world transforms
+- `/resources/{version}/simulator_course_geometry.json.gz` -
+  all current courses' 1,001-frame world transforms in one `courses` array
 
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
 
-Simulator course geometry is intentionally split into one artifact per course.
-Clients should request only the active course instead of loading all geometry at
-startup. The bundled source data is extracted from the client `CourseLaneAnim`
+Simulator course geometry is bundled into one artifact with shared
+`schema_version` and `master_version` fields and a `courses` array. Each entry
+contains its `course_id`, track, distance, source asset, and transform columns;
+clients select the desired entry by `course_id`. The bundled source data is
+extracted from the client `CourseLaneAnim`
 assets and the generator validates every current `race_course_set` row has an
 exact matching course id, race track, distance, finite transform columns, and
 non-zero quaternion at each of its 1,001 samples.

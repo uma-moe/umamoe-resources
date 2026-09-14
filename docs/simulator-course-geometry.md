@@ -67,11 +67,15 @@ Generate public resources:
 cargo run -- generate --master master.mdb --out generated-data --write-json
 ```
 
-The pipeline hashes the decompressed canonical JSON for its resource-version
-prefix, so a zlib implementation change does not masquerade as game-data drift.
-It emits one flat `simulator_course_geometry_<course_id>.json(.gz)` artifact
-per course. This keeps ordinary simulator and skill-viewer requests independent
-of the roughly 6.35 MiB all-course compressed source.
+The pipeline hashes the artifact filename, schema version, and decompressed
+canonical JSON for its resource-version prefix, so the bundled format gets a
+new version while a zlib implementation change does not masquerade as game-data
+drift. It emits one `simulator_course_geometry.json(.gz)` artifact containing
+shared `schema_version` and `master_version` fields and a `courses` array.
+Each entry contains `course_id`, `race_track_id`, `course_distance`,
+`source_asset`, and the seven position/rotation columns. Entries follow the
+current course master's order; future courses in the source are excluded.
+The manifest lists only the combined artifact, with no per-course artifacts.
 
 The writer fixes gzip metadata, but different compatible zlib versions may emit
 different deflate streams for identical input. Compare the decompressed JSON
@@ -79,16 +83,19 @@ before deciding that a refresh changed the golden data.
 
 ## Consumer Validation
 
-Point the simulator at the generated version directory and require a complete
-audit:
+Consumers must load `simulator_course_geometry.json.gz` and select an entry
+from `courses` by `course_id`, replacing per-course filename requests. For
+example, browsers decompress the HTTP response automatically:
 
-```powershell
-$env:UMAMOE_SIM_RESOURCE_DIR = "C:\path\to\generated-data\<version>"
-cargo run -p umamoe-sim-cli -- geometry-audit --require --format json
+```javascript
+const response = await fetch("/resources/current/simulator_course_geometry.json.gz");
+if (!response.ok) throw new Error(`Course geometry request failed: ${response.status}`);
+const geometry = await response.json();
+const course = geometry.courses.find(entry => entry.course_id === courseId);
 ```
 
 All current master courses must be found and valid with zero missing, invalid,
-or metadata-mismatched artifacts. Passing this audit makes geometry available
+or metadata-mismatched entries. Validated geometry is available
 to standalone world/lane tools; it does not enable geometry correction in the
 canonical race loop. That change still requires proof of the server's exact
 ratio-update ordering.

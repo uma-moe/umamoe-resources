@@ -19,7 +19,7 @@ struct SourceGeometrySet {
     courses: Vec<SourceCourseGeometry>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct SourceCourseGeometry {
     course_id: u32,
     race_track_id: u32,
@@ -35,27 +35,17 @@ struct SourceCourseGeometry {
 }
 
 #[derive(Serialize)]
-struct PublishedCourseGeometry<'a> {
+struct PublishedCourseGeometrySet<'a> {
     schema_version: u32,
     master_version: &'a str,
-    course_id: u32,
-    race_track_id: u32,
-    course_distance: f64,
-    source_asset: &'a str,
-    position_x: &'a [f64],
-    position_y: &'a [f64],
-    position_z: &'a [f64],
-    rotation_x: &'a [f64],
-    rotation_y: &'a [f64],
-    rotation_z: &'a [f64],
-    rotation_w: &'a [f64],
+    courses: Vec<&'a SourceCourseGeometry>,
 }
 
-/// Produces flat, independently fetchable geometry artifacts. The bundled
+/// Produces one geometry artifact with an array of current courses. The bundled
 /// source payload originates from the client CourseLaneAnim assets; the
 /// artifact master version deliberately records that source version rather
 /// than pretending the client transforms were regenerated from master.mdb.
-pub fn generate(courses: &SimulatorCourseSet<'_>) -> Result<Vec<ResourceOutput>> {
+pub fn generate(courses: &SimulatorCourseSet<'_>) -> Result<ResourceOutput> {
     let source = decode_bundled_source()?;
     generate_from_source(courses, &source)
 }
@@ -66,7 +56,11 @@ pub fn version_hash() -> Result<String> {
     decoder
         .read_to_end(&mut bytes)
         .context("failed to decompress bundled simulator course geometry")?;
-    Ok(hex::encode(Sha256::digest(bytes)))
+    let mut digest = Sha256::new();
+    digest.update(b"simulator_course_geometry.json\0");
+    digest.update(SCHEMA_VERSION.to_le_bytes());
+    digest.update(bytes);
+    Ok(hex::encode(digest.finalize()))
 }
 
 fn decode_bundled_source() -> Result<SourceGeometrySet> {
@@ -81,7 +75,7 @@ fn decode_bundled_source() -> Result<SourceGeometrySet> {
 fn generate_from_source(
     courses: &SimulatorCourseSet<'_>,
     source: &SourceGeometrySet,
-) -> Result<Vec<ResourceOutput>> {
+) -> Result<ResourceOutput> {
     if source.schema_version != SCHEMA_VERSION {
         bail!(
             "simulator course geometry source schema must be {SCHEMA_VERSION}, got {}",
@@ -106,7 +100,7 @@ fn generate_from_source(
         }
     }
 
-    let mut outputs = Vec::with_capacity(courses.courses.len());
+    let mut published_courses = Vec::with_capacity(courses.courses.len());
     for course in &courses.courses {
         let source_course = source_by_course
             .remove(&course.course_id)
@@ -133,28 +127,17 @@ fn generate_from_source(
             );
         }
 
-        let artifact = PublishedCourseGeometry {
-            schema_version: SCHEMA_VERSION,
-            master_version: &source.source_master_version,
-            course_id: source_course.course_id,
-            race_track_id: source_course.race_track_id,
-            course_distance: source_course.course_distance,
-            source_asset: &source_course.source_asset,
-            position_x: &source_course.position_x,
-            position_y: &source_course.position_y,
-            position_z: &source_course.position_z,
-            rotation_x: &source_course.rotation_x,
-            rotation_y: &source_course.rotation_y,
-            rotation_z: &source_course.rotation_z,
-            rotation_w: &source_course.rotation_w,
-        };
-        outputs.push(ResourceOutput {
-            file_name: format!("simulator_course_geometry_{}.json", course.course_id),
-            value: serde_json::to_value(artifact)?,
-        });
+        published_courses.push(source_course);
     }
 
-    Ok(outputs)
+    super::output(
+        "simulator_course_geometry.json",
+        PublishedCourseGeometrySet {
+            schema_version: SCHEMA_VERSION,
+            master_version: &source.source_master_version,
+            courses: published_courses,
+        },
+    )
 }
 
 fn validate_source_course(course: &SourceCourseGeometry) -> Result<()> {
@@ -277,21 +260,37 @@ mod tests {
     }
 
     #[test]
-    fn publishes_one_flat_resource_per_current_course() {
+    fn publishes_current_courses_in_one_resource() {
+        let mut courses = course_set();
+        let mut second_course = course_set().courses.remove(0);
+        second_course.course_id = 10_105;
+        courses.courses.push(second_course);
+        let mut second_source_course = source_course();
+        second_source_course.course_id = 10_105;
+        second_source_course.position_x[0] = 42.0;
         let source = SourceGeometrySet {
             schema_version: SCHEMA_VERSION,
             source_master_version: "source-master".to_string(),
-            courses: vec![source_course()],
+            courses: vec![second_source_course, source_course()],
         };
 
-        let outputs = generate_from_source(&course_set(), &source).unwrap();
+        let output = generate_from_source(&courses, &source).unwrap();
 
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0].file_name, "simulator_course_geometry_10104.json");
-        assert_eq!(outputs[0].value["master_version"], "source-master");
-        assert_eq!(outputs[0].value["course_id"], 10_104);
+        assert_eq!(output.file_name, "simulator_course_geometry.json");
+        assert_eq!(output.value["schema_version"], SCHEMA_VERSION);
+        assert_eq!(output.value["master_version"], "source-master");
+        let published = output.value["courses"].as_array().unwrap();
+        assert_eq!(published.len(), 2);
         assert_eq!(
-            outputs[0].value["position_x"].as_array().unwrap().len(),
+            published[0],
+            serde_json::to_value(&source.courses[1]).unwrap()
+        );
+        assert_eq!(
+            published[1],
+            serde_json::to_value(&source.courses[0]).unwrap()
+        );
+        assert_eq!(
+            published[0]["position_x"].as_array().unwrap().len(),
             KEYFRAME_COUNT
         );
     }
@@ -333,10 +332,11 @@ mod tests {
             courses: vec![source_course(), future_course],
         };
 
-        let outputs = generate_from_source(&course_set(), &source).unwrap();
+        let output = generate_from_source(&course_set(), &source).unwrap();
 
-        assert_eq!(outputs.len(), 1);
-        assert_eq!(outputs[0].file_name, "simulator_course_geometry_10104.json");
+        let published = output.value["courses"].as_array().unwrap();
+        assert_eq!(published.len(), 1);
+        assert_eq!(published[0]["course_id"], 10_104);
     }
 
     #[test]

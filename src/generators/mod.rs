@@ -81,7 +81,7 @@ pub fn generate_all(
         output("affinity.json", affinity::generate(connection)?)?,
     ];
 
-    public.extend(simulator_course_geometry::generate(&simulator_courses)?);
+    public.push(simulator_course_geometry::generate(&simulator_courses)?);
 
     public.push(output(
         "character_names.json",
