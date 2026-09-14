@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract source CourseLaneAnim keyframes from an installed JP client."""
+"""Extract source CourseLaneAnim keyframes from an installed game client."""
 
 from __future__ import annotations
 
@@ -139,6 +139,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--client-root", required=True, type=Path)
     parser.add_argument("--sqlite3mc", required=True, type=Path)
     parser.add_argument("--umaviewer-config", required=True, type=Path)
+    parser.add_argument(
+        "--region",
+        choices=("jp", "global"),
+        default="jp",
+        help="Select the UmaViewer database key for the installed client.",
+    )
     parser.add_argument("--courses", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument(
@@ -166,6 +172,17 @@ def derive_database_key(base_key: bytes, database_key: bytes) -> bytes:
         value ^ base_key[index % DB_BASE_KEY_CYCLE]
         for index, value in enumerate(database_key)
     )
+
+
+def configured_database_key(config: dict[str, Any], region: str) -> bytes:
+    field = "GlobalDBKeyText" if region == "global" else "DBKeyText"
+    value = config.get(field)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"UmaViewer config has no {field}")
+    try:
+        return bytes.fromhex(value)
+    except ValueError as error:
+        raise ValueError(f"UmaViewer config {field} is not hexadecimal") from error
 
 
 def expand_asset_key(base_key: bytes, asset_key: int) -> bytes:
@@ -290,7 +307,9 @@ def main() -> int:
     args = parse_args()
     config = load_json(args.umaviewer_config)
     base_db_key = bytes.fromhex(config["DBBaseKeyText"])
-    db_key = derive_database_key(base_db_key, bytes.fromhex(config["DBKeyText"]))
+    db_key = derive_database_key(
+        base_db_key, configured_database_key(config, args.region)
+    )
     asset_base_key = bytes.fromhex(config["ABKeyText"])
 
     courses_document = load_json(args.courses)

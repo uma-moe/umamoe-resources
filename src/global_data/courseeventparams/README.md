@@ -1,23 +1,20 @@
-# Global Course Event Overrides
+# Global Course Event Parameters
 
-These decoded source assets override individual rows in the bundled JP course
-event set when Global race behavior differs. JP remains the complete fallback;
-an override is added only after extracting the matching current Global client
-asset and validating the generated simulator resource.
+This directory pins the decoded `CourseParamTable` assets used by the current
+Global client (`1.34.0`, resource version
+`10007550`). The generator overlays all 108
+simulator course IDs on the bundled JP set, so a Global build never silently
+inherits JP course-event boundaries.
 
-## Course 10501
+The source inventory is content-addressed by SHA-256:
+`9194f6cf260e8391ebf8f5a2f3b12647bf043e905769c0a771ca9f2fc663bc0a`. `manifest.json` records the decoded JSON hash, decrypted
+bundle hash, and normalized course-event payload hash for every included course.
 
-- Global Steam app: `3224770`
-- Global build: `24140954`
-- Extraction date: `2026-07-29`
-- Logical asset: `race/courseeventparam/10501/pfb_prm_race10501`
-- Bundle hash: `WPMTBUC54ZILJPDC2DNUHUBR3CGKZR77`
+These assets describe runtime course geometry events: corners, straights,
+slopes, lane-width changes, and the first lane-movement point. They do not
+define the selectable Practice Race season labels or translate the season
+field carried by a race request.
 
-The Global asset ends corner 4 at `890 m` and starts the following straight at
-`890 m`; the corresponding JP asset uses `900 m`. This affects the number of
-ten-metre all-corner activation windows that can be sampled during skill
-construction and therefore affects the shared race RNG cursor.
-
-Only the decoded JSON source needed by the generator is committed. Original
-bundles, generated resources, databases, decryption material, and compiled
-artifacts are intentionally excluded.
+Only decoded JSON needed by the generator is committed. Original bundles,
+generated resources, databases, decryption material, and compiled artifacts
+remain excluded.

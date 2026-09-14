@@ -1,0 +1,769 @@
+{
+  "schema_version": 1,
+  "artifact_kind": "current_global_course_event_params",
+  "client": {
+    "region": "global",
+    "app_version": "1.34.0",
+    "resource_version": "10007550"
+  },
+  "source_inventory_sha256": "9194f6cf260e8391ebf8f5a2f3b12647bf043e905769c0a771ca9f2fc663bc0a",
+  "course_count": 108,
+  "files": [
+    {
+      "course_id": 10101,
+      "path": "src/global_data/courseeventparams/10101.json",
+      "sha256": "3d29829b86710f68d1eb4df299c809af272ef21a483c5ad09e5995fdb84981cb",
+      "decrypted_bundle_sha256": "eabb811e7be2f94b6d00efd94b7a88a88f5f6be93e556b27098bfd5f621c7f82",
+      "course_event_payload_sha256": "ca5a9677629ac945cfdabd856cb8dee044105277f00b9e6c6c09bdb182037920"
+    },
+    {
+      "course_id": 10102,
+      "path": "src/global_data/courseeventparams/10102.json",
+      "sha256": "86338fb3009d6e62c0e8187ed75187e9ef9a81b54c3a303b6932adfbd85445ea",
+      "decrypted_bundle_sha256": "6cf6b8c2a26bbb54c672ce0204f17e42569ec22ba635905c9a67e2c1c807d620",
+      "course_event_payload_sha256": "e5f52b203cb132ada2ed76feae760771ac0dce5401f3a68180fd88b27c2dab47"
+    },
+    {
+      "course_id": 10103,
+      "path": "src/global_data/courseeventparams/10103.json",
+      "sha256": "3049f0c47ec34c5482a2efdc2aeee26a384ef36bc397f3d6ed14a34a0c3b798a",
+      "decrypted_bundle_sha256": "3c1a55b41f6682f582c61e1b56b8f4ea7772c936838374ae5c0bbf4fe86a8134",
+      "course_event_payload_sha256": "7c9190851d317362435207b95cf3199cb3400069f5c54299f534a8baea8304d9"
+    },
+    {
+      "course_id": 10104,
+      "path": "src/global_data/courseeventparams/10104.json",
+      "sha256": "6e6bb9ed9de915e37f6a5857439b52c938932ed27de257a6de735c93e0c58d3b",
+      "decrypted_bundle_sha256": "7351278b61b83331c9e06d2a325c4bb7fb20f761baf7168218f69c4a84cb3d8c",
+      "course_event_payload_sha256": "6eb579b3610b0cdc031f92290b5483aa1901c83ea097335460d19952cf8ec625"
+    },
+    {
+      "course_id": 10105,
+      "path": "src/global_data/courseeventparams/10105.json",
+      "sha256": "fcdcf7c31424c84b6e4e2a88fda92cbe59f8af2f5b40eb8dac3ab9b0e71d2e92",
+      "decrypted_bundle_sha256": "17ac6e6b97eaf78c4c51277bd79205366b2b4d961e08994b9ace0da5ecfd7ed2",
+      "course_event_payload_sha256": "50fffa80597097bbec5afc2e4018a9b5980cadca6eab6203d0c6eee53fb9bf64"
+    },
+    {
+      "course_id": 10106,
+      "path": "src/global_data/courseeventparams/10106.json",
+      "sha256": "f6bbda7f2d93d42c07057b537546dd8b4f1cbbe05061bdd4ebf16b91ae6c6de3",
+      "decrypted_bundle_sha256": "c3bfaad28e9e24cf9b8d5d4dee59876f4609a9579babedea9da0eb255f68c629",
+      "course_event_payload_sha256": "6cc57ed50c391243c9826fd9516793919fbdbdca265cd281eab9bfecabe0ac18"
+    },
+    {
+      "course_id": 10107,
+      "path": "src/global_data/courseeventparams/10107.json",
+      "sha256": "45b499bb43f7514cdf16bfc265d0ff0bdc9e425efcd9ff989e51ab10f6e4da8b",
+      "decrypted_bundle_sha256": "618f2a2b1a5150ec5ede1dcb007bb9ea17249bdae0bc75497486cf3d96fb6294",
+      "course_event_payload_sha256": "ad121e5714bf5af825c2f3271f7383272073000ce8efef02caafcaa2154a5aeb"
+    },
+    {
+      "course_id": 10108,
+      "path": "src/global_data/courseeventparams/10108.json",
+      "sha256": "d30b34e79db2effeffdf503b98ffaa8c269bf6875e1c12fd45763fedcf11d672",
+      "decrypted_bundle_sha256": "adfac0c2f7e5431189f4e8380b3e3bb201f911237e2be495b49556dc73e9103e",
+      "course_event_payload_sha256": "e4e1a80cc79707a005366ae9c8a970ab43bb71c38c28d36eaff7c6b1f9d14c86"
+    },
+    {
+      "course_id": 10201,
+      "path": "src/global_data/courseeventparams/10201.json",
+      "sha256": "c7b504ffd4b99b8519b7e255beecd9a50f69168dd7a07ee9fe0be56382961b25",
+      "decrypted_bundle_sha256": "51c41767ad7c612d4fee1f788d7bd600d91fe7a96d4aa627a87478097c659ad6",
+      "course_event_payload_sha256": "a9d30e112d56c334f889f8584c5d2410d2eacedd46f7b8bf973ad04d0d90ae25"
+    },
+    {
+      "course_id": 10202,
+      "path": "src/global_data/courseeventparams/10202.json",
+      "sha256": "f089b69d152a85c11adaea266579bea2c6fbf3f1fa57dd2f1fecfc126b8a1c03",
+      "decrypted_bundle_sha256": "bc2084138ac7bb8d3f447aef06995684bef39f6f5a4374ca8d54e0bf40a8e87c",
+      "course_event_payload_sha256": "67fc553a5e0f36b36475b5531700f943b26f72635e30eeca6e46e8feec324ec1"
+    },
+    {
+      "course_id": 10203,
+      "path": "src/global_data/courseeventparams/10203.json",
+      "sha256": "819b2702bec933ae17f062bbeef1de522c02007e79b6b728854a35fbe3c69876",
+      "decrypted_bundle_sha256": "b2908a19570ba5078b0f08c2c08edb71eb2f68d592a5e421e19e0d5adf75edb3",
+      "course_event_payload_sha256": "548b22459fbac9f7edc6f76992fb09354b94cbc73806e1fba0df564b6e1c7d92"
+    },
+    {
+      "course_id": 10204,
+      "path": "src/global_data/courseeventparams/10204.json",
+      "sha256": "1847986c546c0f2a7fe33e338129e3666cd39d2400fb9f475942b88bb85d5d0c",
+      "decrypted_bundle_sha256": "fddcabb9d2406dff28675de927e3c1774ea033674c19d3a74fda5377217f64ff",
+      "course_event_payload_sha256": "62232a8863ecb117925b5db2a7390c52f3bdc41558eef8d372a0066c1d905894"
+    },
+    {
+      "course_id": 10205,
+      "path": "src/global_data/courseeventparams/10205.json",
+      "sha256": "58a6bdee80a7caeb5a2fbf9bfaed9871e25558ea1656cd61026d62719ae261ff",
+      "decrypted_bundle_sha256": "843c8d06b3d9d25df0a8aaad95f76a9754e59107c121ddade1d7d8f266c0750a",
+      "course_event_payload_sha256": "c15f71e55621f2b3f9124b6be93d84c040f1325098b6c4303c0173b1073763b4"
+    },
+    {
+      "course_id": 10206,
+      "path": "src/global_data/courseeventparams/10206.json",
+      "sha256": "99e82c9491dac173c72266730bf31891d8cf997dfc3006130349fd432b570cba",
+      "decrypted_bundle_sha256": "0c3a36013dba2b15216e58b6b52fa25bd5861285981895a0d0b3eb753d09a863",
+      "course_event_payload_sha256": "ec130ceac09cad1a3e4e5b6bf9ec9383fce2a088cb4f8835fe8573ca1910f9a5"
+    },
+    {
+      "course_id": 10207,
+      "path": "src/global_data/courseeventparams/10207.json",
+      "sha256": "56520e9f1c906b1e49d65ee8b4575d47a52cde229f820e5aebf5254a141c8df8",
+      "decrypted_bundle_sha256": "bed20a14ec50bee3b7860bad552827a131c7954333eef22f3773ec63c980d8ff",
+      "course_event_payload_sha256": "6d6f707849a7d839e06f2690f67db8231f16cc7296e476ce369aace71f6394ca"
+    },
+    {
+      "course_id": 10208,
+      "path": "src/global_data/courseeventparams/10208.json",
+      "sha256": "ed9a4141098ac204462313dea38411a993411d3d3a172a7c92d35dfd3ff5e9c6",
+      "decrypted_bundle_sha256": "38160d2dd8e0e60f678851b8a8d4b40f4300476e39276a853c39b0ad3d37573a",
+      "course_event_payload_sha256": "cf3cb352d4e0984ef8126dd3f1d3e75d396f70b85da413f330ee8492e1fc6c94"
+    },
+    {
+      "course_id": 10301,
+      "path": "src/global_data/courseeventparams/10301.json",
+      "sha256": "4c0d64d0f80503fcdba1b309d3a1b268f276d15be1c05c45e0891233bd31886e",
+      "decrypted_bundle_sha256": "2f169c8e692e379c3e1acab88f7ee1702c80457e24e224638e716a92a9c1b707",
+      "course_event_payload_sha256": "0400540fee7ea8bea9d736c416c0d2317db7a28b8bc91352ec5e1054827a8929"
+    },
+    {
+      "course_id": 10302,
+      "path": "src/global_data/courseeventparams/10302.json",
+      "sha256": "20633a9097839c913df6b9610785c3209d71ab9a33988a8ba3c55787b7207bdd",
+      "decrypted_bundle_sha256": "605eaaac28c0bb52fe075d683a450de13ac446c14b2e41d79dbdbc84e4913bfd",
+      "course_event_payload_sha256": "09c232ad567248b6507afbb82a2c0edd4335b7cb9a62efeed4f632d2fec8d8ba"
+    },
+    {
+      "course_id": 10303,
+      "path": "src/global_data/courseeventparams/10303.json",
+      "sha256": "bb6b8723b8166d3b94f5e3d98ecae2da4cf859af0b64bc9d0d5e0359ed2ee54e",
+      "decrypted_bundle_sha256": "5e76afd32788a8d5842a73b0232c65448da05ca1e5b3f5bf6e3fc77087de230a",
+      "course_event_payload_sha256": "33b0edc36d48d51982873def6241b8f8947d8977ce512bece8bef3f0743af84f"
+    },
+    {
+      "course_id": 10304,
+      "path": "src/global_data/courseeventparams/10304.json",
+      "sha256": "0507638ae9e5aad56f34dc81853d6f775beed2d18fa85146d53c9536c83581ed",
+      "decrypted_bundle_sha256": "5426999a80123c27c3e85d53c99bb0341df6e0857b48c992cad30ca0f36a9251",
+      "course_event_payload_sha256": "0f0acfd90164ff2dfa4d3e91dc37ef9c587335896a449a49aaf015a98a14c4f6"
+    },
+    {
+      "course_id": 10305,
+      "path": "src/global_data/courseeventparams/10305.json",
+      "sha256": "1e7511b07580c5e9ed5342396561a33560caf520f1d7ad7f311a59323df70844",
+      "decrypted_bundle_sha256": "afa55d116629df19944bac990f35223cc6077d252db574af7bf9e18a53bf8f0a",
+      "course_event_payload_sha256": "66add75997532ca7b67348a5a1bd507071223afc95b32f3c33655f27698af785"
+    },
+    {
+      "course_id": 10306,
+      "path": "src/global_data/courseeventparams/10306.json",
+      "sha256": "b1fea24fd6b1877a2f583a2524601b2f87ca969ccb973175fafddf25e99b2ff5",
+      "decrypted_bundle_sha256": "75a14efc4803db261a6cc06ce5d77459596233aa28ddee2a371f0d60ff3b500b",
+      "course_event_payload_sha256": "42bf26aca5c42a35befb9355acd3ae9ac29d040502e9b6703fb181fbb2e61f7b"
+    },
+    {
+      "course_id": 10307,
+      "path": "src/global_data/courseeventparams/10307.json",
+      "sha256": "19b5deb61e70fe9cf87a2f28f394a05f42fb4e46466eb2d0210e34abab80e123",
+      "decrypted_bundle_sha256": "da505c59f9050734b35cc4242e4c757edf41f6f28bec4d54c56f61d0b40a9b06",
+      "course_event_payload_sha256": "c0dc93fe7bf41387a1ee0d74d6e402fc2d6f5eb0880d1c8e8dd41dc0fc747b4b"
+    },
+    {
+      "course_id": 10308,
+      "path": "src/global_data/courseeventparams/10308.json",
+      "sha256": "0b59983ab2f2a8085ccc9587ce894a8997664b7102d5ec16ee74a735715fafb5",
+      "decrypted_bundle_sha256": "4306526a67f05f6c32c4cad89c64cb797a6c7921490e0eea995f4b9002294efd",
+      "course_event_payload_sha256": "db0435478ca1694c83d0816e3fbbc2c11adf6cf7e37d84607460b1b2bb669a07"
+    },
+    {
+      "course_id": 10309,
+      "path": "src/global_data/courseeventparams/10309.json",
+      "sha256": "55d09a2ffa0c6f67fa58ce5506825527873a1ba2ce5bfc02248d5667136e0ccf",
+      "decrypted_bundle_sha256": "82d2fae2a1aaca491639f20ffa5a828960fc91abe88733f0569e7ab17a3d899e",
+      "course_event_payload_sha256": "f75639ee5d3c04ab2e580ef9b31298154b2c70f7c4c19461d2ebf824d751cee3"
+    },
+    {
+      "course_id": 10310,
+      "path": "src/global_data/courseeventparams/10310.json",
+      "sha256": "ce882996fda875aae667895fb8a63cdf94180b2761202b5c8c6172e59021052a",
+      "decrypted_bundle_sha256": "4295aff56d4b22055d9bff01f09c24ea90a171f69d02b1ca7fda9cef8af7f6e8",
+      "course_event_payload_sha256": "dff82177a9afa444f300d6b53c7ebac265ed99e70d2265737868cca97ba14e34"
+    },
+    {
+      "course_id": 10311,
+      "path": "src/global_data/courseeventparams/10311.json",
+      "sha256": "3e2e77fd3f722809c9d1776eea4aea76f4a088c653c1cae6568e7d16dcee0d96",
+      "decrypted_bundle_sha256": "323a20b8a0598324d8045697c5c6e08f39c308eaa937c8968eb66e2f812943e7",
+      "course_event_payload_sha256": "06eb9153b3b0e2f6897fbaeef7fe77503dffaa86f859dc62c67a4fe2360b7edf"
+    },
+    {
+      "course_id": 10312,
+      "path": "src/global_data/courseeventparams/10312.json",
+      "sha256": "fb1973f8aedec40c4a39da742cea1a8570b2351a1508cf978c4a7e43b53b4444",
+      "decrypted_bundle_sha256": "d7a9846407aec24bd654a214a4908faf208a81e93e536fb6a7a84dede67aadd3",
+      "course_event_payload_sha256": "aee102f0ca38637dc0967f63e0cd7e2a50acb74403ac7aac82aa5545af2b1ce3"
+    },
+    {
+      "course_id": 10401,
+      "path": "src/global_data/courseeventparams/10401.json",
+      "sha256": "9b77137dc49ab10919f21d32351c6240a308343498e61d13dcc55aa518759a47",
+      "decrypted_bundle_sha256": "25e38e03bdce5c61f84614bc764a228e8cc55e35d22a41fbc47b0f6436fefff8",
+      "course_event_payload_sha256": "899ac6b6b7bfbc990b4a9b26e1c16e1db50d7491b30474c3916de315b7be91cf"
+    },
+    {
+      "course_id": 10402,
+      "path": "src/global_data/courseeventparams/10402.json",
+      "sha256": "9f23558a8025fecc212a8ae1858032e99bcb531761acfcb0a942c071f99c0bce",
+      "decrypted_bundle_sha256": "0c94692191676c06205ab4948fd0ff9ede73222cf184dd003c3228d87070e5ea",
+      "course_event_payload_sha256": "25df31e7879bc88a1dbc00792ef6b2fd3b452cfbe3806e5e2b7cc43546ded46c"
+    },
+    {
+      "course_id": 10403,
+      "path": "src/global_data/courseeventparams/10403.json",
+      "sha256": "f17e181569a517f507e160c898b2b34e45608da22288fa644fe1def41f76a801",
+      "decrypted_bundle_sha256": "ef5fa6c13ec4ce95ebc2036bf5ad2b70ef6c11543d21f916d47df1daaf5549f8",
+      "course_event_payload_sha256": "9a5a1397c3a4796f054d589e35d0e5f0f45fe0630701214b6af8c9bf18abe3ee"
+    },
+    {
+      "course_id": 10404,
+      "path": "src/global_data/courseeventparams/10404.json",
+      "sha256": "4bea0763c3c133634789c18353ef0fd349faeeb602992f21285aa6e11a3fc740",
+      "decrypted_bundle_sha256": "13524a4d27f7ef58e73d8f6ff51a2d34a26544f9f57ca05aef4459a2e572baec",
+      "course_event_payload_sha256": "f8e99a5da5d7e2cfe7099b4ff1a7d0fd0eb1c6e8a92341befe2ccb4da669d8ed"
+    },
+    {
+      "course_id": 10405,
+      "path": "src/global_data/courseeventparams/10405.json",
+      "sha256": "d67ad3d12cc07a220defddb4fd1ac20cb4bb39a8e70845858453c804f9636b90",
+      "decrypted_bundle_sha256": "79e9057920a7db9a83827287d9a881d8d509e11fe879949c0d0e89d16ed553ec",
+      "course_event_payload_sha256": "73f6864abe2e457f7df673c66be86fd3e421c905b20f4c939d0ad9343b8e6340"
+    },
+    {
+      "course_id": 10406,
+      "path": "src/global_data/courseeventparams/10406.json",
+      "sha256": "604deb657a121f6eeccf45b39c345ae7cf6e3dcd78dd4b9a740494e6c67af9d3",
+      "decrypted_bundle_sha256": "d1d62e234cb295a7026ea6c97cdf31121f05fe35f2c063a16a70e07126b96058",
+      "course_event_payload_sha256": "01f00325202e5e1644fa531d2a216da194ba7f773328d01375b694eceb6e1e5c"
+    },
+    {
+      "course_id": 10407,
+      "path": "src/global_data/courseeventparams/10407.json",
+      "sha256": "457162ffde9ba415dfc2dd5fbfc465dd8b1f03658eb8f9f403b62b2b7bbece4c",
+      "decrypted_bundle_sha256": "916d406bf8ae0422710cb4a7b4eb3e704c20625d234a9e41819f8ab687dd74c3",
+      "course_event_payload_sha256": "974da4b06068cd86be1ffe7691bf425376edd4573848d9a3db88236bd532b52c"
+    },
+    {
+      "course_id": 10501,
+      "path": "src/global_data/courseeventparams/10501.json",
+      "sha256": "091343fe78a2dd30cae902261920e497c6a39503d9add833d9899aee9ea28761",
+      "decrypted_bundle_sha256": "518d257df98b666cce8ce8f437f64e188d642396f9b6846c118adf0876dbd8d7",
+      "course_event_payload_sha256": "e271eb344c88d4bfec066dfff1353c4874e6be22096d2bdb34723485aeb63f6f"
+    },
+    {
+      "course_id": 10502,
+      "path": "src/global_data/courseeventparams/10502.json",
+      "sha256": "02bf2b30ba82b229cc84fe3695d72fc555dd19bf6c0c328f96a06146e5aae681",
+      "decrypted_bundle_sha256": "c5db7d01a09d7756c6c8ba92d443057ff0c8d265c03dd92d4a298322e14b53e4",
+      "course_event_payload_sha256": "dff5202c8690330c0f857a9873b20e0b9749940cdb6e5f3f5c00eb27d3bf4a6c"
+    },
+    {
+      "course_id": 10503,
+      "path": "src/global_data/courseeventparams/10503.json",
+      "sha256": "e88d054f1f803f84e9e5d3052d9b9001401ff20195bf2cfb0ce4a77cf4a07018",
+      "decrypted_bundle_sha256": "714ebd3d8bf9c3d5d8f0ad18f6ec9d4c377c8853d050aaaa9073515430362330",
+      "course_event_payload_sha256": "0da7d0ba4b15027d6aace4fb9ea4617cfcab09c377c1d142096b1f9856e9927d"
+    },
+    {
+      "course_id": 10504,
+      "path": "src/global_data/courseeventparams/10504.json",
+      "sha256": "7dec7996bbde241c47a2bb3b4dc5f0f19f0200bd31530f78c6ea9247542f3662",
+      "decrypted_bundle_sha256": "c3643ec9ae11b43443e55a7083e07e539719eff0dd076e6805219c5b75dda192",
+      "course_event_payload_sha256": "ef9410a373babf70c72d881b3c75e98d36b5120e23f5108e3e806b93d6b5cc60"
+    },
+    {
+      "course_id": 10505,
+      "path": "src/global_data/courseeventparams/10505.json",
+      "sha256": "fdcf1c9751db273111ac855c41969da0482bfd4f769d8f9bd7ad0af62c09c04e",
+      "decrypted_bundle_sha256": "64f606795e45f28c1b9917e3de81e73bf095e2220372dec37222025bf2344e2d",
+      "course_event_payload_sha256": "1f02784fa0199ea75929509447bcdfe05f6ad6472a8e46b5141392bda1ccee4f"
+    },
+    {
+      "course_id": 10506,
+      "path": "src/global_data/courseeventparams/10506.json",
+      "sha256": "c74f3e6d6b83b9f90ae1fd30ca6886e6b0193555e7fe309f9ae4e2dc695ad060",
+      "decrypted_bundle_sha256": "8b6d17c21f286453f1d06f8b8fd9e1bb9df3ca72a92da9c07400dad1df60ba5e",
+      "course_event_payload_sha256": "4ee11dc993b63dbb27e88b274bb4ed3b8dc6160e8277fd8ea463fcc403be45a2"
+    },
+    {
+      "course_id": 10507,
+      "path": "src/global_data/courseeventparams/10507.json",
+      "sha256": "4c3ef6f89757432ec55ce2188a2ef353220f243b9cf12cbe46fd878dec2627d2",
+      "decrypted_bundle_sha256": "fcbb0193667fa154400176c67c355afae6f636e8f760e965713ab9e127565a34",
+      "course_event_payload_sha256": "65e286670db16f84f22f3cad439dc6af22407a15c8dd6d49c3748988994bf471"
+    },
+    {
+      "course_id": 10508,
+      "path": "src/global_data/courseeventparams/10508.json",
+      "sha256": "001989fb21ba4a09fa4a86327dbf3b98e127cdc83673485b73e0a187ee6c5a4e",
+      "decrypted_bundle_sha256": "88ba4a2f2ebd6e18a9d39f8a1384f3bd0d12477a1431ad92a1e14d1058efeb72",
+      "course_event_payload_sha256": "8bb18d3a7ff6f10129c8d8e2b1dbb553f17d4d2786b4298de3ec960c0382605d"
+    },
+    {
+      "course_id": 10509,
+      "path": "src/global_data/courseeventparams/10509.json",
+      "sha256": "d7107d37a2d8f504030de9cd522ae19231b48fc54103262d5e76f45884e41527",
+      "decrypted_bundle_sha256": "6ab996129a20f68bff2006022e1b735c1b1a4c7600b79cbde1ce3829b2ca6388",
+      "course_event_payload_sha256": "dab06c1ec2ddee8bb8e5035620a1c21eb4914aab45f61c8a2a1b4e83887a2efa"
+    },
+    {
+      "course_id": 10510,
+      "path": "src/global_data/courseeventparams/10510.json",
+      "sha256": "c4147a1400631c25bb62cf1b1ae781df5ed4da914cb1c10a20e654ecd8364d33",
+      "decrypted_bundle_sha256": "b1737b28e3beebd1a50bccbe9394abff91efac16452202e0fb49b072fb557611",
+      "course_event_payload_sha256": "7dbf86964eaff945151ef78cd772c5bb8664f445389c8ccfe9831aef63f7d681"
+    },
+    {
+      "course_id": 10511,
+      "path": "src/global_data/courseeventparams/10511.json",
+      "sha256": "d30f8a38ea6c544a9efc66989b18c451d7f64c9d9e682b7412324cf02aa2c803",
+      "decrypted_bundle_sha256": "df7e9abf85270be355b69d8ed5fe9763c7d6a443799035f06b22ba008325e678",
+      "course_event_payload_sha256": "81d2a421557e2d948d691d6b9e2a41fb4d9b285673520e1c467de3aa7c15b1fd"
+    },
+    {
+      "course_id": 10601,
+      "path": "src/global_data/courseeventparams/10601.json",
+      "sha256": "b797d0f142c069adc1f97d3f0dd5a9cf0dfa7d85eabec88e33cd65bfe481d2c7",
+      "decrypted_bundle_sha256": "8109a84bfb224ae6eb3575c1a7901dcbf0353baf0ae9c2d88a463cf57fc1d566",
+      "course_event_payload_sha256": "7110aaffdf0ebfbba8f0943413519fc142c11cfe311d0805bcb8a427d912071d"
+    },
+    {
+      "course_id": 10602,
+      "path": "src/global_data/courseeventparams/10602.json",
+      "sha256": "81679c84ff74697c511224ad71227e495e42a0417aba059362180cb6a0921cb3",
+      "decrypted_bundle_sha256": "6e912d92ab4bb85bc67be6e9b471ad62a6711a847bcfa37956e846697fd4ad8a",
+      "course_event_payload_sha256": "dd50e9e5f312fb50110796a1051241f429678e09c407170cb2c8a1585855bfe7"
+    },
+    {
+      "course_id": 10603,
+      "path": "src/global_data/courseeventparams/10603.json",
+      "sha256": "3cd0ddcd91f11887f234fc6a0e574e9038107662f70e1a8585af8a36d8867701",
+      "decrypted_bundle_sha256": "80a9e1f4f32b805019abcfeb2f442967736c01447288c71867f49a9f7f8988e0",
+      "course_event_payload_sha256": "af8f6cb7deb277626c43bdc288151651909d5fa0faee3f9bba9aba9623325bf5"
+    },
+    {
+      "course_id": 10604,
+      "path": "src/global_data/courseeventparams/10604.json",
+      "sha256": "6212055c51b551f2f8d8c2ec09788d20e45d9d7f5dd2acf5772580e2ba1fd904",
+      "decrypted_bundle_sha256": "bf99eaf6f093f78558bc13622496f864fefd57ba4e16e8de772789378478ab8e",
+      "course_event_payload_sha256": "234d4104844e0cd6e8ebb842cc55c3c99cb41f5e189186409cafe8c5a58c1c59"
+    },
+    {
+      "course_id": 10605,
+      "path": "src/global_data/courseeventparams/10605.json",
+      "sha256": "d25e5c94c21d3f9a547a2f1208c6ca3301e0637ec9201461d503d2c2277d7f76",
+      "decrypted_bundle_sha256": "e9c96fd63f4260b8a3a633a72411c32915404ce6c790e9b07020a3cec926543e",
+      "course_event_payload_sha256": "aaebae9d7f606c6603df2548786978be43e257fc185ed9c275bcd935b25cc34c"
+    },
+    {
+      "course_id": 10606,
+      "path": "src/global_data/courseeventparams/10606.json",
+      "sha256": "e4112d67c5776184cf9d1b2528c4c1c0e6ee2136cb79b04c367710cf4961d156",
+      "decrypted_bundle_sha256": "8549fdbdc7e41d60025a58318d92fb586f3bc4ad8dc20c8c040ebe15f0600878",
+      "course_event_payload_sha256": "287a9579a923f4ee54c2600e3ce8ab2dde121a98d022671aa94d977e382dbea0"
+    },
+    {
+      "course_id": 10607,
+      "path": "src/global_data/courseeventparams/10607.json",
+      "sha256": "9eac6848d5f21dffe16122a290349d0994f416836dc92b3f2d394211ad1d0e10",
+      "decrypted_bundle_sha256": "ce8944646525fb4a688005c3fb419fb33a95c8b5e5825fd9386118d0d1019dd8",
+      "course_event_payload_sha256": "cdfd72719a601b1c5c11c6cd4466bb0007c3a8127ddd35191ce857dbd0e9a990"
+    },
+    {
+      "course_id": 10608,
+      "path": "src/global_data/courseeventparams/10608.json",
+      "sha256": "c3c7f8c7cfb6e5e9e8b11a984edd1c57468baf2445da233703bd01cc2e7264f0",
+      "decrypted_bundle_sha256": "d5055a28434a1a0df6794911ef1d1e9096f8d2bde39e3631d4485eb07e3cd066",
+      "course_event_payload_sha256": "3d61af84f9c33d7d0cade5fd38f3210a2b3fd23efaf842c8ca3664c0ad739e61"
+    },
+    {
+      "course_id": 10609,
+      "path": "src/global_data/courseeventparams/10609.json",
+      "sha256": "76291f2aa6d454d207b4cbc99dee845771bba365b0ed8dc52244f54e38efe8c2",
+      "decrypted_bundle_sha256": "775de6d79d9cd2eabc5d1c83734fae97d406333d170a6f56979da72566a1950f",
+      "course_event_payload_sha256": "4deb0e5442b90a8bd47c0600733dc11e5e5cd6b84748ca4692764ae6926c9f5b"
+    },
+    {
+      "course_id": 10610,
+      "path": "src/global_data/courseeventparams/10610.json",
+      "sha256": "1bfb55e6c8d36bdaa790db126752b6c853f42f133983a725ca0358df8bf70b13",
+      "decrypted_bundle_sha256": "d909141fe968cbae28a80c10cc28a69dd58db37f45460c3758029cff1414cee6",
+      "course_event_payload_sha256": "64524d589730e83caba11c30dd2a008c385a3c0e5464e55219b3d04174272deb"
+    },
+    {
+      "course_id": 10611,
+      "path": "src/global_data/courseeventparams/10611.json",
+      "sha256": "2d37f0e8c00143cddab68185902abcb27b562bd6432dc73a553a3ded3569342e",
+      "decrypted_bundle_sha256": "9a57627418b3d9de62adf754a43ae33af8b71b95995f072668689e88d7f4d3b3",
+      "course_event_payload_sha256": "85974e3b3a5ad277dacf75e04e9485e9ce3aaabe0155d0924b6ab5e1f92c8697"
+    },
+    {
+      "course_id": 10612,
+      "path": "src/global_data/courseeventparams/10612.json",
+      "sha256": "3be4814b59a351dfc285e9cc0b14659c8b345c3105b5fc50baad8a5fd6992142",
+      "decrypted_bundle_sha256": "45812e58384081bb486bd7e201f93bd98f0b11fefe25f09ede5568b05a7593a3",
+      "course_event_payload_sha256": "f87d64ef279111e921762a3789c9a8e680cdfd0640bbaf7cbe82931c17a3807e"
+    },
+    {
+      "course_id": 10613,
+      "path": "src/global_data/courseeventparams/10613.json",
+      "sha256": "97c905a1b63864dd770e0c88fa0072232be2e70f7a225a21692eecb412cbce14",
+      "decrypted_bundle_sha256": "80b8db415290ca1d56c38e81b0c67a1223c5ee64859baad9579afa71d645b374",
+      "course_event_payload_sha256": "cdc1d673441e677afe241dcb3d61757cc6f6163ffdc9cbf29ebf29874ac0b101"
+    },
+    {
+      "course_id": 10701,
+      "path": "src/global_data/courseeventparams/10701.json",
+      "sha256": "21a0b2480c34876866d0b1e39ec912748ece6eb625a32d5c9783762d8750eaab",
+      "decrypted_bundle_sha256": "a5515093076af3040cdb0751084987d20c34621db2f1257abd70d28693e00b6b",
+      "course_event_payload_sha256": "62aeb5f4c77e3e511934e62b7c8c72f9a9548dce58385d9ef9bcc87ec33bb09b"
+    },
+    {
+      "course_id": 10702,
+      "path": "src/global_data/courseeventparams/10702.json",
+      "sha256": "bf09cd7cb6e9255b0c63e2290b8cadb916f9998dbfd55915e6613b4c0b13e877",
+      "decrypted_bundle_sha256": "7ceecddc59dadfd57613893955521f24350f88f4ace7575251f13f24cddf9e30",
+      "course_event_payload_sha256": "c213474d666f54f8640cb1a64bf09d7f95c6404d70dbc256298fc20708577219"
+    },
+    {
+      "course_id": 10703,
+      "path": "src/global_data/courseeventparams/10703.json",
+      "sha256": "c3b89f4622838985a5725a033bf733c997a339fda6351b0276c46b408f1a9dbb",
+      "decrypted_bundle_sha256": "e2831c4697ad0e326bf53331b75ea9bd0c4a2510ef2dec255f36de8ce7c428a2",
+      "course_event_payload_sha256": "03f091e8eea8a8039f0d7536b76034594fad97287e6c0d6d7bf4ddb1aa7ae4d6"
+    },
+    {
+      "course_id": 10704,
+      "path": "src/global_data/courseeventparams/10704.json",
+      "sha256": "a47d725bed6c59b0d5d4a2fe74ddd7c233421deb9c64be7cfc7976a3007bc2df",
+      "decrypted_bundle_sha256": "4d546d759ed820f56611cdb2470615993257dea19b7917d5573485b200b1f4fc",
+      "course_event_payload_sha256": "f55c4b0e53e4589aaaa4c4df39ee56287650c9386fb6fdcfa5bafed0e471fcb1"
+    },
+    {
+      "course_id": 10705,
+      "path": "src/global_data/courseeventparams/10705.json",
+      "sha256": "1c62ec805330e7e96bc32b3c84420364c142fadb82bb7cc640d379645df0aaa1",
+      "decrypted_bundle_sha256": "4cb3faa01206c1a2da0e3bae4e6fb069f5fb1baf5c0ee9452898a68e2031fb47",
+      "course_event_payload_sha256": "dd7bab5b18df45de5676bc35a6d80a1e150bbce93e0e226aeab25cb520d20308"
+    },
+    {
+      "course_id": 10706,
+      "path": "src/global_data/courseeventparams/10706.json",
+      "sha256": "5ef45a4a9a873bbaa2abd2de2cbb7c784a1b45b65f7f9ffdfbe02ff7ff45b531",
+      "decrypted_bundle_sha256": "efe45dc297c2a679f242869d04ab76ed4c14f5aae4f338513a642674c5e1765e",
+      "course_event_payload_sha256": "ec5481aa0ffa033d18be9a266dfa03677f84c80d2041d3c506ec82cd0adc325c"
+    },
+    {
+      "course_id": 10707,
+      "path": "src/global_data/courseeventparams/10707.json",
+      "sha256": "e23c67c5e27acd4bcc9a5326aba697affd577b5806c188da63e75f333a645fa5",
+      "decrypted_bundle_sha256": "b095651cf27c66f731356595f3b44aabf3bd063a44557c97f1778bf9e2ed6ec2",
+      "course_event_payload_sha256": "96ab266eed5e0e69b6afc2827804a483d72bbb6489b4f62963bb0f16dcf79c8c"
+    },
+    {
+      "course_id": 10708,
+      "path": "src/global_data/courseeventparams/10708.json",
+      "sha256": "b7513d1a16e5f2a1faf3575b8ee5fdbd42ef86c8ec02447c8256cba86be96dcb",
+      "decrypted_bundle_sha256": "1a086924ef84dcad2145e2c0c3e8fb2b53ffa2ef80585c8aa890f5592a78988e",
+      "course_event_payload_sha256": "2b52680cf1feb164922dca4e86beb77222c0ce0ed472cde4aeded44f916a1c7f"
+    },
+    {
+      "course_id": 10709,
+      "path": "src/global_data/courseeventparams/10709.json",
+      "sha256": "df3e5ee7e0d899a9694d9a75af6cf77bf5716de277142b49d823496b6d7d802e",
+      "decrypted_bundle_sha256": "6874096f9d25642ec9bdc22fcf85b488ac1c92ad93d5394557825b6e9af6be22",
+      "course_event_payload_sha256": "483255bb3182bc74959b258b2f0ee71f983adb59ae53086e30d98c592912a695"
+    },
+    {
+      "course_id": 10801,
+      "path": "src/global_data/courseeventparams/10801.json",
+      "sha256": "9e7a8b2eee93f764133452c01278f3ed1af29c0221e053794484144f280b3664",
+      "decrypted_bundle_sha256": "0aafcbdb5eba793b2765eb3094917bd3466f5148cc0a2eef5fe8330d80586754",
+      "course_event_payload_sha256": "0e7034b2b61636e64de14f21d2cca42dff3200d2518b422d55891fb4afe26f34"
+    },
+    {
+      "course_id": 10802,
+      "path": "src/global_data/courseeventparams/10802.json",
+      "sha256": "10cf9cc4499cc05f46478e2290d4de719b45ddbb1495bbd9689b0450e7010dc8",
+      "decrypted_bundle_sha256": "be35f76c4fe93c2d003bf88ac6d84694368ca55c7b44f231fb5c4fa8f6d0ba59",
+      "course_event_payload_sha256": "890efb131d36e059cc4a9d2aa233b6d20f74163239d1120038910d8bbd7081e8"
+    },
+    {
+      "course_id": 10803,
+      "path": "src/global_data/courseeventparams/10803.json",
+      "sha256": "90b705095e5e1285071671e30b5b320444b2a8871c987fbdf3579355a873c3c4",
+      "decrypted_bundle_sha256": "d2cdb97768e291e364b0cb3556ec50a9337c79a80c07c8321cba40955256694e",
+      "course_event_payload_sha256": "6e0e097f5a20636fb0f0c219fdf27e531f623b5eef515f1356134dad5803de4d"
+    },
+    {
+      "course_id": 10804,
+      "path": "src/global_data/courseeventparams/10804.json",
+      "sha256": "9a647ade1649c5b3fee7177e015e7cd01e697b7eb6ec0bee0d49877680809acc",
+      "decrypted_bundle_sha256": "365b3e62f6f8eaf4abb442088ea5ca709117bdc90c42b2eac4adcf3a77d1b34d",
+      "course_event_payload_sha256": "adcbbedf2a967765a473c0345f6485023c9835d627c20eae08903dfb75ae1ed1"
+    },
+    {
+      "course_id": 10805,
+      "path": "src/global_data/courseeventparams/10805.json",
+      "sha256": "8fd259afcdfc17b88d86718351c4d5c12217902579c3015f9e7f68403768c413",
+      "decrypted_bundle_sha256": "65b1e855003ceeec52b046a59caa7b2ca02ca61d0e9dfd45decd9169bfcdada4",
+      "course_event_payload_sha256": "c22e67cd2887d0ace5dad77c030da9f22dfb9576d2b687b0adec4364cbcae28e"
+    },
+    {
+      "course_id": 10806,
+      "path": "src/global_data/courseeventparams/10806.json",
+      "sha256": "e32e6d066e4d78798e728da0a8d53aee2e0e7bf91c20caaea99e1364aab29c0a",
+      "decrypted_bundle_sha256": "f61ef7bc673c3f92bf8e093c9cf22f33d2e43f66c99735596809355f2fe8cb10",
+      "course_event_payload_sha256": "1c40300e60212692cc559d07e35be492c63b98ee696cdddd671062d9934aa095"
+    },
+    {
+      "course_id": 10807,
+      "path": "src/global_data/courseeventparams/10807.json",
+      "sha256": "3546094c35f513a575919f672c61d414023e82153b7186b3441a2f69d123538e",
+      "decrypted_bundle_sha256": "09eee0191fb0330c9ac64fb71e99cde64b910656c3dfd22b134930788dc835d0",
+      "course_event_payload_sha256": "7d2fe50430741369591cc77472c63938b10b9b84d9fbde135d8ffe114a71e505"
+    },
+    {
+      "course_id": 10808,
+      "path": "src/global_data/courseeventparams/10808.json",
+      "sha256": "85886271946c3c3359028b4a3336dcf2c2176b3506d35271b3662b0e18ea3fe0",
+      "decrypted_bundle_sha256": "a76d04b21e779fe3fdc81b73d5bad843bf909d1b0c09faaadb4dd2cb32de0e6a",
+      "course_event_payload_sha256": "27ebfffd01f4a241d9fd844ce850d8dbc77f26f3d63e267f39d7c7563b6c23c9"
+    },
+    {
+      "course_id": 10809,
+      "path": "src/global_data/courseeventparams/10809.json",
+      "sha256": "ba9d718cfa1f67860b2407e41189e2fdcbf388629e3ae70c2afc05ee35d70d6a",
+      "decrypted_bundle_sha256": "6c5f8969c9d8c3071fd65e8746eaff8245a679e9bd0a9c2d3953585f0a9fb565",
+      "course_event_payload_sha256": "d59e86987dbf97fc513c47598d36a7dcc12f90fe08a2f1fe7cb02229bfc15feb"
+    },
+    {
+      "course_id": 10810,
+      "path": "src/global_data/courseeventparams/10810.json",
+      "sha256": "dacc064ecead4956b2b54750faba09b3d8916ef80917d3dc9ff8586ca538f65d",
+      "decrypted_bundle_sha256": "630c1a33a373b1098d0cc0ac6747eb679c134b4c3316d55dbef5ee1ada765536",
+      "course_event_payload_sha256": "7573e41d8ee99eb9332b157df66e4eb56b01f75cb5acda8dfd57862a4d7838f4"
+    },
+    {
+      "course_id": 10811,
+      "path": "src/global_data/courseeventparams/10811.json",
+      "sha256": "ba85167d8258fba574f5364827b3609e671b4dbadc418f2e797dee02165dc45a",
+      "decrypted_bundle_sha256": "9809debbfb62cf5d55919c43c6d90e571b1f4b3e4e842878a5b4828551c6da32",
+      "course_event_payload_sha256": "905b89fe4aac8b894c3ad4ae433e6d0f29581c869ae9779c280c7ae968caa671"
+    },
+    {
+      "course_id": 10812,
+      "path": "src/global_data/courseeventparams/10812.json",
+      "sha256": "a1c666b917b5a12f78973b404eb07205ee4f06a0aa4c54553ed769d2544b2039",
+      "decrypted_bundle_sha256": "15fed9344e9a06e7c49e3690f8ce1900da0bdaa5f9784b13796597eb80605d63",
+      "course_event_payload_sha256": "d9ae0eadc48b195919f6615f175a8eb5df37158b8a89ebd025a1a09226f5949a"
+    },
+    {
+      "course_id": 10813,
+      "path": "src/global_data/courseeventparams/10813.json",
+      "sha256": "80d790afb10b97a71077901b66f2a9c3ae68a44f3df7b1a9e3bd9773bff7bb93",
+      "decrypted_bundle_sha256": "7766ded37aa9443739d93161251cd15ef8bf32755d0193fb5848decb0412aa95",
+      "course_event_payload_sha256": "af4b29e8dd8e936222aa241f4065c3f191dbd377cd6ccdebcb9fd76c6fe0556a"
+    },
+    {
+      "course_id": 10814,
+      "path": "src/global_data/courseeventparams/10814.json",
+      "sha256": "6f70c8b1aafa44f034b8845b6872bdc473baeb0246ffa964cd2e539e394f614c",
+      "decrypted_bundle_sha256": "ab22c20d0dd30b38f7a6b00b7bd33d154468403e80e15f77bbfc4a7f415d4b58",
+      "course_event_payload_sha256": "e2c6644534782370075a606b6313e3e3c915f09b069e7ddf81235932d350a5bd"
+    },
+    {
+      "course_id": 10815,
+      "path": "src/global_data/courseeventparams/10815.json",
+      "sha256": "4f0d6b35094973974e30a5788ca1f82647deb760694aa3e56ed94083205627ae",
+      "decrypted_bundle_sha256": "62c2a33c63b436456b4deaf7ad74f7a439e6d5f93dae7c02eb6dc5dacc6e1912",
+      "course_event_payload_sha256": "087a4968deea39ca2170c87f0f256035fbad4a23de03114606893f8e928bc39a"
+    },
+    {
+      "course_id": 10901,
+      "path": "src/global_data/courseeventparams/10901.json",
+      "sha256": "82e8eff4be7c37fce7720323204bf5ab68c5fe09ed6054c55ce3ece896fb1f1d",
+      "decrypted_bundle_sha256": "b0978c6a04334ca5ab53cc956c5dd0fea6b781d6e262c2c7b90121138151fc6c",
+      "course_event_payload_sha256": "912029c7656cbddbb3b20e3521e65388421abe6cac6c0bf9f1f9e8595d6b3bc6"
+    },
+    {
+      "course_id": 10902,
+      "path": "src/global_data/courseeventparams/10902.json",
+      "sha256": "32d59ad02663d6b611985382729e2635243fc6e89e7d01e1d3980a46236e894f",
+      "decrypted_bundle_sha256": "b4c04c1001a01c4dba458ed05d416a8d44bbacce537666317afb1ab004a141ee",
+      "course_event_payload_sha256": "fa363bb23bd930c49fedda4f90498ba2fe2977a33d162036dd62f08262f30072"
+    },
+    {
+      "course_id": 10903,
+      "path": "src/global_data/courseeventparams/10903.json",
+      "sha256": "cf35ffc85bc26544c24b6738453cda69391e96090e8c8bf1e6a969de6a094d7c",
+      "decrypted_bundle_sha256": "126090f1a258a91046c5d14ec800103e651e39231dee841c9a46deaeac8bcfef",
+      "course_event_payload_sha256": "77f52ec3e95df4ae3bb44520ef541fe1fc75cae95725d4a077d931830a04bea8"
+    },
+    {
+      "course_id": 10904,
+      "path": "src/global_data/courseeventparams/10904.json",
+      "sha256": "283bf3d89cb351037744adf6a736a50d68c696b5232a4a460d4250b1fd5dda18",
+      "decrypted_bundle_sha256": "1928651fd7bd18a401ff31e083e2732dfefa7a947c0b00f21924b6ee98187bd9",
+      "course_event_payload_sha256": "9a4040d4e1ad944578fe530b654d4659ed58ef13e39dde1b6c1da7868e4e7c09"
+    },
+    {
+      "course_id": 10905,
+      "path": "src/global_data/courseeventparams/10905.json",
+      "sha256": "a39119e5e15de0379138c84ca04cea03b674044304a2c21420ec10fccc594353",
+      "decrypted_bundle_sha256": "8343b9f61aff8ad6cc71a92ee62cb7f98ac01c1269c13349b8487f1f79ebe8dd",
+      "course_event_payload_sha256": "af89af763a014b8f4a6db5ad7b3a5b5f4aa37ddf0ab046bed826a910338126be"
+    },
+    {
+      "course_id": 10906,
+      "path": "src/global_data/courseeventparams/10906.json",
+      "sha256": "2d233e24a15731383941a6de2e6230e634de7e888942a5788be8b2370e82438e",
+      "decrypted_bundle_sha256": "8684abb5bea218d129fd482dd5bbb7dda3a2c5f45df964b3b68a061763da32dd",
+      "course_event_payload_sha256": "8b806183c690bd3913bc9040104e7fc95dd11e1b9797e5faf8c4131cd9ef9785"
+    },
+    {
+      "course_id": 10907,
+      "path": "src/global_data/courseeventparams/10907.json",
+      "sha256": "26bbba74f2f09b244bc3a7ac4b0f4d7d43e5512a45c59bb266ea99fa5e9cea3c",
+      "decrypted_bundle_sha256": "957fad9398d63b31ee29ac997ff6b439952a628ceb28d2a1e055a7d769dae04b",
+      "course_event_payload_sha256": "af5226d09f439412b26b34d8a4c35caf00d16a1f28c8dadf3cc486d32d84e506"
+    },
+    {
+      "course_id": 10908,
+      "path": "src/global_data/courseeventparams/10908.json",
+      "sha256": "a6530df5876963fd2a2414326ea37d58a5495bf8a3401a2f52007e155b1487dd",
+      "decrypted_bundle_sha256": "15c2a18c1d82a954d8b4f332caae186160b78904fd82eabdd1b0ca9c10e54ec0",
+      "course_event_payload_sha256": "3c786f5c0df2b0ac34b033e7fed1369f8ef8b39dc3a701d69ecbe9fd2fdb286f"
+    },
+    {
+      "course_id": 10909,
+      "path": "src/global_data/courseeventparams/10909.json",
+      "sha256": "16768c50eb770e0b569a977a41b01bbc1ef1645e850528909abcf91deb5cf1a4",
+      "decrypted_bundle_sha256": "d40dd483a53a46c48d65e8987657524c983cac292bef4bb502ef7a46b50c6f61",
+      "course_event_payload_sha256": "91410579ea78fbf11bb27a71ef9b1ec57dacbb693ffecd901e3ea753a87382f3"
+    },
+    {
+      "course_id": 10910,
+      "path": "src/global_data/courseeventparams/10910.json",
+      "sha256": "43a6de0bb96839278c726f5c90d1a17654972f2f01ea3152bebba28cdb7a948a",
+      "decrypted_bundle_sha256": "6c285506ab29640861b959c5832e07d03650c8f073f336749205b0fe811fe037",
+      "course_event_payload_sha256": "ccddf6d33ee030b350723f1037c3a3f09de97db7d7cf3a7672cd8b17b60a3fe5"
+    },
+    {
+      "course_id": 10911,
+      "path": "src/global_data/courseeventparams/10911.json",
+      "sha256": "ce7a3e5a4e29e683eec5edfac0f0caef3acf2a989c42f8f234b66f2a8acd5912",
+      "decrypted_bundle_sha256": "a223b0a2591608092643215acab4f65f04ac2378619b3d65bb5a41e3ea912077",
+      "course_event_payload_sha256": "7c5203e89b5cf0f0b3d5c0f5c6ef4baba4ae91e59f17f6c45df8e7a0ae90bd99"
+    },
+    {
+      "course_id": 10912,
+      "path": "src/global_data/courseeventparams/10912.json",
+      "sha256": "7cc38859fceb165e250179ccbbb3b5b71a0fc97074e08f89d74c753c4a2280d0",
+      "decrypted_bundle_sha256": "ef14e18d5164b625fb059c9872fe56d3292187727da98d2f42d586b59e5f6b23",
+      "course_event_payload_sha256": "4affdd3b0ec679d1fa25754b13484703e5d1ceee082be02f3bd29d7d0e4173ab"
+    },
+    {
+      "course_id": 10913,
+      "path": "src/global_data/courseeventparams/10913.json",
+      "sha256": "1a133f95a9eec1ebd18c5b5df1cb242e74373fff9b5ecbe2c5bcf26fa9f3d759",
+      "decrypted_bundle_sha256": "36e6e6925b4de3d0003aeef248f045b22f984a01cbf4bcdb81fd428a8bea3837",
+      "course_event_payload_sha256": "d7b8b5ab5a4af4747bcd63bb4899feb46ba1aaea849bcaaaa45c93e803917d27"
+    },
+    {
+      "course_id": 10914,
+      "path": "src/global_data/courseeventparams/10914.json",
+      "sha256": "11598ec9b965871cc44961635c4b5cb3feddfc159c545766ea358bf355f6be80",
+      "decrypted_bundle_sha256": "1f0e492be88c6af575b022a68b225e122242392d77cb89ef56ad2b1080427c13",
+      "course_event_payload_sha256": "bceb02ea3ebb975e8da29339f5610e468ff708d0672bba1f71c2bf4381b672fc"
+    },
+    {
+      "course_id": 11001,
+      "path": "src/global_data/courseeventparams/11001.json",
+      "sha256": "aed531319e373332c0e16c5871f0d45e575bd0df958f8514362e8a4a0abaceed",
+      "decrypted_bundle_sha256": "7e2898144d7adfcbc3b7361f9ff8ebbfedd1df6a53b0222885ccd9541099c945",
+      "course_event_payload_sha256": "c8c7f90e3228ab882ac04d3cb4ee301a3c0d99cb406d6e661f0db922a3233a88"
+    },
+    {
+      "course_id": 11002,
+      "path": "src/global_data/courseeventparams/11002.json",
+      "sha256": "0bb36d11c489cb96fb023b32bd9beadc6f3ec11ca1f90da2faa0b7abd5de6ac0",
+      "decrypted_bundle_sha256": "4337709668a1adffdc28037cd437aa44cd07ee5066073d8d54e4c88504be321c",
+      "course_event_payload_sha256": "9a24e0c5e4dde3e2adbc9a53154823e840edb1fbd060fcc0824e05fa6e8831c1"
+    },
+    {
+      "course_id": 11003,
+      "path": "src/global_data/courseeventparams/11003.json",
+      "sha256": "1887005392deda960f93e68e182684aa3d0441086c94cf17660ad74d49f20de8",
+      "decrypted_bundle_sha256": "4434bc43a14e6e39439447fe48ea92219df7f44c91f42006e677cfbac6b84bfd",
+      "course_event_payload_sha256": "ccc1b5449e30020720875fc66e43c1c15144cf0d2f76fd46d95d4738791dcbb1"
+    },
+    {
+      "course_id": 11004,
+      "path": "src/global_data/courseeventparams/11004.json",
+      "sha256": "2f798ade2411a7868edb9a46e4ddfc54719049210392f7db3fe6db1501aeb38e",
+      "decrypted_bundle_sha256": "1094f37808fba441291704b1820f88be7bf357fa1b4b296936fb5b391b6a7c06",
+      "course_event_payload_sha256": "fd46fddb3a85e6d5e431f840f9faa0600d2897855d359c04285758fd3c1dc42a"
+    },
+    {
+      "course_id": 11005,
+      "path": "src/global_data/courseeventparams/11005.json",
+      "sha256": "9fc65c08681588eadae7126260d578473ff96c14647ad333d1abcf901b087452",
+      "decrypted_bundle_sha256": "7b99bb03b17b15fa662680c856880bc07484af510178c1b88a33e346b14808af",
+      "course_event_payload_sha256": "45dda6686c3752347273a4f6f04e2783da937cd885fe838c7aac057562840044"
+    },
+    {
+      "course_id": 11006,
+      "path": "src/global_data/courseeventparams/11006.json",
+      "sha256": "15b9563db4d690a1bdc7e55e129bda5977567bdb8db3b71e9ee7f875963632fd",
+      "decrypted_bundle_sha256": "550cc8daf53332bbd1261b70d373ee6acfb72bc6cc2802777c2642a1447f8f8e",
+      "course_event_payload_sha256": "dbfe389444fadbc67c38109681ce2607ab6dc4d8cf1069d5f528edb492e32aa9"
+    },
+    {
+      "course_id": 11007,
+      "path": "src/global_data/courseeventparams/11007.json",
+      "sha256": "f85edf6ccb6eaca49059e91d767a39e271d3ad13ee797f2c09dfe2b00e16611a",
+      "decrypted_bundle_sha256": "f46b30ec70839b7a017552b76d75b5ecb452ef5dd7c359b8b60f4436a4a28a85",
+      "course_event_payload_sha256": "d19e6ad79b26481c8271af0ec5e229a42238254a324b9c9d4044053cc85167a7"
+    },
+    {
+      "course_id": 11101,
+      "path": "src/global_data/courseeventparams/11101.json",
+      "sha256": "a9208eebbd67b07ea9583d3e33dca08cae9b4ebcc48586b0a8414f7ee1c0ada0",
+      "decrypted_bundle_sha256": "5079705f40c8c18ae537e70592ad272c713d358eeefb99cc4cf02f974280bcfe",
+      "course_event_payload_sha256": "56c593144b31fe2703cfbe7857e727f4e08f37090121e3038fcee5f81df3ed72"
+    },
+    {
+      "course_id": 11102,
+      "path": "src/global_data/courseeventparams/11102.json",
+      "sha256": "191eb36ce23b1d4f821b4131c8f02c10e0c235737a5b7d61e9d851f9b1eedc2c",
+      "decrypted_bundle_sha256": "b268b5608aca2c33d3155d3bcef51a221cbf3380a61e0c6b6e8dd27692afdcbb",
+      "course_event_payload_sha256": "019d9190e3f1fee498908536019b3e6da00199116bb87b50c0e43ed36acef181"
+    },
+    {
+      "course_id": 11103,
+      "path": "src/global_data/courseeventparams/11103.json",
+      "sha256": "97654aff7b3f553bf11c20abe0adf284486e4395a571e923dc2e67e399f74f5e",
+      "decrypted_bundle_sha256": "d31660e9a914f4937e3f9db296a2f06be142a8af0b8c234bfc2cc322643877a0",
+      "course_event_payload_sha256": "0f9afc1a1d81ba13a7f00ec9b96fe0e63d159e5aea3050d4444902e1a5fe5b3d"
+    },
+    {
+      "course_id": 11203,
+      "path": "src/global_data/courseeventparams/11203.json",
+      "sha256": "ca5936855887912c92e11d43c5ca614be837fdaa9dbe19afb1c4a900dd430824",
+      "decrypted_bundle_sha256": "49a785d6e752f628f844476763d1954746b36a2570f6c6ba0e4bf5641573fe18",
+      "course_event_payload_sha256": "3f8606e9acefe57999f059df23d238dcac3b7995b2817c9a34db9f2bfa7337f6"
+    }
+  ]
+}
