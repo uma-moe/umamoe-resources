@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 5;
-const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 24;
+const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 29;
 const START_DELAY_MAX_SECONDS: f64 = 0.1;
 const TARGET_SPEED_MIN: f64 = 13.0;
 // Current Global ast_race_paramdefine base-speed and
@@ -358,7 +358,7 @@ const COMPETE_FIGHT_ACCELERATION_BASE: f64 = 160.0;
 const COMPETE_FIGHT_ACCELERATION_POWER: f64 = 0.59_f32 as f64;
 const COMPETE_FIGHT_ACCELERATION_SCALE: f64 = 0.0001_f32 as f64;
 const RACE_PARAMETERS_PROVENANCE: &str =
-    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, visibleDistance, overTakeDistPerSpeed, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
+    "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, CourseSetAdjust.CoefAndThresholdArray, Global.SingleModeAdd*, _groundModifierParamTurf/_groundModifierParamDirt addSpeed/addPower, Skill.LaneMoveAddParam1/2, Skill.AbilityValueUsageTagGroup1Array, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, visibleDistance, overTakeDistPerSpeed, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
 const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
     (
         "10101",
@@ -1272,6 +1272,9 @@ pub struct SimulatorRaceParameters<'a> {
     pub provenance: &'a str,
     pub start_delay_max_seconds: f64,
     pub target_speed_min: f64,
+    pub course_set_adjust: SimulatorCourseSetAdjustParameters,
+    pub ground_condition: SimulatorGroundConditionParameters,
+    pub single_mode_status_additions: [f64; 5],
     pub skill: SimulatorSkillProximityParameters<'a>,
     pub near_horse: SimulatorNearHorseParameters,
     pub extra_move_lane: SimulatorExtraMoveLaneParameters,
@@ -1328,6 +1331,25 @@ pub struct SimulatorLaneMovementParameters {
     pub power_coefficient: f64,
     pub outside_position_coefficient: f64,
     pub acceleration_base_coefficient: f64,
+    pub target_speed_power_coefficient: f64,
+    pub target_speed_power_exponent: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorCourseSetAdjustParameters {
+    pub coefficient_thresholds: [SimulatorCourseSetThreshold; 4],
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorCourseSetThreshold {
+    pub coefficient: f64,
+    pub status_threshold: u16,
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct SimulatorGroundConditionParameters {
+    pub speed_additions: [[f64; 5]; 3],
+    pub power_additions: [[f64; 5]; 3],
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -1495,6 +1517,7 @@ impl SimulatorSkillDurationThreshold {
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct SimulatorSkillValueScalingParameters<'a> {
+    pub activate_specific_tag_ids: [u16; 15],
     pub acquired_skill_excluded_count: u16,
     pub acquired_skill_base_multiplier: f64,
     pub acquired_skill_per_count_multiplier: f64,
@@ -1686,6 +1709,40 @@ impl SimulatorRaceParameters<'static> {
             provenance: RACE_PARAMETERS_PROVENANCE,
             start_delay_max_seconds: START_DELAY_MAX_SECONDS,
             target_speed_min: TARGET_SPEED_MIN,
+            // Global 10006800 CourseSetAdjust, ground modifiers and Global.SingleModeAdd*.
+            course_set_adjust: SimulatorCourseSetAdjustParameters {
+                coefficient_thresholds: [
+                    SimulatorCourseSetThreshold {
+                        coefficient: 0.05_f32 as f64,
+                        status_threshold: 300,
+                    },
+                    SimulatorCourseSetThreshold {
+                        coefficient: 0.10_f32 as f64,
+                        status_threshold: 600,
+                    },
+                    SimulatorCourseSetThreshold {
+                        coefficient: 0.15_f32 as f64,
+                        status_threshold: 900,
+                    },
+                    SimulatorCourseSetThreshold {
+                        coefficient: 0.20_f32 as f64,
+                        status_threshold: 2000,
+                    },
+                ],
+            },
+            ground_condition: SimulatorGroundConditionParameters {
+                speed_additions: [
+                    [0.0; 5],
+                    [0.0, 0.0, 0.0, 0.0, -50.0],
+                    [0.0, 0.0, 0.0, 0.0, -50.0],
+                ],
+                power_additions: [
+                    [0.0; 5],
+                    [0.0, 0.0, -50.0, -50.0, -50.0],
+                    [0.0, -100.0, -50.0, -100.0, -100.0],
+                ],
+            },
+            single_mode_status_additions: [400.0; 5],
             skill: SimulatorSkillProximityParameters {
                 activation_base_percent: SKILL_ACTIVATION_BASE_PERCENT,
                 activation_wisdom_divisor: SKILL_ACTIVATION_WISDOM_DIVISOR,
@@ -1712,6 +1769,9 @@ impl SimulatorRaceParameters<'static> {
                 power_coefficient: LANE_MOVE_SPEED_POWER_COEFFICIENT,
                 outside_position_coefficient: LANE_MOVE_SPEED_OUTSIDE_POSITION_COEFFICIENT,
                 acceleration_base_coefficient: LANE_MOVE_ACCELERATION_BASE_COEFFICIENT,
+                // Global Skill.LaneMoveAddParam1/2; preserve the authored f32.
+                target_speed_power_coefficient: 0.0002_f32 as f64,
+                target_speed_power_exponent: 0.5,
             },
             overtake_lane: SimulatorOvertakeLaneParameters {
                 final_in_lane_coefficient: OVERTAKE_FINAL_IN_LANE_COEFFICIENT,
@@ -1828,6 +1888,10 @@ impl SimulatorRaceParameters<'static> {
                 },
             },
             skill_value_scaling: SimulatorSkillValueScalingParameters {
+                // Global Skill.AbilityValueUsageTagGroup1Array.
+                activate_specific_tag_ids: [
+                    601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611, 612, 613, 614, 615,
+                ],
                 acquired_skill_excluded_count: SKILL_VALUE_ACQUIRED_SKILL_EXCLUDED_COUNT,
                 acquired_skill_base_multiplier: SKILL_VALUE_ACQUIRED_SKILL_BASE_MULTIPLIER,
                 acquired_skill_per_count_multiplier:
@@ -2400,6 +2464,71 @@ mod tests {
     use super::*;
 
     #[test]
+    fn simulator_initialization_fields_match_global_source() {
+        let asset: serde_json::Value =
+            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+        let parameters = SimulatorRaceParameters::current();
+        for (actual, source) in parameters
+            .course_set_adjust
+            .coefficient_thresholds
+            .iter()
+            .zip(
+                asset["CourseSetAdjust"]["CoefAndThresholdArray"]
+                    .as_array()
+                    .unwrap(),
+            )
+        {
+            assert_eq!(actual.coefficient, source["Coef"].as_f64().unwrap());
+            assert_eq!(
+                u64::from(actual.status_threshold),
+                source["StatusThreshold"].as_u64().unwrap()
+            );
+        }
+        for (i, name) in [
+            "SingleModeAddSpeed",
+            "SingleModeAddStamina",
+            "SingleModeAddPow",
+            "SingleModeAddGuts",
+            "SingleModeAddWiz",
+        ]
+        .iter()
+        .enumerate()
+        {
+            assert_eq!(
+                parameters.single_mode_status_additions[i],
+                asset["Global"][name].as_f64().unwrap()
+            );
+        }
+        for (surface, name) in [
+            (1, "_groundModifierParamTurf"),
+            (2, "_groundModifierParamDirt"),
+        ] {
+            for (condition, source) in asset[name].as_array().unwrap().iter().enumerate() {
+                assert_eq!(
+                    parameters.ground_condition.speed_additions[surface][condition + 1],
+                    source["addSpeed"].as_f64().unwrap()
+                );
+                assert_eq!(
+                    parameters.ground_condition.power_additions[surface][condition + 1],
+                    source["addPower"].as_f64().unwrap()
+                );
+            }
+        }
+        assert_eq!(
+            parameters.lane_movement.target_speed_power_coefficient,
+            asset["Skill"]["LaneMoveAddParam1"].as_f64().unwrap()
+        );
+        assert_eq!(
+            parameters.lane_movement.target_speed_power_exponent,
+            asset["Skill"]["LaneMoveAddParam2"].as_f64().unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(parameters.skill_value_scaling.activate_specific_tag_ids).unwrap(),
+            asset["Skill"]["AbilityValueUsageTagGroup1Array"]
+        );
+    }
+
+    #[test]
     fn compete_fight_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
             serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
@@ -2650,7 +2779,7 @@ mod tests {
         let course = &generated.courses[0];
 
         assert_eq!(generated.schema_version, 5);
-        assert_eq!(generated.race_parameters.schema_version, 24);
+        assert_eq!(generated.race_parameters.schema_version, 29);
         assert_eq!(generated.race_parameters.start_delay_max_seconds, 0.1);
         assert_eq!(generated.race_parameters.target_speed_min, 13.0);
         assert_eq!(

@@ -99,3 +99,29 @@ or metadata-mismatched entries. Validated geometry is available
 to standalone world/lane tools; it does not enable geometry correction in the
 canonical race loop. That change still requires proof of the server's exact
 ratio-update ordering.
+
+## Finish-line continuation lanes
+
+`src/global_data/simulator_course_lanes.json.gz` retains the existing Global
+`course-lanes.json` continuation data: each course's `courseId` and `overrun`
+asset path, plus the referenced assets with their original transform samples.
+Normal course transforms remain in `simulator_course_geometry.json.gz`.
+The reduced continuation source currently contains 121 courses and 25 shared
+assets; `source_sha256` identifies the full retained input.
+
+Maintainers can regenerate it without game-cache or third-party dependencies:
+
+```sh
+python scripts/export_simulator_course_lanes.py /path/to/course-lanes.json src/global_data/simulator_course_lanes.json.gz
+```
+
+The resource generator checks that every exported course has its continuation
+asset and publishes `simulator_course_lanes.json.gz` through the normal manifest.
+The geometry version hash also covers this source. Consumers validate the
+published hash, then compile the continuation samples with the matching normal
+geometry. No interpolation, resampling or simulator-host file copy is involved.
+
+The internal resource listener additionally serves the exact master database
+used for the export at the manifest's `master.path`. Its uncompressed bytes and
+hash must match `master.bytes` and `master.sha256`. Together these five simulator
+artifacts form one complete version suitable for automatic startup and refresh.

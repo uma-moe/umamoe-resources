@@ -15,6 +15,7 @@ const PUBLIC_TIMELINE_GZIP_BUDGET: u64 = 300 * 1024;
 const PLANNER_MANIFEST_GZIP_BUDGET: usize = 10 * 1024;
 const PLANNER_INITIAL_GZIP_BUDGET: u64 = 150 * 1024;
 const PLANNER_GACHA_SHARD_GZIP_BUDGET: u64 = 100 * 1024;
+static GENERATION_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceManifest {
@@ -29,6 +30,10 @@ pub struct ResourceManifest {
 pub struct MasterInfo {
     pub marker: String,
     pub sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bytes: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,8 +54,10 @@ pub fn generate_resources(
     out_dir: &Path,
     write_json: bool,
 ) -> Result<ResourceManifest> {
-    let connection = Connection::open(master_path)
-        .with_context(|| format!("failed to open SQLite master at {}", master_path.display()))?;
+    // Background refreshers publish complete exports in order.
+    let _generation = GENERATION_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))?;
     let jp_master_path = std::env::var_os("JP_MASTER_PATH").map(PathBuf::from);
     if let Some(path) = &jp_master_path {
         ensure!(
@@ -90,7 +97,7 @@ pub fn generate_resources(
         }
     };
     let version = sanitize_version(&format!(
-        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}",
+        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}-master-{}",
         marker,
         &confirmed_dates_hash[..12],
         &jp_events_hash[..12],
@@ -98,10 +105,27 @@ pub fn generate_resources(
         &planner_hash[..12],
         &geometry_hash[..12],
         jp_reward_source_version,
+        &master_sha256[..12],
     ));
     let version_dir = out_dir.join(&version);
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("failed to create {}", version_dir.display()))?;
+
+    // Generate against these exact bytes even if the live master is refreshed meanwhile.
+    let snapshot = version_dir.join("master.mdb");
+    if !snapshot.exists() {
+        writeAtomic(&snapshot, &master_bytes)?;
+    } else {
+        ensure!(
+            sha256_hex(&fs::read(&snapshot)?) == master_sha256,
+            "immutable master snapshot changed"
+        );
+    }
+    let connection = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let compressed_master = version_dir.join("master.mdb.gz");
+    if !compressed_master.exists() {
+        writeAtomic(&compressed_master, &gzip(&master_bytes)?)?;
+    }
 
     let generated = generators::generate_all(&connection, jp_connection.as_ref(), &marker)?;
     let artifacts = write_outputs(
@@ -124,6 +148,8 @@ pub fn generate_resources(
         master: MasterInfo {
             marker,
             sha256: master_sha256,
+            path: Some(format!("/resources/simulator/{version}/master.mdb.gz")),
+            bytes: Some(master_bytes.len() as u64),
         },
         artifacts,
     };
@@ -131,9 +157,9 @@ pub fn generate_resources(
     fs::create_dir_all(out_dir)
         .with_context(|| format!("failed to create {}", out_dir.display()))?;
     let manifest_json = serde_json::to_vec_pretty(&manifest)?;
-    fs::write(version_dir.join("manifest.json"), &manifest_json)
+    writeAtomic(&version_dir.join("manifest.json"), &manifest_json)
         .with_context(|| format!("failed to write manifest in {}", version_dir.display()))?;
-    fs::write(out_dir.join("manifest.json"), manifest_json)
+    writeAtomic(&out_dir.join("manifest.json"), &manifest_json)
         .with_context(|| format!("failed to write manifest in {}", out_dir.display()))?;
 
     let planner_root = out_dir.join("planner");
@@ -197,11 +223,11 @@ fn write_outputs(
         let json_sha256 = sha256_hex(&json_bytes);
         let gzip_bytes = gzip(&json_bytes)?;
         let gzip_path = version_dir.join(format!("{}.gz", output.file_name));
-        fs::write(&gzip_path, &gzip_bytes)
+        writeAtomic(&gzip_path, &gzip_bytes)
             .with_context(|| format!("failed to write {}", gzip_path.display()))?;
         if write_json {
             let json_path = version_dir.join(&output.file_name);
-            fs::write(&json_path, &json_bytes)
+            writeAtomic(&json_path, &json_bytes)
                 .with_context(|| format!("failed to write {}", json_path.display()))?;
         }
         artifacts.push(ResourceArtifact {
@@ -217,6 +243,14 @@ fn write_outputs(
         });
     }
     Ok(artifacts)
+}
+
+#[allow(non_snake_case)]
+fn writeAtomic(path: &Path, bytes: &[u8]) -> Result<()> {
+    let temporary = path.with_extension("next");
+    fs::write(&temporary, bytes)?;
+    fs::rename(temporary, path)?;
+    Ok(())
 }
 
 fn enforce_named_budget(artifacts: &[ResourceArtifact], name: &str, budget: u64) -> Result<()> {

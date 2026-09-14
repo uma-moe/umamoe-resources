@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
     ACCEPT, AUTHORIZATION, CACHE_CONTROL, CONTENT_ENCODING, CONTENT_LENGTH, CONTENT_TYPE, ETAG,
-    ORIGIN, REFERER, VARY,
+    IF_NONE_MATCH, ORIGIN, REFERER, VARY,
 };
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -12,6 +12,7 @@ use axum::{Json, Router};
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::net::SocketAddr;
 use std::path::{Path as FsPath, PathBuf};
 use tokio::fs;
@@ -69,7 +70,7 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
 fn resource_router(mut state: AppState, protected: bool) -> Router {
     let mut public_state = state.clone();
     public_state.protected = false;
-    let public = Router::new()
+    let mut public = Router::new()
         .route("/health", get(healthz))
         .route("/healthz", get(healthz))
         .route("/resources", get(get_manifest))
@@ -80,8 +81,14 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
-        )
-        .with_state(public_state);
+        );
+    if !protected {
+        public = public.route(
+            "/resources/simulator/:version/master.mdb.gz",
+            get(getSimulatorMaster),
+        );
+    }
+    let public = public.with_state(public_state);
 
     state.protected = protected;
     let sql = Router::new().route("/resources/current/sql", get(get_current_sql));
@@ -179,7 +186,10 @@ async fn healthz() -> Json<HealthResponse> {
     Json(HealthResponse { status: "ok" })
 }
 
-async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiError> {
+async fn get_manifest(
+    State(state): State<AppState>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
     let manifest_path = state.data_dir.join("manifest.json");
     let manifest_bytes = fs::read(&manifest_path).await.map_err(|error| {
         ApiError::new(
@@ -189,6 +199,15 @@ async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiErro
     })?;
 
     let mut headers = HeaderMap::new();
+    let etag = format!("\"sha256-{:x}\"", Sha256::digest(&manifest_bytes));
+    headers.insert(ETAG, header_value(&etag)?);
+    if request
+        .get(IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        == Some(&etag)
+    {
+        return Ok((StatusCode::NOT_MODIFIED, headers).into_response());
+    }
     headers.insert(
         CONTENT_TYPE,
         HeaderValue::from_static("application/json; charset=utf-8"),
@@ -200,6 +219,47 @@ async fn get_manifest(State(state): State<AppState>) -> Result<Response, ApiErro
     headers.insert(VARY, HeaderValue::from_static(protected_vary_header(false)));
     headers.insert(CONTENT_LENGTH, header_value(manifest_bytes.len())?);
     Ok((headers, manifest_bytes).into_response())
+}
+
+/// The public listener never registers this route. Each database belongs to its export.
+#[allow(non_snake_case)]
+async fn getSimulatorMaster(
+    State(state): State<AppState>,
+    Path(version): Path<String>,
+) -> Result<Response, ApiError> {
+    if version.is_empty()
+        || version.len() > 240
+        || matches!(version.as_str(), "." | "..")
+        || !version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid resource version",
+        ));
+    }
+
+    let manifest = read_version_manifest(&state.data_dir, &version).map_err(internal_error)?;
+    let bytes = fs::read(state.data_dir.join(&version).join("master.mdb.gz"))
+        .await
+        .map_err(internal_error)?;
+    let headers = [
+        (
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/vnd.sqlite3"),
+        ),
+        (CONTENT_ENCODING, HeaderValue::from_static("gzip")),
+        (
+            CACHE_CONTROL,
+            HeaderValue::from_static("private, max-age=31536000, immutable"),
+        ),
+        (
+            ETAG,
+            header_value(format!("\"sha256-{}\"", manifest.master.sha256))?,
+        ),
+    ];
+    Ok((headers, bytes).into_response())
 }
 
 async fn get_current_resource(
@@ -580,6 +640,83 @@ impl IntoResponse for ApiError {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn simulatorMasterIsPrivateAndManifestSupportsConditionalChecks() {
+        use crate::pipeline::{MasterInfo, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "simulator-resource-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("test-v1")).unwrap();
+        let manifest = ResourceManifest {
+            version: "test-v1".into(),
+            generated_at: "test".into(),
+            base_path: "/resources/test-v1".into(),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: "a".repeat(64),
+                path: Some("/resources/simulator/test-v1/master.mdb.gz".into()),
+                bytes: Some(3),
+            },
+            artifacts: vec![],
+        };
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        std::fs::write(root.join("manifest.json"), &bytes).unwrap();
+        std::fs::write(root.join("test-v1/manifest.json"), &bytes).unwrap();
+        std::fs::write(root.join("test-v1/master.mdb.gz"), b"mdb").unwrap();
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        for protected in [true, false] {
+            let state = super::AppState {
+                data_dir: root.clone(),
+                master_path: root.join("live.mdb"),
+                protected,
+            };
+            let app = super::resource_router(state, protected);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+            let response = client
+                .get(format!("{origin}/resources/manifest.json"))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let etag = response.headers()[super::ETAG].clone();
+            let response = client
+                .get(format!("{origin}/resources/manifest.json"))
+                .header(super::IF_NONE_MATCH, etag)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+            assert!(response.bytes().await.unwrap().is_empty());
+            let response = client
+                .get(format!(
+                    "{origin}/resources/simulator/test-v1/master.mdb.gz"
+                ))
+                .send()
+                .await
+                .unwrap();
+            if protected {
+                assert!(matches!(
+                    response.status(),
+                    StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
+                ));
+            } else {
+                assert_eq!(response.status(), StatusCode::OK);
+                assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
+            }
+            task.abort();
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     use super::{
         is_public_resource, manifest_cache_control, resource_cache_control, resource_vary_header,
         validate_read_only_sql,
