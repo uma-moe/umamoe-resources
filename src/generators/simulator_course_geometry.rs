@@ -10,7 +10,7 @@ use super::ResourceOutput;
 
 const SCHEMA_VERSION: u32 = 1;
 const KEYFRAME_COUNT: usize = 1_001;
-const SOURCE_BYTES: &[u8] = include_bytes!("../jp_data/simulator_course_geometry.json.gz");
+const SOURCE_BYTES: &[u8] = include_bytes!("../global_data/simulator_course_geometry.json.gz");
 
 #[derive(Debug, Deserialize)]
 struct SourceGeometrySet {

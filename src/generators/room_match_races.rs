@@ -84,19 +84,33 @@ mod tests {
                 CREATE TABLE race (id INTEGER, course_set INTEGER);
                 CREATE TABLE race_course_set (id INTEGER, race_track_id INTEGER, distance INTEGER, ground INTEGER);
                 CREATE TABLE text_data (category INTEGER, "index" INTEGER, text TEXT);
-                INSERT INTO race_instance VALUES (800013, 10172), (600013, 6013);
-                INSERT INTO race VALUES (10172, 10501), (6013, 10701);
+                INSERT INTO race_instance VALUES (800013, 10172), (800014, 10173), (600013, 6013);
+                INSERT INTO race VALUES (10172, 10501), (10173, 10501), (6013, 10701);
                 INSERT INTO race_course_set VALUES (10501, 10005, 1200, 1), (10701, 10007, 1200, 1);
-                INSERT INTO text_data VALUES (28, 800013, 'Sprinters Stakes'), (29, 800013, 'Sprinters S.');
+                INSERT INTO text_data VALUES
+                    (28, 800013, 'Sprinters Stakes'),
+                    (29, 800013, 'Sprinters S.'),
+                    (28, 800014, 'Sprinters Stakes Trial');
                 "#,
             )
             .unwrap();
 
         let generated = generate(&connection).unwrap();
-        assert_eq!(generated.races.len(), 1);
-        assert_eq!(generated.races[0].race_instance_id, 800013);
-        assert_eq!(generated.races[0].name, "Sprinters Stakes");
-        assert_eq!(generated.races[0].course_set_id, 10501);
-        assert_eq!(generated.races[0].distance, 1200);
+        assert_eq!(generated.races.len(), 2);
+        let first = generated
+            .races
+            .iter()
+            .find(|race| race.race_instance_id == 800013)
+            .unwrap();
+        let alias = generated
+            .races
+            .iter()
+            .find(|race| race.race_instance_id == 800014)
+            .unwrap();
+        assert_eq!(first.name, "Sprinters Stakes");
+        assert_eq!(first.course_set_id, 10501);
+        assert_eq!(first.distance, 1200);
+        assert_eq!(alias.name, "Sprinters Stakes Trial");
+        assert_eq!(alias.course_set_id, first.course_set_id);
     }
 }

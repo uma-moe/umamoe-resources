@@ -33,6 +33,13 @@ class CourseGeometryExtractorTests(unittest.TestCase):
         derived = MODULE.derive_database_key(base, key)
         self.assertEqual(derived, bytes(value ^ base[i % 13] for i, value in enumerate(key)))
 
+    def test_database_key_selects_requested_region_without_exposing_key_material(self):
+        config = {"DBKeyText": "0011", "GlobalDBKeyText": "aabbcc"}
+        self.assertEqual(MODULE.configured_database_key(config, "jp"), bytes.fromhex("0011"))
+        self.assertEqual(
+            MODULE.configured_database_key(config, "global"), bytes.fromhex("aabbcc")
+        )
+
     def test_asset_key_matches_umaviewer_expansion_order(self):
         base = bytes((0x53, 0x2B))
         asset_key = 0x0102030405060708
