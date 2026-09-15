@@ -48,7 +48,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 32;
+const TIMELINE_ALGORITHM_VERSION: u8 = 33;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -90,6 +90,8 @@ pub struct BannerTimelineEvent {
     #[serde(rename = "type")]
     pub event_type: BannerTimelineEventType,
     pub source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_mission_event_id: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub gacha_id: Option<i64>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -370,6 +372,7 @@ struct TimelineLegendBoss {
 #[derive(Debug, Clone)]
 struct TimelineCampaign {
     campaign_id: i64,
+    global_mission_event_id: Option<i64>,
     jp_mission_event_id: Option<i64>,
     jp_title: Option<String>,
     mission_fingerprint: Option<String>,
@@ -722,7 +725,7 @@ pub fn generate(
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
-    align_paid_banners_with_same_day_primary(&mut events);
+    align_paid_banners_with_releases(&mut events);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
     let anniversaries = timeline_anniversaries(
@@ -804,6 +807,7 @@ fn character_event(
         id: format!("banner-{}", image_stem(&banner.image)),
         event_type: BannerTimelineEventType::CharacterBanner,
         source: "character",
+        global_mission_event_id: None,
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
         gacha_type: Some(3),
@@ -870,6 +874,7 @@ fn support_event(
         id: format!("support-banner-{}", image_stem(&banner.image)),
         event_type: BannerTimelineEventType::SupportCardBanner,
         source: "support",
+        global_mission_event_id: None,
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
         gacha_type: Some(3),
@@ -981,6 +986,7 @@ fn additional_gacha_event(
         id: format!("umapyoi-gacha-{}", banner.gacha_id),
         event_type,
         source,
+        global_mission_event_id: None,
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
         gacha_type,
@@ -1420,6 +1426,7 @@ fn news_timeline_event(
         id: format!("news-event-{}", event.key),
         event_type,
         source,
+        global_mission_event_id: None,
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
@@ -1524,6 +1531,7 @@ fn paid_events(
                 id: format!("paid-banner-bundle-{}", month_key),
                 event_type: BannerTimelineEventType::PaidBanner,
                 source: "paid_bundle",
+                global_mission_event_id: None,
                 gacha_id: None,
                 gacha_ids: group.iter().map(|banner| banner.gacha_id).collect(),
                 gacha_type: Some(representative.gacha_type),
@@ -1618,6 +1626,7 @@ fn paid_event(
         id: format!("paid-banner-{}", banner.gacha_id),
         event_type: BannerTimelineEventType::PaidBanner,
         source: "paid",
+        global_mission_event_id: None,
         gacha_id: Some(banner.gacha_id),
         gacha_ids: Vec::new(),
         gacha_type: Some(banner.gacha_type),
@@ -1685,6 +1694,7 @@ fn story_event(
             .unwrap_or_else(|| format!("story-event-{}", image_stem(&event.image))),
         event_type: BannerTimelineEventType::StoryEvent,
         source: "story",
+        global_mission_event_id: None,
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
@@ -1751,6 +1761,7 @@ fn champions_meeting_event(
         id: format!("champions-meeting-{}", event.index),
         event_type: BannerTimelineEventType::ChampionsMeeting,
         source: "champions",
+        global_mission_event_id: None,
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
@@ -1812,6 +1823,7 @@ fn legend_race_event(
         id: format!("legend-race-{}", event.index),
         event_type: BannerTimelineEventType::LegendRace,
         source: "legend",
+        global_mission_event_id: None,
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
@@ -1914,6 +1926,7 @@ fn campaign_event(
         id: format!("campaign-{}", event.campaign_id),
         event_type: BannerTimelineEventType::Campaign,
         source: "campaign",
+        global_mission_event_id: event.global_mission_event_id,
         gacha_id: None,
         gacha_ids: Vec::new(),
         gacha_type: None,
@@ -2328,8 +2341,8 @@ fn apply_grouped_event_adjustment(events: &mut [BannerTimelineEvent]) {
     }
 }
 
-fn align_paid_banners_with_same_day_primary(events: &mut [BannerTimelineEvent]) {
-    let primary_dates = events
+fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
+    let mut primary_dates = events
         .iter()
         .filter(|event| {
             matches!(
@@ -2351,6 +2364,45 @@ fn align_paid_banners_with_same_day_primary(events: &mut [BannerTimelineEvent]) 
                 dates
             },
         );
+
+    let mut first_releases = BTreeMap::new();
+    for event in events.iter().filter(|event| {
+        matches!(
+            event.event_type,
+            BannerTimelineEventType::CharacterBanner | BannerTimelineEventType::SupportCardBanner
+        )
+    }) {
+        for card_id in &event.pickup_card_ids {
+            first_releases
+                .entry((event.event_type, *card_id))
+                .and_modify(|date: &mut DateTime<Utc>| {
+                    *date = (*date).min(event.global_release_date)
+                })
+                .or_insert(event.global_release_date);
+        }
+    }
+    // Split paid pools released together must all wait for their latest pickup.
+    for event in events.iter().filter(|event| {
+        event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
+    }) {
+        let kind = match event.card_type.as_deref() {
+            Some("character") => BannerTimelineEventType::CharacterBanner,
+            Some("support") => BannerTimelineEventType::SupportCardBanner,
+            _ => continue,
+        };
+        if let Some(latest_pickup) = event
+            .pickup_card_ids
+            .iter()
+            .filter_map(|id| first_releases.get(&(kind, *id)))
+            .max()
+            .copied()
+        {
+            primary_dates
+                .entry(normalize_to_midnight_utc(event.jp_release_date))
+                .and_modify(|date| *date = (*date).max(latest_pickup))
+                .or_insert(latest_pickup);
+        }
+    }
 
     for event in events.iter_mut().filter(|event| {
         event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
@@ -4341,6 +4393,9 @@ fn load_timeline_campaigns(connection: &Connection) -> Result<Vec<TimelineCampai
 
     let mut campaigns = raw_campaigns
         .into_iter()
+        .filter(|campaign| {
+            !crate::generators::planner::is_permanent_mission_end_date(&campaign.end_date)
+        })
         .map(|campaign| {
             let standardized_jp_title = campaign
                 .jp_title
@@ -4348,6 +4403,7 @@ fn load_timeline_campaigns(connection: &Connection) -> Result<Vec<TimelineCampai
                 .and_then(standardized_jp_mission_title);
             Ok(TimelineCampaign {
                 campaign_id: campaign.campaign_id,
+                global_mission_event_id: None,
                 jp_mission_event_id: campaign.jp_mission_event_id,
                 jp_title: campaign.jp_title,
                 mission_fingerprint: campaign.mission_fingerprint,
@@ -4440,6 +4496,18 @@ fn merge_global_mission_campaigns(
     let global_campaigns = load_global_mission_campaigns(connection)?;
     let mut by_fingerprint: BTreeMap<&str, Vec<&GlobalMissionCampaign>> = BTreeMap::new();
     let mut by_event_id = BTreeMap::new();
+    let mut jp_fingerprint_counts = BTreeMap::<String, usize>::new();
+    let jp_event_ids = campaigns
+        .iter()
+        .filter_map(|campaign| campaign.jp_mission_event_id)
+        .collect::<BTreeSet<_>>();
+    for campaign in campaigns.iter() {
+        if let Some(fingerprint) = &campaign.mission_fingerprint {
+            *jp_fingerprint_counts
+                .entry(fingerprint.clone())
+                .or_default() += 1;
+        }
+    }
     for campaign in &global_campaigns {
         by_fingerprint
             .entry(&campaign.fingerprint)
@@ -4449,17 +4517,21 @@ fn merge_global_mission_campaigns(
     }
 
     for campaign in campaigns {
-        let exact = campaign
-            .mission_fingerprint
-            .as_deref()
-            .and_then(|fingerprint| by_fingerprint.get(fingerprint))
-            .filter(|matches| matches.len() == 1)
-            .and_then(|matches| matches.first().copied());
-        let matched = exact.or_else(|| {
-            campaign
-                .jp_mission_event_id
-                .and_then(|event_id| by_event_id.get(&event_id).copied())
-        });
+        // Annual missions reuse their contents. Content matching is safe only
+        // when unique in both regions, and must not steal an explicit ID match.
+        let matched = campaign
+            .jp_mission_event_id
+            .and_then(|event_id| by_event_id.get(&event_id).copied())
+            .or_else(|| {
+                campaign
+                    .mission_fingerprint
+                    .as_deref()
+                    .filter(|fingerprint| jp_fingerprint_counts.get(*fingerprint) == Some(&1))
+                    .and_then(|fingerprint| by_fingerprint.get(fingerprint))
+                    .filter(|matches| matches.len() == 1)
+                    .and_then(|matches| matches.first().copied())
+                    .filter(|global| !jp_event_ids.contains(&global.event_id))
+            });
         let Some(global) = matched else {
             continue;
         };
@@ -4469,6 +4541,7 @@ fn merge_global_mission_campaigns(
             .and_then(standardized_jp_mission_title)
             .or_else(|| Some(global.title.clone()));
         if global.start_at >= global_timeline_start_date() {
+            campaign.global_mission_event_id = Some(global.event_id);
             campaign.confirmed_global_start = Some(global.start_at);
             campaign.confirmed_global_end = Some(global.end_at);
         }
@@ -4927,23 +5000,22 @@ fn round_rate(rate: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        align_paid_banners_with_same_day_primary, annotate_calendar_likelihoods,
-        annotate_rerun_banners, append_unmatched_campaign_news, apply_closed_schedule_adjustment,
-        apply_family_adjustment, build_anniversary_schedule_anchors, build_confirmed_date_lookup,
-        calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, gacha_type_name, include_jp_campaign,
-        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
-        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
-        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
-        load_umapyoi_support_card_names, load_umapyoi_support_character_names, merge_campaign_news,
-        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
-        monotonic_schedule_anchors, news_timeline_event, parse_confirmed_banner_dates,
-        standardized_jp_mission_title, timeline_anniversaries_through, utc_date,
-        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
-        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
-        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
-        TimelineCampaign, TimelineCharacterBanner, TimelineSupportBanner,
-        FALLBACK_ACCELERATION_RATE,
+        align_paid_banners_with_releases, annotate_calendar_likelihoods, annotate_rerun_banners,
+        append_unmatched_campaign_news, apply_closed_schedule_adjustment, apply_family_adjustment,
+        build_anniversary_schedule_anchors, build_confirmed_date_lookup, calculate_global_date,
+        calculate_recent_acceleration_rate, first_release_after_global_month, gacha_type_name,
+        include_jp_campaign, latest_closed_global_month, legend_boss_metadata,
+        load_bundled_support_card_names, load_timeline_campaigns, load_timeline_character_banners,
+        load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
+        load_timeline_support_banners, load_umapyoi_support_card_names,
+        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
+        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
+        news_timeline_event, parse_confirmed_banner_dates, standardized_jp_mission_title,
+        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
+        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
+        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
+        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
+        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
@@ -5459,6 +5531,7 @@ mod tests {
         signatures.insert(signature, 1);
         let mut campaigns = vec![TimelineCampaign {
             campaign_id: 17,
+            global_mission_event_id: None,
             jp_mission_event_id: Some(46),
             jp_title: None,
             mission_fingerprint: Some(mission_signature_fingerprint(&signatures)),
@@ -5485,10 +5558,96 @@ mod tests {
             campaigns[0].confirmed_global_start,
             Some(utc_date(2025, 8, 7, 22))
         );
+        assert_eq!(campaigns[0].global_mission_event_id, Some(17));
         assert_eq!(
             campaigns[0].description.as_deref(),
             Some("1 limited-time mission")
         );
+    }
+
+    #[test]
+    fn recurring_mission_contents_do_not_confirm_a_future_jp_edition() {
+        let connection = mission_connection();
+        connection
+            .execute_batch(
+                "INSERT INTO mission_data VALUES
+             (1,4,202,10,11,12,13,14,15,90,43,150,
+              '2026/10/01 15:00:00','2026/10/08 14:59:59');",
+            )
+            .unwrap();
+        let fingerprint = mission_signature_fingerprint(&BTreeMap::from([(
+            [10, 11, 12, 13, 14, 15, 90, 43, 150],
+            1,
+        )]));
+        let mut campaigns = load_timeline_campaigns(&mission_connection()).unwrap();
+        assert!(!campaigns.iter().any(|campaign| campaign.campaign_id == 28));
+        for campaign in campaigns
+            .iter_mut()
+            .filter(|campaign| [202, 474].contains(&campaign.campaign_id))
+        {
+            campaign.mission_fingerprint = Some(fingerprint.clone());
+        }
+        // Input order must not decide which year's mission gets confirmed.
+        campaigns.reverse();
+        merge_global_mission_campaigns(&connection, &mut campaigns).unwrap();
+        assert_eq!(
+            campaigns
+                .iter()
+                .filter(|campaign| campaign.global_mission_event_id == Some(202))
+                .count(),
+            1
+        );
+        assert_eq!(
+            campaigns
+                .iter()
+                .find(|campaign| campaign.campaign_id == 202)
+                .unwrap()
+                .global_mission_event_id,
+            Some(202)
+        );
+        assert!(campaigns
+            .iter()
+            .find(|campaign| campaign.campaign_id == 474)
+            .unwrap()
+            .confirmed_global_start
+            .is_none());
+
+        let anchors = [CalibrationAnchor {
+            jp: utc_date(2022, 11, 28, 0),
+            global: utc_date(2026, 9, 28, 22),
+        }];
+        let confirmed = empty_confirmed_date_lookup();
+        let adjustments = super::build_family_adjustment_models(
+            &[],
+            &[],
+            &[],
+            &[],
+            &campaigns,
+            &[],
+            &confirmed,
+            &anchors,
+            1.471,
+        );
+        let news = campaign_timeline_metadata().unwrap();
+        let matched = merge_campaign_news(&mut campaigns, &news);
+        let mut events = Vec::new();
+        append_unmatched_campaign_news(&mut events, &news, &matched);
+        assert!(!events.iter().any(|event| event.source_post_id == 1172));
+        for post_id in [1177, 1211] {
+            let event = events
+                .iter()
+                .find(|event| event.source_post_id == post_id)
+                .unwrap();
+            let predicted = news_timeline_event(event, &confirmed, &anchors, &adjustments, 1.471);
+            assert!(predicted.global_release_date > utc_date(2026, 11, 1, 0));
+        }
+        let anniversary = campaigns
+            .iter()
+            .find(|campaign| campaign.campaign_id == 374)
+            .unwrap();
+        let predicted =
+            super::campaign_event(anniversary, &confirmed, &anchors, &adjustments, 1.471);
+        assert!(predicted.global_release_date > utc_date(2027, 1, 1, 0));
     }
 
     #[test]
@@ -5965,7 +6124,7 @@ mod tests {
         paid.prediction.schedule_adjustment_days = Some(-12);
         let mut events = vec![paid, support];
 
-        align_paid_banners_with_same_day_primary(&mut events);
+        align_paid_banners_with_releases(&mut events);
 
         assert_eq!(events[0].global_release_date, primary_date);
         assert_eq!(events[0].estimated_end_date, utc_date(2027, 1, 13, 22));
@@ -5993,9 +6152,45 @@ mod tests {
         );
         let mut events = vec![paid, support];
 
-        align_paid_banners_with_same_day_primary(&mut events);
+        align_paid_banners_with_releases(&mut events);
 
         assert_eq!(events[0].global_release_date, paid_date);
+    }
+
+    #[test]
+    fn split_paid_pools_wait_for_pickup_debuts_but_not_reruns() {
+        let release = utc_date(2026, 10, 19, 22);
+        let mut debut = test_timeline_event_with_type(
+            "debut",
+            BannerTimelineEventType::CharacterBanner,
+            utc_date(2022, 12, 29, 3),
+            release,
+            false,
+        );
+        debut.pickup_card_ids = vec![100101];
+        let mut rerun = debut.clone();
+        rerun.global_release_date = release + Duration::days(90);
+        let mut paid = test_timeline_event_with_type(
+            "paid",
+            BannerTimelineEventType::PaidBanner,
+            utc_date(2023, 1, 1, 3),
+            utc_date(2026, 9, 24, 22),
+            false,
+        );
+        paid.card_type = Some("character".to_string());
+        paid.pickup_card_ids = vec![100101];
+        let mut sibling = paid.clone();
+        sibling.pickup_card_ids.clear();
+        let duration = paid.estimated_end_date - paid.global_release_date;
+        let mut events = vec![paid, sibling, debut, rerun];
+        align_paid_banners_with_releases(&mut events);
+        for event in &events[..2] {
+            assert_eq!(event.global_release_date, release);
+            assert_eq!(
+                event.estimated_end_date - event.global_release_date,
+                duration
+            );
+        }
     }
 
     fn test_timeline_event(
@@ -6126,6 +6321,7 @@ mod tests {
             id: id.to_string(),
             event_type,
             source: "test",
+            global_mission_event_id: None,
             gacha_id: None,
             gacha_ids: Vec::new(),
             gacha_type: None,

@@ -8,7 +8,7 @@ const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json")
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
-const ALGORITHM_VERSION: u8 = 7;
+const ALGORITHM_VERSION: u8 = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -164,6 +164,15 @@ pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
         .into_iter()
         .flatten()
         .filter(|post| has_event_type(post, "campaign"))
+        .filter(|post| {
+            let title = post
+                .pointer("/raw/title")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            !["開催決定", "開催予定", "予告"]
+                .iter()
+                .any(|marker| title.contains(marker))
+        })
         .filter_map(news_post)
         .filter(|post| is_campaign_post(&post.title) && is_campaign_start_post(&post.title))
         .map(|post| CampaignTimelineMetadata {
@@ -1185,7 +1194,7 @@ mod tests {
         assert!(campaigns
             .iter()
             .any(|campaign| campaign.source_post_id == 1010));
-        for preview_post_id in [904, 1009, 1456, 3415] {
+        for preview_post_id in [904, 1009, 1018, 1172, 1378, 1456, 3415] {
             assert!(
                 campaigns
                     .iter()
@@ -1193,7 +1202,7 @@ mod tests {
                 "campaign preview or roundup {preview_post_id} must not become a timeline event"
             );
         }
-        for in_game_reward_post_id in [1018, 1133, 1378, 1692, 1712] {
+        for in_game_reward_post_id in [1133, 1177, 1211, 1692, 1712] {
             assert!(
                 campaigns
                     .iter()

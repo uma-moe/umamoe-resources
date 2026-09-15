@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 37;
+const ALGORITHM_VERSION: u8 = 38;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -375,8 +375,6 @@ struct CampaignLink {
     #[serde(default)]
     jp_mission_event_id: Option<i64>,
     #[serde(default)]
-    mission_fingerprint: Option<String>,
-    #[serde(default)]
     mission_count: Option<i64>,
 }
 
@@ -388,7 +386,6 @@ struct JpMissionRewardGroup {
     start_date: String,
     end_date: String,
     mission_count: i64,
-    mission_fingerprint: String,
     #[serde(default)]
     rewards: Vec<PlannerSourceItem>,
 }
@@ -4218,50 +4215,20 @@ fn load_mission_campaign_rewards(
         })
         .collect::<BTreeMap<_, _>>();
     let timeline_events = timeline_event_dates(timeline);
+    // Reuse the timeline's region mapping; matching again by date or display ID
+    // can attach Global rewards to a different annual JP edition.
     let timeline_campaigns = timeline
         .get("events")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter(|event| {
-            let event_type = event.get("type").and_then(Value::as_str);
-            event_type == Some("mission_campaign")
-                || (event_type == Some("campaign")
-                    && event
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .is_some_and(|id| id.starts_with("campaign-"))
-                    && (event.get("source").and_then(Value::as_str) == Some("campaign")
-                        || event
-                            .get("tags")
-                            .and_then(Value::as_array)
-                            .into_iter()
-                            .flatten()
-                            .filter_map(Value::as_str)
-                            .any(|tag| tag.eq_ignore_ascii_case("mission campaign"))))
-        })
         .filter_map(|event| {
             Some((
+                event.get("global_mission_event_id")?.as_i64()?,
                 event.get("id")?.as_str()?.to_string(),
-                event
-                    .get("global_release_date")?
-                    .as_str()?
-                    .get(..19)?
-                    .to_string(),
             ))
         })
-        .collect::<Vec<_>>();
-    let timeline_campaign_ids = timeline_campaigns
-        .iter()
-        .map(|(event_id, _)| event_id.clone())
-        .collect::<BTreeSet<_>>();
-    let mut timeline_campaigns_by_start = BTreeMap::<String, Vec<String>>::new();
-    for (event_id, start) in &timeline_campaigns {
-        timeline_campaigns_by_start
-            .entry(start.clone())
-            .or_default()
-            .push(event_id.clone());
-    }
+        .collect::<BTreeMap<_, _>>();
     let mut statement = connection.prepare(
         r#"
         SELECT event_id, MIN(start_date), MAX(end_date), item_category, item_id,
@@ -4300,21 +4267,11 @@ fn load_mission_campaign_rewards(
             .push(item);
     }
     let mut global_campaign_ids = BTreeSet::new();
-    for (mission_event_id, (start, end, items)) in groups {
-        let normalized_start = master_date_to_rfc3339(&start)?
-            .get(..19)
-            .unwrap_or_default()
-            .to_string();
-        let exact_event_id = format!("campaign-{mission_event_id}");
-        let event_id = timeline_campaign_ids
-            .contains(&exact_event_id)
-            .then_some(exact_event_id)
-            .or_else(|| {
-                timeline_campaigns_by_start
-                    .get(&normalized_start)
-                    .filter(|event_ids| event_ids.len() == 1)
-                    .and_then(|event_ids| event_ids.first().cloned())
-            });
+    for (mission_event_id, (_, end, items)) in groups {
+        if is_permanent_mission_end_date(&end) {
+            continue;
+        }
+        let event_id = timeline_campaigns.get(&mission_event_id).cloned();
         if let Some(campaign_id) = event_id
             .as_deref()
             .and_then(|id| id.strip_prefix("campaign-"))
@@ -4322,11 +4279,7 @@ fn load_mission_campaign_rewards(
         {
             global_campaign_ids.insert(campaign_id);
         }
-        let available_at = event_id
-            .as_ref()
-            .and_then(|event_id| timeline_events.get(event_id))
-            .map(|dates| dates.1.clone())
-            .unwrap_or(master_date_to_rfc3339(&end)?);
+        let available_at = master_date_to_rfc3339(&end)?;
         push_structured_rewards(
             rewards,
             &format!("mission-campaign-{mission_event_id}"),
@@ -4341,29 +4294,13 @@ fn load_mission_campaign_rewards(
         );
     }
 
-    let campaign_by_fingerprint = campaign_links
-        .iter()
-        .filter_map(|campaign| {
-            campaign
-                .mission_fingerprint
-                .as_ref()
-                .map(|fingerprint| (fingerprint.clone(), campaign.campaign_id))
-        })
-        .collect::<BTreeMap<_, _>>();
     for group in jp_reward_groups {
         if group.rewards.is_empty() || is_permanent_mission_end_date(&group.end_date) {
             // The master uses far-future end dates for permanent missions.
             // They are not a one-time reward at the projected campaign date.
             continue;
         }
-        let campaign_id = campaign_by_mission
-            .get(&group.jp_mission_event_id)
-            .copied()
-            .or_else(|| {
-                campaign_by_fingerprint
-                    .get(&group.mission_fingerprint)
-                    .copied()
-            });
+        let campaign_id = campaign_by_mission.get(&group.jp_mission_event_id).copied();
         if campaign_id
             .and_then(|id| catalog_mission_counts.get(&id).copied())
             .is_some_and(|catalog_count| group.mission_count < catalog_count)
@@ -4377,10 +4314,12 @@ fn load_mission_campaign_rewards(
             continue;
         }
         let event_id = campaign_id.map(|id| format!("campaign-{id}"));
-        let available_at = event_id
+        let Some(available_at) = event_id
             .as_ref()
             .and_then(|id| timeline_events.get(id).map(|dates| dates.1.clone()))
-            .unwrap_or_else(|| planner_catalog_date(&group.end_date));
+        else {
+            continue;
+        };
         let label = group
             .jp_title
             .as_deref()
@@ -4404,19 +4343,11 @@ fn load_mission_campaign_rewards(
     Ok(())
 }
 
-fn is_permanent_mission_end_date(value: &str) -> bool {
+pub(crate) fn is_permanent_mission_end_date(value: &str) -> bool {
     value
         .get(..4)
         .and_then(|year| year.parse::<i32>().ok())
         .is_some_and(|year| year >= 2040)
-}
-
-fn planner_catalog_date(value: &str) -> String {
-    if value.ends_with('Z') || value.contains('+') {
-        value.to_string()
-    } else {
-        format!("{value}Z")
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -10941,7 +10872,7 @@ mod tests {
             )
             .unwrap();
         let timeline = json!({"events":[{
-            "id":"campaign-4", "type":"mission_campaign",
+            "id":"campaign-4", "type":"mission_campaign", "global_mission_event_id":4,
             "global_release_date":"2025-08-01T00:00:00+00:00",
             "estimated_end_date":"2025-08-10T00:00:00+00:00"
         }]});
@@ -11091,7 +11022,7 @@ mod tests {
     }
 
     #[test]
-    fn global_campaign_uses_exact_id_and_suppresses_same_jp_snapshot() {
+    fn global_campaign_reuses_timeline_mapping_and_suppresses_same_jp_snapshot() {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11102,19 +11033,20 @@ mod tests {
                 item_id INTEGER, item_num INTEGER
             );
             INSERT INTO mission_data VALUES
-                (1,4,217,'2026/08/26 22:00:00','2026/10/09 22:00:00',90,43,500);
+                (1,4,9000,'2026/08/26 22:00:00','2026/10/09 22:00:00',90,43,500);
         "#,
             )
             .unwrap();
         let timeline = json!({"events":[
             {
                 "id":"campaign-217", "type":"campaign", "source":"campaign",
+                "global_mission_event_id":9000,
                 "tags":["mission campaign"],
                 "global_release_date":"2026-08-26T22:00:00Z",
                 "estimated_end_date":"2026-10-09T22:00:00Z"
             },
             {
-                "id":"campaign-999", "type":"campaign", "source":"campaign",
+                "id":"campaign-9000", "type":"campaign", "source":"campaign",
                 "tags":["mission campaign"],
                 "global_release_date":"2026-08-26T22:00:00Z",
                 "estimated_end_date":"2026-10-10T22:00:00Z"
@@ -11124,10 +11056,11 @@ mod tests {
         load_mission_campaign_rewards(&connection, &timeline, &mut rewards).unwrap();
         let global = rewards
             .iter()
-            .find(|reward| reward.id == "mission-campaign-217-free_jewels")
+            .find(|reward| reward.id == "mission-campaign-9000-free_jewels")
             .unwrap();
         assert_eq!(global.event_id.as_deref(), Some("campaign-217"));
         assert_eq!(global.amount, Some(500));
+        assert_eq!(global.available_at, "2026-10-09T22:00:00+00:00");
         assert!(!rewards
             .iter()
             .any(|reward| reward.id.starts_with("jp-master-mission-217-")));
