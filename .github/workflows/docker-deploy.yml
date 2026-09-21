@@ -248,7 +248,7 @@ jobs:
 
   deploy_production:
     name: Deploy Production
-    if: always() && github.event_name != 'pull_request' && needs.deploy_beta.result == 'success'
+    if: always() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.deploy_beta.result == 'success'
     needs:
       - build
       - deploy_beta

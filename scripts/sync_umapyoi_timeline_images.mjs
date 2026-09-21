@@ -200,6 +200,7 @@ function officialJapaneseJobs(timeline, archive) {
 
   for (const event of timeline.events ?? []) {
     if (typeof event.image_path !== 'string' || !event.image_path.endsWith('.webp')) continue;
+    if (String(event.image).startsWith('https://assets-webview-umamusume-en.akamaized.net/')) continue;
     const target = path.join(args.frontendRoot, 'src', event.image_path);
     const sourcedGachaId = eventGachaIds(event).find(gachaId => gachaSources.has(gachaId));
     if (sourcedGachaId !== undefined) {
@@ -313,11 +314,14 @@ function officialCampaignAssets(posts, recovered) {
 
 function championsTitleMatch(event, posts) {
   const eventTitle = normalizedTitle(event.title);
-  if (!eventTitle || eventTitle === 'champions meeting') return null;
+  const release = dateValue(event.global_release_date);
+  if (!event.is_confirmed || !release || !eventTitle || eventTitle === 'champions meeting') return null;
   const candidates = [];
   for (const post of posts) {
     const title = normalizedTitle(post.title);
     if (!title.includes('champions meeting') || !title.includes(eventTitle) || typeof post.image !== 'string') continue;
+    const posted = new Date(Number(post.post_at) * 1000);
+    if (!Number.isFinite(posted.valueOf()) || posted < release - 2 * 86_400_000 || posted > release.getTime() + 10 * 86_400_000) continue;
     const identity = assetIdentity(post.image) ?? '';
     const score = (identity.startsWith('banner_3031') ? 8 : 0) +
       (title.includes('is here') ? 4 : 0) -
@@ -341,13 +345,14 @@ function officialEnglishJobs(timeline, archive, posts, recovered) {
   const jobs = new Map();
   for (const event of timeline.events ?? []) {
     if (typeof event.image_path !== 'string' || !event.image_path.endsWith('.webp')) continue;
+    if (!event.is_confirmed) continue;
     const identities = [];
     const identity = typeof event.image === 'string' ? assetIdentity(event.image) : null;
     if (identity) identities.push(identity);
     identities.push(...eventGachaIds(event).map(gachaId => `gacha_banner_${gachaId}`));
     if (storyIdentities.has(event.id)) identities.push(storyIdentities.get(event.id));
     let source = identities.map(key => assets.get(key)).find(Boolean);
-    if (!source && event.type === 'champions_meeting' && event.source === 'champions') {
+    if (event.type === 'champions_meeting' && event.source === 'champions') {
       source = championsTitleMatch(event, posts);
     }
     if (source) jobs.set(path.join(args.frontendRoot, 'src', event.image_path), { source, eventType: event.type });

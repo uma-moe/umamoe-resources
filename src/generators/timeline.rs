@@ -31,6 +31,7 @@ const BUNDLED_TIMELINE_LEGEND_RACES_JSON: &[u8] =
 const BUNDLED_TIMELINE_CAMPAIGNS_JSON: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const BUNDLED_UMAPYOI_ARCHIVE_JSON: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
+const BUNDLED_GLOBAL_NEWS_JSON: &[u8] = include_bytes!("../global_data/official_news_archive.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
@@ -48,7 +49,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 33;
+const TIMELINE_ALGORITHM_VERSION: u8 = 34;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -563,7 +564,6 @@ pub fn generate(
     )?;
     let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
     merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
-    reuse_champions_meeting_image_paths(&mut timeline_champions_meetings);
     let mut news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
     news_campaigns.retain(|campaign| include_jp_campaign(campaign, &confirmed_dates));
     let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
@@ -1095,6 +1095,8 @@ fn attach_umapyoi_urls(
     events: &mut [BannerTimelineEvent],
     confirmed_dates: &ConfirmedDateLookup,
 ) -> Result<()> {
+    let global: crate::global_news::GlobalNewsArchive =
+        serde_json::from_slice(BUNDLED_GLOBAL_NEWS_JSON)?;
     let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
         .context("failed to parse bundled umapyoi archive for timeline source links")?;
     let posts = archive
@@ -1121,6 +1123,41 @@ fn attach_umapyoi_urls(
     }
 
     for event in events {
+        // Cup names repeat with different courses. Match the Global edition's
+        // release window, never borrow artwork from another year's cup.
+        if event.is_confirmed && event.event_type == BannerTimelineEventType::ChampionsMeeting {
+            let title = normalized_timeline_title(&event.title);
+            let matched = global
+                .posts
+                .iter()
+                .filter_map(|post| {
+                    let raw = &post.snapshots.last()?.raw;
+                    let post_title = normalized_timeline_title(raw.get("title")?.as_str()?);
+                    let posted = DateTime::from_timestamp(raw.get("post_at")?.as_i64()?, 0)?;
+                    let delta = (posted - event.global_release_date).num_hours();
+                    let image = raw.get("image")?.as_str()?;
+                    (post_title.contains("champions meeting")
+                        && post_title.contains(&title)
+                        && !title.is_empty()
+                        && (-48..=240).contains(&delta)
+                        && image.starts_with("https://assets-webview-umamusume-en.akamaized.net/"))
+                    .then_some((
+                        post_title.contains("is here"),
+                        -delta.abs(),
+                        post.announce_id,
+                        image,
+                    ))
+                })
+                .max_by_key(|(race_notice, proximity, id, _)| (*race_notice, *proximity, *id));
+            if let Some((_, _, id, image)) = matched {
+                event.image = image.to_string();
+                event.image_path = Some(format!(
+                    "assets/timeline-images/events/champions-meeting/global-{id}.webp"
+                ));
+                event.umapyoi_url = Some(crate::global_news::umapyoi_en_page_url(id));
+                continue;
+            }
+        }
         let direct_post_id = announcement_post_id(&event.image);
         let direct = direct_post_id
             .and_then(|post_id| by_id.get(&post_id).copied())
@@ -1133,7 +1170,9 @@ fn attach_umapyoi_urls(
         let matched_post_id =
             direct_post_id.or_else(|| matched.and_then(|post| post.get("post_id")?.as_i64()));
         event.umapyoi_url = matched_post_id
-            .filter(|post_id| confirmed_dates.global_news.contains_key(post_id))
+            .filter(|post_id| {
+                event.is_confirmed && confirmed_dates.global_news.contains_key(post_id)
+            })
             .map(crate::global_news::umapyoi_en_page_url)
             .or_else(|| {
                 matched
@@ -3990,24 +4029,6 @@ fn merge_champions_meeting_news(
     });
 }
 
-fn reuse_champions_meeting_image_paths(events: &mut [TimelineChampionsMeeting]) {
-    let reusable = events
-        .iter()
-        .filter_map(|event| {
-            event
-                .image_path
-                .as_ref()
-                .map(|path| (event.name.to_lowercase(), path.clone()))
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    for event in events {
-        if event.image_path.is_none() {
-            event.image_path = reusable.get(&event.name.to_lowercase()).cloned();
-        }
-    }
-}
-
 fn merge_campaign_news(
     campaigns: &mut [TimelineCampaign],
     news_campaigns: &[CampaignTimelineMetadata],
@@ -6223,6 +6244,45 @@ mod tests {
             closed_global_months: BTreeSet::new(),
             hidden: BTreeSet::new(),
         }
+    }
+
+    #[test]
+    fn champions_news_and_artwork_belong_to_the_same_edition() {
+        let mut past = test_timeline_event_with_type(
+            "champions-meeting-11",
+            BannerTimelineEventType::ChampionsMeeting,
+            utc_date(2022, 4, 22, 3),
+            utc_date(2026, 4, 20, 22),
+            true,
+        );
+        past.title = "Aries Cup".to_string();
+        let mut future = test_timeline_event_with_type(
+            "champions-meeting-23",
+            BannerTimelineEventType::ChampionsMeeting,
+            utc_date(2023, 4, 13, 3),
+            utc_date(2027, 1, 3, 22),
+            false,
+        );
+        future.title = "Aries Cup".to_string();
+        future.image =
+            "https://prd-info-umamusume.akamaized.net/announce/1271/Thumbnail/banner_30310402.png"
+                .to_string();
+        let mut events = vec![past, future];
+        super::attach_umapyoi_urls(&mut events, &empty_confirmed_date_lookup()).unwrap();
+        assert_eq!(
+            events[0].umapyoi_url.as_deref(),
+            Some("https://umapyoi.net/en/news/747")
+        );
+        assert!(events[0].image.contains("banner_30310401_"));
+        assert_eq!(
+            events[0].image_path.as_deref(),
+            Some("assets/timeline-images/events/champions-meeting/global-747.webp")
+        );
+        assert_eq!(
+            events[1].umapyoi_url.as_deref(),
+            Some("https://umapyoi.net/news/1271?lang=jp")
+        );
+        assert!(events[1].image.contains("banner_30310402.png"));
     }
 
     fn test_character_banner(
