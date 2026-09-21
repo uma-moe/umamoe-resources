@@ -1523,15 +1523,19 @@ fn paid_events(
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
 ) -> Vec<BannerTimelineEvent> {
-    let mut events = Vec::new();
-    let mut bundled_by_month: BTreeMap<String, Vec<&TimelinePaidBanner>> = BTreeMap::new();
-
-    for banner in banners {
-        if confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Paid, banner.gacha_id) {
-            continue;
-        }
-        if !banner.pickup_card_ids.is_empty() || banner.gacha_type != 14 {
-            events.push(paid_event(
+    let step_ups = crate::generators::planner::bundled_step_ups();
+    let later_steps: BTreeSet<i64> = step_ups
+        .values()
+        .flat_map(|schedule| schedule.steps.iter().skip(1).map(|step| step.gacha_id))
+        .collect();
+    banners
+        .iter()
+        .filter(|banner| {
+            !confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Paid, banner.gacha_id)
+                && !later_steps.contains(&banner.gacha_id)
+        })
+        .map(|banner| {
+            let mut event = paid_event(
                 banner,
                 character_names,
                 support_names,
@@ -1539,64 +1543,24 @@ fn paid_events(
                 confirmed_dates,
                 anchors,
                 observed_rate,
-            ));
-        } else {
-            let key = format!("{}-{:02}", banner.start_at.year(), banner.start_at.month());
-            bundled_by_month.entry(key).or_default().push(banner);
-        }
-    }
-
-    for (month_key, mut group) in bundled_by_month {
-        group.sort_by_key(|banner| (banner.start_at, banner.gacha_id));
-        if let Some(representative) = group.first() {
-            let confirmed_global_date = confirmed_dates.paid.get(&representative.gacha_id).copied();
-            let prediction = calculate_global_date(
-                representative.start_at,
-                confirmed_global_date,
-                anchors,
-                observed_rate,
             );
-            let count = group.len();
-            events.push(BannerTimelineEvent {
-                id: format!("paid-banner-bundle-{}", month_key),
-                event_type: BannerTimelineEventType::PaidBanner,
-                source: "paid_bundle",
-                global_mission_event_id: None,
-                gacha_id: None,
-                gacha_ids: group.iter().map(|banner| banner.gacha_id).collect(),
-                gacha_type: Some(representative.gacha_type),
-                gacha_type_name: Some(gacha_type_name(representative.gacha_type)),
-                card_type: Some(representative.card_type.to_string()),
-                year: Some(representative.year),
-                image: representative.image.clone(),
-                image_path: Some(format!(
-                    "assets/images/paid/banner/{}",
-                    representative.image
-                )),
-                title: format!(
-                    "{} Other Paid Banner{}",
-                    count,
-                    if count > 1 { "s" } else { "" }
-                ),
-                description: None,
-                jp_release_date: representative.start_at,
-                global_release_date: prediction.global_date,
-                estimated_end_date: calculate_end_date(prediction.global_date, 14),
-                is_confirmed: confirmed_global_date.is_some(),
-                banner_duration_days: 14,
-                tags: vec!["paid-banner"],
-                pickup_card_ids: Vec::new(),
-                related_characters: Vec::new(),
-                related_support_cards: Vec::new(),
-                related_support_card_names: Vec::new(),
-                gametora_url: None,
-                umapyoi_url: None,
-                prediction: prediction.into_info(),
-            });
-        }
-    }
-
-    events
+            if let Some(schedule) = step_ups.get(&banner.gacha_id) {
+                event.title = format!(
+                    "{} Select Step-Up",
+                    if banner.card_type == "support" {
+                        "SSR Support"
+                    } else {
+                        "3★ Character"
+                    }
+                );
+                event.gacha_ids = schedule.steps.iter().map(|step| step.gacha_id).collect();
+                let duration = banner_duration_days(banner.start_at, banner.end_at);
+                event.banner_duration_days = duration;
+                event.estimated_end_date = calculate_end_date(event.global_release_date, duration);
+            }
+            event
+        })
+        .collect()
 }
 
 fn paid_event(
@@ -6287,6 +6251,30 @@ mod tests {
             global_release_date,
             is_confirmed,
         )
+    }
+
+    #[test]
+    fn step_up_timeline_keeps_character_and_support_rounds_separate() {
+        let banners = load_timeline_paid_banners()
+            .unwrap()
+            .into_iter()
+            .filter(|banner| (50073..=50082).contains(&banner.gacha_id))
+            .collect::<Vec<_>>();
+        let events = super::paid_events(
+            &banners,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &empty_confirmed_date_lookup(),
+            &[],
+            FALLBACK_ACCELERATION_RATE,
+        );
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].gacha_id, Some(50073));
+        assert_eq!(events[1].gacha_id, Some(50078));
+        assert_eq!(events[1].title, "SSR Support Select Step-Up");
+        assert_eq!(events[1].gacha_ids, vec![50078, 50079, 50080, 50081, 50082]);
+        assert!(events[1].banner_duration_days > 30);
     }
 
     fn empty_confirmed_date_lookup() -> ConfirmedDateLookup {

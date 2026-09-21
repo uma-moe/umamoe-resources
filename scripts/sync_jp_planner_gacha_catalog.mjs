@@ -24,6 +24,17 @@ for (const row of rows) {
 for (const row of db.prepare('SELECT gacha_id, rarity, SUM(odds) AS odds FROM gacha_available GROUP BY gacha_id, rarity ORDER BY gacha_id, rarity DESC').all()) {
   catalog[row.gacha_id]?.rarity_rates.push({ rarity: row.rarity, rate: row.odds / 1_000_000 });
 }
+// Step-ups have no fixed pickup pool; preserve their paid ten-pull schedule instead.
+for (const row of db.prepare(`SELECT s.stepup_id, s.target_gacha_id, s.stepup_step, d.card_type,
+  d.cost_single, d.draw_limit, d.draw_guarantee_rarity, d.draw_guarantee_type
+  FROM gacha_stepup s JOIN gacha_data d ON d.id=s.target_gacha_id
+  WHERE d.type=14 AND d.cost_type=92 ORDER BY s.stepup_id, s.stepup_step`).all()) {
+  const gacha = catalog[row.stepup_id] ??= { card_type: row.card_type, gacha_type: 14,
+    cost: 0, spark_pulls: 0, pickups: [], featured_pickups: [], rarity_rates: [],
+    step_up: { rounds: row.draw_limit, steps: [] } };
+  gacha.step_up.steps.push({ gacha_id: row.target_gacha_id, pulls: 10, cost: row.cost_single * 10,
+    guaranteed_rarity: row.draw_guarantee_rarity, selectable: row.draw_guarantee_type === 1 });
+}
 db.close();
 if (!Object.keys(catalog).length) throw new Error('No published gacha rates found');
 fs.writeFileSync(outputPath, '{\n' + Object.entries(catalog).map(([id, entry]) => `  "${id}": ${JSON.stringify(entry)}`).join(',\n') + '\n}\n');

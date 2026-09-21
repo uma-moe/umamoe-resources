@@ -324,6 +324,32 @@ pub struct PlannerGacha {
     pub featured_pickups: Vec<PlannerPickup>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub rarity_rates: Vec<PlannerRarityRate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step_up: Option<PlannerStepUp>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannerStepUp {
+    pub rounds: i64,
+    pub steps: Vec<PlannerStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannerStep {
+    pub gacha_id: i64,
+    pub pulls: i64,
+    pub cost: i64,
+    pub guaranteed_rarity: i64,
+    pub selectable: bool,
+}
+
+pub fn bundled_step_ups() -> BTreeMap<i64, PlannerStepUp> {
+    let catalog: BTreeMap<i64, GachaAccumulator> =
+        serde_json::from_slice(JP_GACHA_RATES).expect("valid bundled JP gacha catalog");
+    catalog
+        .into_iter()
+        .filter_map(|(id, gacha)| gacha.step_up.map(|steps| (id, steps)))
+        .collect()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -355,6 +381,7 @@ struct TimelineLink {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct GachaAccumulator {
+    step_up: Option<PlannerStepUp>,
     card_type: i64,
     gacha_type: i64,
     cost: i64,
@@ -632,6 +659,7 @@ pub fn generate(
             pickups: accumulator.pickups,
             featured_pickups: accumulator.featured_pickups,
             rarity_rates: accumulator.rarity_rates,
+            step_up: accumulator.step_up,
         });
     }
 
@@ -1425,6 +1453,48 @@ fn load_gachas(
             rarity,
             rate: odds as f64 / 1_000_000.0,
         });
+    }
+    if sqlite_table_exists(connection, "gacha_stepup")? {
+        let mut statement = connection.prepare(
+            "SELECT s.stepup_id, s.target_gacha_id, d.card_type, d.cost_single, d.draw_limit,
+                    d.draw_guarantee_rarity, d.draw_guarantee_type
+             FROM gacha_stepup s JOIN gacha_data d ON d.id = s.target_gacha_id
+             WHERE d.type = 14 AND d.cost_type = 92 ORDER BY s.stepup_id, s.stepup_step",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(4)?,
+                PlannerStep {
+                    gacha_id: row.get(1)?,
+                    pulls: 10,
+                    cost: row.get::<_, i64>(3)? * 10,
+                    guaranteed_rarity: row.get(5)?,
+                    selectable: row.get::<_, i64>(6)? == 1,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, card_type, rounds, step) = row?;
+            if !timeline_links.contains_key(&id) {
+                continue;
+            }
+            let gacha = gachas.entry(id).or_insert_with(|| GachaAccumulator {
+                card_type,
+                gacha_type: 14,
+                provenance: Some("global_master"),
+                confidence: Some("exact"),
+                step_up: Some(PlannerStepUp {
+                    rounds,
+                    steps: Vec::new(),
+                }),
+                ..Default::default()
+            });
+            if let Some(schedule) = &mut gacha.step_up {
+                schedule.steps.push(step);
+            }
+        }
     }
     discard_mismatched_master_gachas(timeline_links, &mut gachas);
     seed_timeline_gacha_fallbacks(timeline_links, &mut gachas);
@@ -8211,6 +8281,62 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
+    fn step_up_catalog_matches_master_costs_and_loads_without_fixed_pickups() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER, cost_type INTEGER, draw_limit INTEGER, draw_guarantee_rarity INTEGER, draw_guarantee_type INTEGER);
+            CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER);
+            CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);").unwrap();
+        let links = timeline_gacha_links(
+            &json!({ "events": [{ "id": "paid-banner-50078", "type": "paid_banner", "card_type": "support", "gacha_id": 50078, "gacha_type": 14,
+            "global_release_date": "2027-01-01T00:00:00Z", "estimated_end_date": "2027-02-01T00:00:00Z" }] }),
+        );
+        let bundled = super::load_gachas_with_jp(&connection, None, &links).unwrap();
+        let schedule = bundled[&50078].step_up.as_ref().unwrap();
+        assert_eq!(schedule.rounds, 1);
+        assert_eq!(
+            schedule
+                .steps
+                .iter()
+                .map(|step| step.cost)
+                .collect::<Vec<_>>(),
+            vec![500, 700, 1000, 1300, 1500]
+        );
+        assert_eq!(
+            schedule.steps.iter().map(|step| step.pulls).sum::<i64>(),
+            50
+        );
+        assert!(schedule.steps.last().unwrap().selectable);
+        assert_eq!(bundled[&50078].spark_pulls, 0);
+        assert!(bundled[&50078].pickups.is_empty());
+        connection.execute_batch("CREATE TABLE gacha_stepup (stepup_id INTEGER, target_gacha_id INTEGER, stepup_step INTEGER);").unwrap();
+        for (index, step) in schedule.steps.iter().enumerate() {
+            connection
+                .execute(
+                    "INSERT INTO gacha_data VALUES (?1, 2, 14, ?2, 92, 1, ?3, ?4)",
+                    rusqlite::params![
+                        step.gacha_id,
+                        step.cost / 10,
+                        step.guaranteed_rarity,
+                        i64::from(step.selectable)
+                    ],
+                )
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO gacha_stepup VALUES (50078, ?1, ?2)",
+                    rusqlite::params![step.gacha_id, index + 1],
+                )
+                .unwrap();
+        }
+        let master = load_gachas(&connection, &links).unwrap();
+        assert_eq!(
+            serde_json::to_value(&master[&50078].step_up).unwrap(),
+            serde_json::to_value(schedule).unwrap()
+        );
+        assert_eq!(super::bundled_step_ups()[&50099].rounds, 2);
+    }
+
+    #[test]
     fn recurring_event_missions_match_start_day_and_feature_type() {
         let connection = Connection::open_in_memory().unwrap();
         connection
@@ -9383,6 +9509,7 @@ mod tests {
                 pickups: Vec::new(),
                 featured_pickups: Vec::new(),
                 rarity_rates: Vec::new(),
+                step_up: None,
             }],
         }];
 
