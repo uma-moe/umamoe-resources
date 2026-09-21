@@ -13,6 +13,8 @@
 # key: for anniversary, use the marker index; 1 is the first half-anniversary
 # date: YYYY-MM-DD; generated timestamps use 22:00 UTC for that date
 # hidden: omit the matching timeline row; a later dated row restores it
+# Paid date rows are ignored; paid predictions use confirmed character/support releases.
+# Paid hidden rows still apply; actual Global game-data confirmations remain valid.
 #
 # Schedule months are closed automatically. If this file contains any timeline
 # entry in a global month, the predictor assumes that month was published as a

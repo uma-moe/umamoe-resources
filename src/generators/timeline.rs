@@ -49,7 +49,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 34;
+const TIMELINE_ALGORITHM_VERSION: u8 = 36;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -589,7 +589,6 @@ pub fn generate(
     let anniversary_anchors = build_anniversary_schedule_anchors(&unique_anchors, &confirmed_dates);
     let anniversary_rate = calculate_recent_acceleration_rate(&anniversary_anchors);
     let family_adjustments = build_family_adjustment_models(
-        &timeline_paid_banners,
         &timeline_story_events,
         &timeline_champions_meetings,
         &timeline_legend_races,
@@ -671,7 +670,6 @@ pub fn generate(
         &support_card_names,
         &confirmed_dates,
         &unique_anchors,
-        &family_adjustments,
         observed_rate,
     ));
     events.extend(timeline_story_events.iter().map(|event| {
@@ -725,7 +723,7 @@ pub fn generate(
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
-    align_paid_banners_with_releases(&mut events);
+    align_paid_banners_with_releases(&mut events, observed_rate);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
     let anniversaries = timeline_anniversaries(
@@ -1523,7 +1521,6 @@ fn paid_events(
     support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
-    family_adjustments: &FamilyAdjustmentModels,
     observed_rate: f64,
 ) -> Vec<BannerTimelineEvent> {
     let mut events = Vec::new();
@@ -1541,7 +1538,6 @@ fn paid_events(
                 support_card_names,
                 confirmed_dates,
                 anchors,
-                family_adjustments,
                 observed_rate,
             ));
         } else {
@@ -1554,16 +1550,11 @@ fn paid_events(
         group.sort_by_key(|banner| (banner.start_at, banner.gacha_id));
         if let Some(representative) = group.first() {
             let confirmed_global_date = confirmed_dates.paid.get(&representative.gacha_id).copied();
-            let prediction = apply_family_adjustment(
-                calculate_global_date(
-                    representative.start_at,
-                    confirmed_global_date,
-                    anchors,
-                    observed_rate,
-                ),
-                BannerTimelineEventType::PaidBanner,
+            let prediction = calculate_global_date(
                 representative.start_at,
-                family_adjustments,
+                confirmed_global_date,
+                anchors,
+                observed_rate,
             );
             let count = group.len();
             events.push(BannerTimelineEvent {
@@ -1615,7 +1606,6 @@ fn paid_event(
     support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
-    family_adjustments: &FamilyAdjustmentModels,
     observed_rate: f64,
 ) -> BannerTimelineEvent {
     let names = banner
@@ -1639,16 +1629,11 @@ fn paid_event(
         Vec::new()
     };
     let confirmed_global_date = confirmed_dates.paid.get(&banner.gacha_id).copied();
-    let prediction = apply_family_adjustment(
-        calculate_global_date(
-            banner.start_at,
-            confirmed_global_date,
-            anchors,
-            observed_rate,
-        ),
-        BannerTimelineEventType::PaidBanner,
+    let prediction = calculate_global_date(
         banner.start_at,
-        family_adjustments,
+        confirmed_global_date,
+        anchors,
+        observed_rate,
     );
     let duration = banner_duration_days(banner.start_at, banner.end_at).max(14);
     let title = if names.is_empty() {
@@ -2030,7 +2015,6 @@ fn non_empty_string(value: &Option<String>) -> Option<String> {
 }
 
 fn build_family_adjustment_models(
-    paid_banners: &[TimelinePaidBanner],
     story_events: &[TimelineStoryEvent],
     champions_meetings: &[TimelineChampionsMeeting],
     legend_races: &[TimelineLegendRace],
@@ -2041,19 +2025,6 @@ fn build_family_adjustment_models(
     observed_rate: f64,
 ) -> FamilyAdjustmentModels {
     let mut samples = BTreeMap::<BannerTimelineEventType, Vec<FamilyAdjustmentSample>>::new();
-
-    for banner in paid_banners {
-        if let Some(global) = confirmed_dates.paid.get(&banner.gacha_id).copied() {
-            push_family_adjustment_sample(
-                &mut samples,
-                BannerTimelineEventType::PaidBanner,
-                banner.start_at,
-                global,
-                anchors,
-                observed_rate,
-            );
-        }
-    }
 
     for event in story_events {
         if let Some(global) = confirmed_dates.story.get(&image_key(&event.image)).copied() {
@@ -2380,15 +2351,16 @@ fn apply_grouped_event_adjustment(events: &mut [BannerTimelineEvent]) {
     }
 }
 
-fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
-    let mut primary_dates = events
+fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent], observed_rate: f64) {
+    let primary_dates = events
         .iter()
         .filter(|event| {
-            matches!(
-                event.event_type,
-                BannerTimelineEventType::CharacterBanner
-                    | BannerTimelineEventType::SupportCardBanner
-            )
+            event.is_confirmed
+                && matches!(
+                    event.event_type,
+                    BannerTimelineEventType::CharacterBanner
+                        | BannerTimelineEventType::SupportCardBanner
+                )
         })
         .fold(
             BTreeMap::<DateTime<Utc>, DateTime<Utc>>::new(),
@@ -2403,6 +2375,18 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
                 dates
             },
         );
+
+    // Only confirmed normal releases anchor paid predictions. Projected normal
+    // releases below are availability floors for included cards, not anchors.
+    let anchors = monotonic_schedule_anchors(
+        &primary_dates
+            .iter()
+            .map(|(jp, global)| CalibrationAnchor {
+                jp: *jp,
+                global: *global,
+            })
+            .collect::<Vec<_>>(),
+    );
 
     let mut first_releases = BTreeMap::new();
     for event in events.iter().filter(|event| {
@@ -2421,6 +2405,7 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
         }
     }
     // Split paid pools released together must all wait for their latest pickup.
+    let mut pickup_floors = BTreeMap::new();
     for event in events.iter().filter(|event| {
         event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
     }) {
@@ -2436,9 +2421,9 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
             .max()
             .copied()
         {
-            primary_dates
+            pickup_floors
                 .entry(normalize_to_midnight_utc(event.jp_release_date))
-                .and_modify(|date| *date = (*date).max(latest_pickup))
+                .and_modify(|date: &mut DateTime<Utc>| *date = (*date).max(latest_pickup))
                 .or_insert(latest_pickup);
         }
     }
@@ -2447,14 +2432,18 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent]) {
         event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
     }) {
         let jp_date = normalize_to_midnight_utc(event.jp_release_date);
-        let Some(primary_date) = primary_dates.get(&jp_date).copied() else {
-            continue;
-        };
-        if event.global_release_date >= primary_date {
+        let scheduled_date = primary_dates.get(&jp_date).copied().unwrap_or_else(|| {
+            calculate_global_date(jp_date, None, &anchors, observed_rate).global_date
+        });
+        let paid_date = pickup_floors
+            .get(&jp_date)
+            .copied()
+            .map_or(scheduled_date, |floor| scheduled_date.max(floor));
+
+        let shift = paid_date - event.global_release_date;
+        if shift == Duration::zero() {
             continue;
         }
-
-        let shift = primary_date - event.global_release_date;
         event.global_release_date += shift;
         event.estimated_end_date += shift;
         event.prediction.schedule_adjustment_days = Some(
@@ -3080,11 +3069,7 @@ fn build_confirmed_date_lookup(
                         lookup.support.insert(gacha_id, global_date);
                     }
                 }
-                ConfirmedTimelineKind::Paid => {
-                    if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup.paid.insert(gacha_id, global_date);
-                    }
-                }
+                ConfirmedTimelineKind::Paid => {}
                 ConfirmedTimelineKind::Story => {
                     lookup
                         .story
@@ -3308,6 +3293,9 @@ fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate
         });
     }
 
+    // Paid CSV dates are estimates, not confirmations or published-month bounds.
+    // Keep explicit hide directives; real paid confirmations come from Global data.
+    dates.retain(|date| date.kind != ConfirmedTimelineKind::Paid || date.global_date.is_none());
     Ok(dates)
 }
 
@@ -5076,6 +5064,7 @@ mod tests {
             character,2022_30100.png,2026-06-18
             support,2022_30101.webp,2026-06-18
             paid,50003,2025-11-03T22:00:00Z
+            paid,50004,hidden
             story,03_brand_new_friend_banner.png,2025-07-16
             champions,14,2026-06-21
             legend,legend_race_12,2026-06-07
@@ -5093,7 +5082,9 @@ mod tests {
         assert_eq!(dates[1].kind, ConfirmedTimelineKind::Support);
         assert_eq!(dates[1].key, "30101");
         assert_eq!(dates[2].kind, ConfirmedTimelineKind::Paid);
-        assert_eq!(dates[2].key, "50003");
+        assert_eq!(dates[2].key, "50004");
+        assert_eq!(dates[2].global_date, None);
+        assert!(!dates.iter().any(|date| date.key == "50003"));
         assert_eq!(dates[3].kind, ConfirmedTimelineKind::Story);
         assert_eq!(dates[3].key, "03_brand_new_friend_banner");
         assert_eq!(dates[4].kind, ConfirmedTimelineKind::Champions);
@@ -5165,6 +5156,10 @@ mod tests {
         );
         assert!(!lookup.character.contains_key(&90130));
         assert!(!lookup.support.contains_key(&90131));
+        assert!(
+            lookup.paid.is_empty(),
+            "paid CSV rows must not add confirmations"
+        );
     }
 
     #[test]
@@ -5639,7 +5634,6 @@ mod tests {
         }];
         let confirmed = empty_confirmed_date_lookup();
         let adjustments = super::build_family_adjustment_models(
-            &[],
             &[],
             &[],
             &[],
@@ -6123,7 +6117,7 @@ mod tests {
     }
 
     #[test]
-    fn paid_banner_cannot_precede_same_day_primary_banner() {
+    fn paid_banner_aligns_with_same_day_confirmed_primary_banner() {
         let jp_date = utc_date(2023, 2, 24, 3);
         let primary_date = utc_date(2026, 12, 3, 22);
         let mut support = test_timeline_event_with_type(
@@ -6131,7 +6125,7 @@ mod tests {
             BannerTimelineEventType::SupportCardBanner,
             jp_date,
             primary_date,
-            false,
+            true,
         );
         support.estimated_end_date = utc_date(2026, 12, 17, 22);
         let mut paid = test_timeline_event_with_type(
@@ -6145,7 +6139,7 @@ mod tests {
         paid.prediction.schedule_adjustment_days = Some(-12);
         let mut events = vec![paid, support];
 
-        align_paid_banners_with_releases(&mut events);
+        align_paid_banners_with_releases(&mut events, 1.5);
 
         assert_eq!(events[0].global_release_date, primary_date);
         assert_eq!(events[0].estimated_end_date, utc_date(2027, 1, 13, 22));
@@ -6173,7 +6167,7 @@ mod tests {
         );
         let mut events = vec![paid, support];
 
-        align_paid_banners_with_releases(&mut events);
+        align_paid_banners_with_releases(&mut events, 1.5);
 
         assert_eq!(events[0].global_release_date, paid_date);
     }
@@ -6190,11 +6184,12 @@ mod tests {
         );
         debut.pickup_card_ids = vec![100101];
         let mut rerun = debut.clone();
+        rerun.jp_release_date += Duration::days(90);
         rerun.global_release_date = release + Duration::days(90);
         let mut paid = test_timeline_event_with_type(
             "paid",
             BannerTimelineEventType::PaidBanner,
-            utc_date(2023, 1, 1, 3),
+            utc_date(2022, 12, 25, 3),
             utc_date(2026, 9, 24, 22),
             false,
         );
@@ -6204,13 +6199,78 @@ mod tests {
         sibling.pickup_card_ids.clear();
         let duration = paid.estimated_end_date - paid.global_release_date;
         let mut events = vec![paid, sibling, debut, rerun];
-        align_paid_banners_with_releases(&mut events);
+        align_paid_banners_with_releases(&mut events, 1.5);
         for event in &events[..2] {
             assert_eq!(event.global_release_date, release);
             assert_eq!(
                 event.estimated_end_date - event.global_release_date,
                 duration
             );
+        }
+    }
+
+    #[test]
+    fn paid_banners_use_only_confirmed_normal_releases_in_both_directions() {
+        let character = test_timeline_event_with_type(
+            "character",
+            BannerTimelineEventType::CharacterBanner,
+            utc_date(2023, 1, 1, 3),
+            utc_date(2026, 10, 1, 22),
+            true,
+        );
+        let support = test_timeline_event_with_type(
+            "support",
+            BannerTimelineEventType::SupportCardBanner,
+            utc_date(2023, 1, 11, 3),
+            utc_date(2026, 10, 7, 22),
+            true,
+        );
+        let mut projected_support = support.clone();
+        projected_support.is_confirmed = false;
+        projected_support.global_release_date += Duration::days(120);
+        let mut confirmed_paid = support.clone();
+        confirmed_paid.event_type = BannerTimelineEventType::PaidBanner;
+        confirmed_paid.global_release_date += Duration::days(240);
+        // Same-day releases, the midpoint, and dates outside the known schedule.
+        for (jp, expected) in [
+            (utc_date(2023, 1, 1, 3), utc_date(2026, 10, 1, 22)),
+            (utc_date(2023, 1, 6, 3), utc_date(2026, 10, 4, 22)),
+            (utc_date(2023, 1, 11, 3), utc_date(2026, 10, 7, 22)),
+            (utc_date(2022, 12, 29, 3), utc_date(2026, 9, 29, 22)),
+            (utc_date(2023, 1, 14, 3), utc_date(2026, 10, 9, 22)),
+        ] {
+            for offset in [-12, 12] {
+                let mut paid = test_timeline_event_with_type(
+                    "paid",
+                    BannerTimelineEventType::PaidBanner,
+                    jp,
+                    expected + Duration::days(offset),
+                    false,
+                );
+                paid.prediction.schedule_adjustment_days = Some(offset);
+                let duration = paid.estimated_end_date - paid.global_release_date;
+                let mut events = vec![
+                    paid,
+                    support.clone(),
+                    character.clone(),
+                    projected_support.clone(),
+                    confirmed_paid.clone(),
+                ];
+                align_paid_banners_with_releases(&mut events, 1.5);
+                assert_eq!(events[0].global_release_date, expected);
+                assert_eq!(events[0].estimated_end_date - expected, duration);
+                assert_eq!(events[0].prediction.schedule_adjustment_days, Some(0));
+                assert_eq!(events[1].global_release_date, support.global_release_date);
+                assert_eq!(events[2].global_release_date, character.global_release_date);
+                assert_eq!(
+                    events[3].global_release_date,
+                    projected_support.global_release_date
+                );
+                assert_eq!(
+                    events[4].global_release_date,
+                    confirmed_paid.global_release_date
+                );
+            }
         }
     }
 
