@@ -43,9 +43,8 @@ function argumentsFrom(argv) {
   return args;
 }
 
-const args = argumentsFrom(process.argv.slice(2));
-const requireFromFrontend = createRequire(path.join(args.frontendRoot, 'package.json'));
-const sharp = requireFromFrontend('sharp');
+let args;
+let sharp;
 
 const sleep = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 const preferredEnglishSourceCache = new Map();
@@ -283,10 +282,8 @@ function storyBannerIds(archive) {
   const ids = new Map();
   for (const post of archive.news ?? []) {
     if (!eventTypes(post).has('story_event') || typeof post.posted_at !== 'string') continue;
-    for (const image of post.images ?? []) {
-      const match = String(image.url).match(/\/(?:Thumbnail|Header)\/(?:banner|header)_(301\d+)/i);
-      if (match && !ids.has(post.posted_at.slice(0, 10))) ids.set(post.posted_at.slice(0, 10), match[1]);
-    }
+    const match = String(preferredPostImage(post)).match(/\/(?:Thumbnail|Header)\/(?:banner|header)_(301\d+)/i);
+    if (match && !ids.has(post.posted_at.slice(0, 10))) ids.set(post.posted_at.slice(0, 10), match[1]);
   }
   return ids;
 }
@@ -295,17 +292,19 @@ function timelineStoryIdentities(timeline, archive) {
   const byDate = storyBannerIds(archive);
   const stories = (timeline.events ?? []).filter(event => event.type === 'story_event')
     .sort((left, right) => String(left.jp_release_date).localeCompare(String(right.jp_release_date)));
-  return new Map(stories.map((event, index) => [
-    event.id,
-    `banner_${byDate.get(String(event.jp_release_date).slice(0, 10)) ?? 30_100_000 + (index + 1) * 2}`
-  ]));
+  return new Map(stories.flatMap(event => {
+    const id = byDate.get(String(event.jp_release_date).slice(0, 10));
+    return id ? [[event.id, `banner_${id}`]] : [];
+  }));
 }
 
 function officialCampaignAssets(posts, recovered) {
   const candidates = [...recovered];
   for (const post of posts) {
     const title = String(post.title ?? '');
-    if (normalizedTitle(title).includes('mission') && typeof post.image === 'string' && post.post_at) {
+    const missionPost = normalizedTitle(title).includes('mission') ||
+      (campaignSemanticKey(title, true) && /\bmissions?\b/.test(normalizedTitle(post.message)));
+    if (missionPost && typeof post.image === 'string' && post.post_at) {
       candidates.push({ title, post_at: post.post_at, image: decodeHtml(post.image) });
     }
   }
@@ -333,8 +332,9 @@ function championsTitleMatch(event, posts) {
   return candidates[0]?.score >= 8 ? candidates[0].source : null;
 }
 
-function officialEnglishJobs(timeline, archive, posts, recovered) {
+export function officialEnglishJobs(timeline, archive, posts, recovered, frontendRoot) {
   const assets = new Map();
+  const byPostId = new Map(posts.map(post => [Number(post.announce_id), post]));
   for (const post of posts) {
     for (const url of officialPostAssetUrls(post)) {
       const identity = assetIdentity(url);
@@ -351,26 +351,39 @@ function officialEnglishJobs(timeline, archive, posts, recovered) {
     if (identity) identities.push(identity);
     identities.push(...eventGachaIds(event).map(gachaId => `gacha_banner_${gachaId}`));
     if (storyIdentities.has(event.id)) identities.push(storyIdentities.get(event.id));
-    let source = identities.map(key => assets.get(key)).find(Boolean);
+    const linkedId = String(event.umapyoi_url ?? '').match(/^https:\/\/umapyoi\.net\/en\/news\/(\d+)(?:[?#]|$)/)?.[1];
+    const linkedImage = byPostId.get(Number(linkedId))?.image;
+    let source = ['story_event', 'campaign'].includes(event.type) && typeof linkedImage === 'string' && linkedImage.startsWith('https://assets-webview-umamusume-en.akamaized.net/')
+      ? decodeHtml(linkedImage) : identities.map(key => assets.get(key)).find(Boolean);
+    if (event.type === 'story_event') {
+      // EN titles and even banner IDs can differ. Use the unique launch notice
+      // for this release before falling back to the JP asset identity.
+      const release = dateValue(event.global_release_date);
+      const launches = posts.filter(post => release && normalizedTitle(post.title).includes('story event') &&
+        typeof post.image === 'string' && post.image.startsWith('https://assets-webview-umamusume-en.akamaized.net/') &&
+        assetIdentity(post.image)?.startsWith('banner_301') &&
+        daysBetween(Number(post.post_at) * 1000, release) <= 2);
+      if (launches.length === 1) source = decodeHtml(launches[0].image);
+    }
     if (event.type === 'champions_meeting' && event.source === 'champions') {
       source = championsTitleMatch(event, posts);
     }
-    if (source) jobs.set(path.join(args.frontendRoot, 'src', event.image_path), { source, eventType: event.type });
+    if (source) jobs.set(path.join(frontendRoot, 'src', event.image_path), { source, eventType: event.type });
   }
 
   const campaignEvents = (timeline.events ?? [])
     .filter(event => event.type === 'campaign' && typeof event.image_path === 'string')
     .map(event => ({
-      target: path.join(args.frontendRoot, 'src', event.image_path),
+      target: path.join(frontendRoot, 'src', event.image_path),
       release: dateValue(event.global_release_date),
       key: campaignSemanticKey(event.title)
     }))
     .filter(event => event.release);
   for (const source of officialCampaignAssets(posts, recovered)) {
-    const posted = dateValue(source.post_at);
+    const posted = dateValue(typeof source.post_at === 'number' ? source.post_at * 1000 : source.post_at);
     const availableUntil = dateValue(source.available_until);
     if (!posted || typeof source.image !== 'string') continue;
-    const key = campaignSemanticKey(source.title);
+    const key = campaignSemanticKey(source.title, true);
     const matches = campaignEvents.filter(event => {
       const inRange = availableUntil && event.release >= posted && event.release <= availableUntil;
       if (key && event.key !== key) return false;
@@ -392,11 +405,12 @@ function fallbackEnglishJobs(timeline, archive) {
   const storyIds = storyBannerIds(archive);
   const stories = (timeline.events ?? []).filter(event => event.type === 'story_event')
     .sort((left, right) => String(left.jp_release_date).localeCompare(String(right.jp_release_date)));
-  stories.forEach((event, index) => {
+  stories.forEach(event => {
     if (!event.is_confirmed || !String(event.image_path).startsWith('assets/images/story/')) return;
     const release = dateValue(event.global_release_date);
     if (!release) return;
-    const bannerId = storyIds.get(String(event.jp_release_date).slice(0, 10)) ?? 30_100_000 + (index + 1) * 2;
+    const bannerId = storyIds.get(String(event.jp_release_date).slice(0, 10));
+    if (!bannerId) return;
     jobs.set(path.join(args.frontendRoot, 'src', event.image_path), {
       source: `${EN_ASSET_ROOT}/banner_${bannerId}_L${Math.floor(release / 1000)}.png`,
       eventType: event.type
@@ -527,6 +541,8 @@ async function preferredEnglishSource(source, eventType) {
 }
 
 async function main() {
+  args = argumentsFrom(process.argv.slice(2));
+  sharp = createRequire(path.join(args.frontendRoot, 'package.json'))('sharp');
   const timeline = await readJson(args.timelineJson);
   const archive = await readJson(ARCHIVE_PATH);
   const recovered = await readJson(RECOVERED_CAMPAIGNS_PATH, []);
@@ -541,7 +557,7 @@ async function main() {
   }
   const enSources = new Map(fallbackEn);
   if (!officialError) {
-    for (const [target, value] of officialEnglishJobs(timeline, archive, officialNews, recovered)) {
+    for (const [target, value] of officialEnglishJobs(timeline, archive, officialNews, recovered, args.frontendRoot)) {
       enSources.set(target, value);
     }
   }
@@ -613,6 +629,7 @@ async function main() {
       enCurrent += 1;
       enState[key] = sourceValue;
       enManifest[publicAssetPath(legacyTarget)] = publicAssetPath(target);
+      delete unavailable[key];
       continue;
     }
     if (previousUnavailable[key] === source) {
@@ -635,6 +652,7 @@ async function main() {
         await saveWebp(payload, target, { targetSize: jpSize });
         enState[key] = sourceValue;
         enManifest[publicAssetPath(legacyTarget)] = publicAssetPath(target);
+        delete unavailable[key];
         enCreated += 1;
         changed.add(key);
       }
@@ -697,4 +715,4 @@ async function main() {
   process.exitCode = failures.length ? 1 : 0;
 }
 
-await main();
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();
