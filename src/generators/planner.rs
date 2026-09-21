@@ -298,6 +298,8 @@ pub struct PlannerGachaShard {
 
 #[derive(Debug, Serialize)]
 pub struct PlannerGacha {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub paid_draw: Option<PlannerPaidDraw>,
     pub event_id: String,
     pub gacha_id: i64,
     pub gacha_type: i64,
@@ -330,8 +332,19 @@ pub struct PlannerGacha {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerStepUp {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_pool_size: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection_pickup_rate: Option<f64>,
     pub rounds: i64,
     pub steps: Vec<PlannerStep>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlannerPaidDraw {
+    pub limit: i64,
+    pub guaranteed_rarity: i64,
+    pub guaranteed_count: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -381,6 +394,7 @@ struct TimelineLink {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 struct GachaAccumulator {
+    paid_draw: Option<PlannerPaidDraw>,
     step_up: Option<PlannerStepUp>,
     card_type: i64,
     gacha_type: i64,
@@ -640,6 +654,7 @@ pub fn generate(
         linked_event_ids.insert(link.event_id.clone());
         linked_gacha_ids.insert(gacha_id);
         sharded.entry(shard).or_default().push(PlannerGacha {
+            paid_draw: accumulator.paid_draw,
             event_id: link.event_id.clone(),
             gacha_id,
             gacha_type: accumulator.gacha_type,
@@ -1381,7 +1396,7 @@ fn load_gachas(
         FROM gacha_data AS data
         JOIN gacha_available AS available
           ON available.gacha_id = data.id
-         AND available.is_pickup = 1
+         AND (available.is_pickup = 1 OR (data.type IN (5, 10, 15) AND available.rarity = 3))
         ORDER BY data.id, available.card_id
         "#,
     )?;
@@ -1486,6 +1501,8 @@ fn load_gachas(
                 provenance: Some("global_master"),
                 confidence: Some("exact"),
                 step_up: Some(PlannerStepUp {
+                    selection_pool_size: None,
+                    selection_pickup_rate: None,
                     rounds,
                     steps: Vec::new(),
                 }),
@@ -1493,6 +1510,58 @@ fn load_gachas(
             });
             if let Some(schedule) = &mut gacha.step_up {
                 schedule.steps.push(step);
+            }
+        }
+    }
+    if sqlite_column_exists(connection, "gacha_data", "draw_guarantee_num")? {
+        let limit_column = if sqlite_column_exists(connection, "gacha_data", "draw_limit")? {
+            "draw_limit"
+        } else {
+            "only_once_flag"
+        };
+        let mut statement = connection.prepare(&format!("SELECT id, card_type, type, cost_single, {limit_column}, draw_guarantee_rarity, draw_guarantee_num FROM gacha_data WHERE cost_type=92"))?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, i64>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, i64>(3)?,
+                PlannerPaidDraw {
+                    limit: row.get(4)?,
+                    guaranteed_rarity: row.get(5)?,
+                    guaranteed_count: row.get(6)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (id, card_type, gacha_type, cost, paid_draw) = row?;
+            if !timeline_links.contains_key(&id) {
+                continue;
+            }
+            let gacha = gachas.entry(id).or_insert_with(|| GachaAccumulator {
+                card_type,
+                gacha_type,
+                cost,
+                ..Default::default()
+            });
+            gacha.paid_draw = Some(paid_draw);
+        }
+    }
+    let mut statement = connection.prepare("SELECT gacha_id, COUNT(*), MIN(odds), MAX(odds) FROM gacha_available WHERE rarity=3 GROUP BY gacha_id")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    for row in rows {
+        let (id, slots, odds, max_odds) = row?;
+        if let Some(schedule) = gachas.get_mut(&id).and_then(|gacha| gacha.step_up.as_mut()) {
+            if odds == max_odds {
+                schedule.selection_pool_size = Some(slots);
+                schedule.selection_pickup_rate = Some(odds as f64 / 1_000_000.0);
             }
         }
     }
@@ -8308,6 +8377,16 @@ mod tests {
         assert!(schedule.steps.last().unwrap().selectable);
         assert_eq!(bundled[&50078].spark_pulls, 0);
         assert!(bundled[&50078].pickups.is_empty());
+        assert_eq!(schedule.selection_pool_size, Some(10));
+        assert_eq!(schedule.selection_pickup_rate, Some(0.003));
+        for slot in 301..=310 {
+            connection
+                .execute(
+                    "INSERT INTO gacha_available VALUES (50078, ?1, 0, 3, 3000)",
+                    [slot],
+                )
+                .unwrap();
+        }
         connection.execute_batch("CREATE TABLE gacha_stepup (stepup_id INTEGER, target_gacha_id INTEGER, stepup_step INTEGER);").unwrap();
         for (index, step) in schedule.steps.iter().enumerate() {
             connection
@@ -8334,6 +8413,28 @@ mod tests {
             serde_json::to_value(schedule).unwrap()
         );
         assert_eq!(super::bundled_step_ups()[&50099].rounds, 2);
+        connection.execute_batch("ALTER TABLE gacha_data ADD COLUMN draw_guarantee_num INTEGER DEFAULT 1;
+            INSERT INTO gacha_data VALUES (50002, 2, 5, 150, 92, 1, 3, 0, 1);
+            INSERT INTO gacha_available VALUES (50002, 30001, 0, 3, 15000), (50002, 30002, 0, 3, 15000);").unwrap();
+        let paid_links = timeline_gacha_links(
+            &json!({"events": [{"id": "paid-banner-50002", "type": "paid_banner", "card_type": "support", "gacha_id": 50002, "gacha_type": 5, "global_release_date": "2026-01-01", "estimated_end_date": "2026-01-31"}]}),
+        );
+        let paid = load_gachas(&connection, &paid_links).unwrap();
+        let paid = &paid[&50002];
+        assert_eq!(paid.cost, 150);
+        assert_eq!(paid.paid_draw.as_ref().unwrap().limit, 1);
+        assert_eq!(paid.paid_draw.as_ref().unwrap().guaranteed_count, 1);
+        assert_eq!(paid.pickups.len(), 2);
+        assert_eq!(paid.rarity_rates[0].rate, 0.03);
+        connection.execute_batch("DROP TABLE gacha_stepup; ALTER TABLE gacha_data RENAME COLUMN draw_limit TO only_once_flag;").unwrap();
+        assert_eq!(
+            load_gachas(&connection, &paid_links).unwrap()[&50002]
+                .paid_draw
+                .as_ref()
+                .unwrap()
+                .limit,
+            1
+        );
     }
 
     #[test]
@@ -9490,6 +9591,7 @@ mod tests {
         let gacha_shards = vec![PlannerGachaShard {
             shard: "2025".to_string(),
             gachas: vec![PlannerGacha {
+                paid_draw: None,
                 event_id: "support-banner-2021_30039".to_string(),
                 gacha_id: 30039,
                 gacha_type: 3,
