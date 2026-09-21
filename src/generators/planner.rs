@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 38;
+const ALGORITHM_VERSION: u8 = 39;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -37,6 +37,7 @@ const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_soc
 const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
 const JP_MASTER_REWARDS: &[u8] = include_bytes!("../jp_data/planner_master_rewards.json");
+const JP_GACHA_RATES: &[u8] = include_bytes!("../jp_data/planner_gacha_rates.json");
 const JP_CAMPAIGN_REWARDS: &[u8] = include_bytes!("../jp_data/planner_campaign_rewards.json");
 
 #[derive(Debug)]
@@ -325,7 +326,7 @@ pub struct PlannerGacha {
     pub rarity_rates: Vec<PlannerRarityRate>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerPickup {
     pub pickup_id: i64,
     pub label: String,
@@ -333,7 +334,7 @@ pub struct PlannerPickup {
     pub exchangeable: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlannerRarityRate {
     pub rarity: i64,
     pub rate: f64,
@@ -351,7 +352,8 @@ struct TimelineLink {
     is_paid: bool,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 struct GachaAccumulator {
     card_type: i64,
     gacha_type: i64,
@@ -359,10 +361,14 @@ struct GachaAccumulator {
     spark_pulls: i64,
     free_pulls: i64,
     campaign_id: Option<String>,
+    #[serde(skip)]
     free_pulls_provenance: Option<&'static str>,
     free_pulls_source_url: Option<String>,
+    #[serde(skip)]
     free_pulls_confidence: Option<&'static str>,
+    #[serde(skip)]
     provenance: Option<&'static str>,
+    #[serde(skip)]
     confidence: Option<&'static str>,
     pickups: Vec<PlannerPickup>,
     featured_pickups: Vec<PlannerPickup>,
@@ -539,6 +545,7 @@ pub fn version_hash() -> String {
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
     digest.update(JP_MASTER_REWARDS);
+    digest.update(JP_GACHA_RATES);
     digest.update(JP_CAMPAIGN_REWARDS);
     hex::encode(digest.finalize())
 }
@@ -1430,10 +1437,20 @@ fn load_gachas_with_jp(
     timeline_links: &BTreeMap<i64, TimelineLink>,
 ) -> Result<BTreeMap<i64, GachaAccumulator>> {
     let mut gachas = load_gachas(connection, timeline_links)?;
-    let Some(jp_connection) = jp_connection else {
-        return Ok(gachas);
+    let mut jp_gachas = if let Some(jp_connection) = jp_connection {
+        load_gachas(jp_connection, timeline_links)?
+    } else {
+        let mut bundled: BTreeMap<i64, GachaAccumulator> =
+            serde_json::from_slice(JP_GACHA_RATES)
+                .context("failed to parse bundled JP gacha rates")?;
+        for gacha in bundled.values_mut() {
+            gacha.provenance = Some("global_master");
+            gacha.confidence = Some("exact");
+        }
+        bundled
     };
-    for (gacha_id, mut jp_gacha) in load_gachas(jp_connection, timeline_links)? {
+    discard_mismatched_master_gachas(timeline_links, &mut jp_gachas);
+    for (gacha_id, mut jp_gacha) in jp_gachas {
         if jp_gacha.provenance != Some("global_master") {
             continue;
         }
@@ -9788,6 +9805,60 @@ mod tests {
                 .abs()
                 < 1e-12
         );
+    }
+
+    #[test]
+    fn bundled_gacha_rates_cover_gray_week_without_a_jp_database() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
+            CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER);
+            CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);").unwrap();
+        let mut links = timeline_gacha_links(&serde_json::json!({ "events": [{
+            "id": "banner-2025_30332", "type": "character_banner", "card_type": "character", "gacha_id": 30332, "gacha_type": 3,
+            "global_release_date": "2028-01-01T00:00:00Z", "estimated_end_date": "2028-01-21T00:00:00Z",
+            "jp_release_date": "2025-04-30T03:00:00Z", "pickup_card_ids": [100601, 100702]
+        }]}));
+        let gachas = super::load_gachas_with_jp(&connection, None, &links).unwrap();
+        let gray = &gachas[&30332];
+        assert_eq!(gray.provenance, Some("jp_master"));
+        assert_eq!(gray.confidence, Some("exact"));
+        assert_eq!(gray.pickups.len(), 17);
+        assert_eq!(
+            gray.pickups
+                .iter()
+                .find(|p| p.pickup_id == 100702)
+                .unwrap()
+                .rate,
+            0.001764
+        );
+        assert_eq!(
+            gray.pickups
+                .iter()
+                .find(|p| p.pickup_id == 100601)
+                .unwrap()
+                .rate,
+            0.001765
+        );
+        assert!((gray.pickups.iter().map(|p| p.rate).sum::<f64>() - 0.03).abs() < 1e-12);
+        assert_eq!(
+            gray.rarity_rates.iter().map(|r| r.rate).collect::<Vec<_>>(),
+            vec![0.03, 0.18, 0.79]
+        );
+
+        // The catalogue must not override a matching Global master entry.
+        connection
+            .execute_batch(
+                "INSERT INTO gacha_data VALUES (30332, 1, 3, 150);
+            INSERT INTO gacha_available VALUES (30332, 100601, 1, 3, 7500);",
+            )
+            .unwrap();
+        let global = super::load_gachas_with_jp(&connection, None, &links).unwrap();
+        assert_eq!(global[&30332].provenance, Some("global_master"));
+        assert_eq!(global[&30332].pickups[0].rate, 0.0075);
+
+        links.get_mut(&30332).unwrap().pickup_card_ids = vec![999999];
+        let mismatched = super::load_gachas_with_jp(&connection, None, &links).unwrap();
+        assert_ne!(mismatched[&30332].provenance, Some("jp_master"));
     }
 
     #[test]
