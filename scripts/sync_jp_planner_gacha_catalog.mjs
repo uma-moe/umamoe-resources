@@ -9,7 +9,13 @@ const catalog = {};
 const rows = db.prepare(`SELECT d.id, d.card_type, d.type, d.cost_single,
   a.card_id, a.rarity, a.odds,
   COALESCE((SELECT MIN(e.pay_item_num) FROM gacha_exchange e
-    WHERE e.gacha_id=d.id AND e.card_id=a.card_id), 0) AS spark
+    WHERE e.gacha_id=d.id AND e.card_id=a.card_id),
+    (SELECT MIN(ticket.pay_item_num) FROM gacha_item_exchange ticket
+      JOIN item_exchange selection ON selection.pay_item_category=ticket.item_category AND selection.pay_item_id=ticket.item_id
+      WHERE ticket.gacha_id=d.id AND ticket.item_category IN (41,42)
+        AND ticket.item_num=1 AND ticket.pay_item_num>0 AND selection.pay_item_num=1 AND selection.change_item_num=1
+        AND selection.change_item_category=CASE d.card_type WHEN 1 THEN 50 WHEN 2 THEN 51 END
+        AND selection.change_item_id=a.card_id), 0) AS spark
   FROM gacha_data d JOIN gacha_available a ON a.gacha_id=d.id AND (a.is_pickup=1 OR (d.cost_type=92 AND d.type<>14 AND a.rarity=3))
   ORDER BY d.id, a.card_id`).all();
 for (const row of rows) {
