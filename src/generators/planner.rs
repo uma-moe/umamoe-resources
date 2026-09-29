@@ -8,7 +8,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 39;
+const ALGORITHM_VERSION: u8 = 40;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -1378,7 +1378,30 @@ fn load_gachas(
     connection: &Connection,
     timeline_links: &BTreeMap<i64, TimelineLink>,
 ) -> Result<BTreeMap<i64, GachaAccumulator>> {
-    let mut statement = connection.prepare(
+    // Some banners exchange points for a selector ticket instead of a card.
+    // Older Global masters do not contain the ticket-exchange table.
+    let selector_exchange = if sqlite_table_exists(connection, "gacha_item_exchange")?
+        && sqlite_table_exists(connection, "item_exchange")?
+    {
+        r#"
+        SELECT MIN(ticket.pay_item_num)
+        FROM gacha_item_exchange AS ticket
+        JOIN item_exchange AS selection
+          ON selection.pay_item_category = ticket.item_category
+         AND selection.pay_item_id = ticket.item_id
+        WHERE ticket.gacha_id = data.id
+          AND ticket.item_category IN (41, 42)
+          AND ticket.item_num = 1
+          AND ticket.pay_item_num > 0
+          AND selection.pay_item_num = 1
+          AND selection.change_item_num = 1
+          AND selection.change_item_category = CASE data.card_type WHEN 1 THEN 50 WHEN 2 THEN 51 END
+          AND selection.change_item_id = available.card_id
+        "#
+    } else {
+        "SELECT NULL"
+    };
+    let mut statement = connection.prepare(&format!(
         r#"
         SELECT data.id,
                data.card_type,
@@ -1392,14 +1415,14 @@ fn load_gachas(
                    FROM gacha_exchange AS exchange
                    WHERE exchange.gacha_id = data.id
                      AND exchange.card_id = available.card_id
-               ), 0)
+               ), ({selector_exchange}), 0)
         FROM gacha_data AS data
         JOIN gacha_available AS available
           ON available.gacha_id = data.id
          AND (available.is_pickup = 1 OR (data.type IN (5, 10, 15) AND available.rarity = 3))
         ORDER BY data.id, available.card_id
         "#,
-    )?;
+    ))?;
     let rows = statement.query_map([], |row| {
         Ok((
             row.get::<_, i64>(0)?,
@@ -10088,6 +10111,71 @@ mod tests {
         links.get_mut(&30332).unwrap().pickup_card_ids = vec![999999];
         let mismatched = super::load_gachas_with_jp(&connection, None, &links).unwrap();
         assert_ne!(mismatched[&30332].provenance, Some("jp_master"));
+    }
+
+    #[test]
+    fn selector_ticket_sparks_match_master_and_bundled_catalog() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(r#"
+            CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
+            CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER);
+            CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);
+            CREATE TABLE gacha_item_exchange (gacha_id INTEGER, item_category INTEGER, item_id INTEGER, item_num INTEGER, pay_item_num INTEGER);
+            CREATE TABLE item_exchange (pay_item_category INTEGER, pay_item_id INTEGER, pay_item_num INTEGER, change_item_category INTEGER, change_item_id INTEGER, change_item_num INTEGER);
+            INSERT INTO gacha_data VALUES (30349, 2, 3, 150), (30363, 2, 3, 150), (30353, 2, 3, 150);
+            INSERT INTO gacha_available VALUES
+                (30349, 30256, 1, 3, 7500), (30349, 30257, 1, 3, 7500),
+                (30349, 10128, 1, 1, 37500), (30349, 39999, 1, 3, 7500),
+                (30363, 30264, 1, 3, 7500), (30363, 30265, 1, 3, 7500),
+                (30353, 30258, 1, 3, 7500);
+            INSERT INTO gacha_exchange VALUES (30353, 30258, 200);
+            INSERT INTO gacha_item_exchange VALUES (30349, 42, 283, 1, 200), (30363, 42, 288, 1, 200);
+            INSERT INTO item_exchange VALUES
+                (42, 283, 1, 51, 30256, 1), (42, 283, 1, 51, 30257, 1),
+                (42, 288, 1, 51, 30264, 1), (42, 288, 1, 51, 30265, 1),
+                -- The right card on another ticket or item category is not exchangeable here.
+                (42, 999, 1, 51, 39999, 1), (41, 283, 1, 51, 39999, 1),
+                (42, 283, 1, 50, 39999, 1);
+        "#).unwrap();
+        let links = timeline_gacha_links(&json!({ "events": [
+            { "id": "tamamo-tucker", "gacha_id": 30349, "card_type": "support", "pickup_card_ids": [30256, 30257] },
+            { "id": "stay-gold", "gacha_id": 30363, "card_type": "support", "pickup_card_ids": [30264, 30265] },
+            { "id": "direct-exchange", "gacha_id": 30353, "card_type": "support", "pickup_card_ids": [30258] }
+        ] }));
+
+        let from_master = load_gachas(&connection, &links).unwrap();
+        connection
+            .execute_batch("DELETE FROM gacha_available; DELETE FROM gacha_data;")
+            .unwrap();
+        let from_catalog = super::load_gachas_with_jp(&connection, None, &links).unwrap();
+        for gachas in [&from_master, &from_catalog] {
+            for (gacha_id, pickup_ids) in [
+                (30349, vec![30256, 30257]),
+                (30363, vec![30264, 30265]),
+                (30353, vec![30258]),
+            ] {
+                let gacha = &gachas[&gacha_id];
+                assert_eq!(gacha.spark_pulls, 200);
+                assert_eq!(
+                    gacha
+                        .pickups
+                        .iter()
+                        .filter(|pickup| pickup.exchangeable)
+                        .map(|pickup| pickup.pickup_id)
+                        .collect::<Vec<_>>(),
+                    pickup_ids
+                );
+                assert_eq!(gacha.confidence, Some("exact"));
+            }
+        }
+        assert!(
+            !from_master[&30349]
+                .featured_pickups
+                .iter()
+                .find(|pickup| pickup.pickup_id == 10128)
+                .unwrap()
+                .exchangeable
+        );
     }
 
     #[test]
