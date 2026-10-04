@@ -6,12 +6,12 @@ consumers; they must not read an installed game cache at runtime.
 
 ## Source Contract
 
-`src/jp_data/simulator_course_geometry.json.gz` contains canonical JSON in gzip
+`src/global_data/simulator_course_geometry.json.gz` contains canonical JSON in gzip
 containing all normal-race `CourseLaneAnim` records available for the current
 course master. Each course has 1,001 values for position X/Y/Z and quaternion
 rotation X/Y/Z/W, plus its course identity, distance, and source asset path.
 
-The asset identity comes from the JP client decomp:
+The asset identity follows the client formatter:
 
 ```text
 Race/Course/{track:0000}/pos/
@@ -27,7 +27,7 @@ values long.
 
 The extraction is an offline maintainer operation. It requires:
 
-- an installed JP client cache and its encrypted `meta` index;
+- an installed current Global client cache and its encrypted `meta` index;
 - the SQLite3MultipleCiphers DLL bundled with a local UmaViewer installation;
 - the matching local UmaViewer `Config.json`; and
 - Python packages pinned in `scripts/requirements-course-geometry.txt`.
@@ -44,14 +44,30 @@ Install the pinned Python dependency:
 python -m pip install -r scripts/requirements-course-geometry.txt
 ```
 
-Generate or locate the current `simulator_courses.json.gz`, then run:
+Fetch the current game master before checking coverage:
 
 ```powershell
-python scripts/extract_simulator_course_geometry.py --client-root "$env:USERPROFILE\AppData\LocalLow\Cygames\umamusume" --sqlite3mc "C:\path\to\UmaViewer_Data\Plugins\x86_64\sqlite3mc_x64.dll" --umaviewer-config "C:\path\to\UmaViewer\Config.json" --courses "generated-data\<version>\simulator_courses.json.gz" --out "src\jp_data\simulator_course_geometry.json.gz"
+cargo run -- fetch-master --master master.mdb
+```
+
+The extractor can read that master directly, so newly released courses are not
+hidden by an older generated `simulator_courses.json.gz`. Use the matching
+current Global cache, configuration, and asset manifest:
+
+```powershell
+python scripts/extract_simulator_course_geometry.py --region global --client-root "$env:USERPROFILE\AppData\LocalLow\Cygames\Umamusume" --sqlite3mc "C:\path\to\UmaViewer_Data\Plugins\x86_64\sqlite3mc_x64.dll" --umaviewer-config "C:\path\to\UmaViewer\Config.json" --master master.mdb --out "src\global_data\simulator_course_geometry.json.gz"
 ```
 
 Use repeatable `--course-id` arguments only for diagnostics. A release refresh
-must omit that filter so the source covers every course in the course master.
+must omit that filter so the source covers every playable course in the current master.
+
+The `1.35.2:10008010` Global master contains 121 course rows. All 119 playable
+courses have event tables and 1,001-point paths, including Kawasaki, Funabashi,
+and Morioka. Longchamp `11201` (1000 m) and `11202` (1400 m) are unused rows:
+the current game asset manifest has no corresponding normal-race paths;
+`11201` has an unfinished event table and `11202` has no event table. They are
+excluded, and generation fails if the current master begins referencing them
+in races. Longchamp `11203` (2400 m) has complete geometry and is exported.
 
 Run the extractor tests and the resource test suite:
 

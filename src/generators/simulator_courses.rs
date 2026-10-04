@@ -3,7 +3,6 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use tracing::warn;
 
 const SCHEMA_VERSION: u32 = 5;
 const RACE_PARAMETERS_SCHEMA_VERSION: u32 = 29;
@@ -1238,6 +1237,50 @@ const GLOBAL_COURSE_EVENT_PARAM_OVERRIDES: &[(&str, &str)] = &[
         "11203",
         include_str!("../global_data/courseeventparams/11203.json"),
     ),
+    (
+        "11301",
+        include_str!("../global_data/courseeventparams/11301.json"),
+    ),
+    (
+        "11302",
+        include_str!("../global_data/courseeventparams/11302.json"),
+    ),
+    (
+        "11303",
+        include_str!("../global_data/courseeventparams/11303.json"),
+    ),
+    (
+        "11401",
+        include_str!("../global_data/courseeventparams/11401.json"),
+    ),
+    (
+        "11402",
+        include_str!("../global_data/courseeventparams/11402.json"),
+    ),
+    (
+        "11403",
+        include_str!("../global_data/courseeventparams/11403.json"),
+    ),
+    (
+        "11404",
+        include_str!("../global_data/courseeventparams/11404.json"),
+    ),
+    (
+        "11501",
+        include_str!("../global_data/courseeventparams/11501.json"),
+    ),
+    (
+        "11502",
+        include_str!("../global_data/courseeventparams/11502.json"),
+    ),
+    (
+        "11503",
+        include_str!("../global_data/courseeventparams/11503.json"),
+    ),
+    (
+        "11504",
+        include_str!("../global_data/courseeventparams/11504.json"),
+    ),
 ];
 
 pub fn version_hash() -> String {
@@ -2194,17 +2237,22 @@ pub fn generate<'a>(
             run_outside,
         ) = row?;
 
-        // Matches uma-tools: Longchamp 1000m data is incomplete, and 11202 has no event params.
+        // Unused Longchamp master rows: neither has a path in the current client
+        // manifest, and 11201's event table is an unfinished placeholder.
         if course_id == 11201 || course_id == 11202 {
+            let is_used: bool = connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM race WHERE course_set = ?1)",
+                [course_id],
+                |row| row.get(0),
+            )?;
+            if is_used {
+                bail!("Longchamp course {course_id} is now used by the current master; extract its current assets before publishing");
+            }
             continue;
         }
 
         let Some(geometry) = event_params.get(&course_id) else {
-            warn!(
-                course_id,
-                "skipping simulator course without bundled event params"
-            );
-            continue;
+            bail!("simulator course {course_id} has no bundled event params; extract the current Global client assets before publishing");
         };
 
         courses.push(SimulatorCourse {
@@ -3269,5 +3317,135 @@ mod tests {
         assert!(course.first_move_lane_is_in);
         assert_eq!(course.finish_time_min_random_range, 10_000);
         assert_eq!(course.finish_time_max_random_range, 10_000);
+    }
+    #[allow(non_snake_case)]
+    fn courseConnection() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE race_track (
+                    id INTEGER PRIMARY KEY,
+                    initial_lane_type INTEGER NOT NULL,
+                    enable_half_gate INTEGER NOT NULL
+                );
+                CREATE TABLE race_course_set (
+                    id INTEGER PRIMARY KEY,
+                    race_track_id INTEGER NOT NULL,
+                    distance INTEGER NOT NULL,
+                    ground INTEGER NOT NULL,
+                    inout INTEGER NOT NULL,
+                    turn INTEGER NOT NULL,
+                    float_lane_max INTEGER NOT NULL,
+                    course_set_status_id INTEGER NOT NULL,
+                    finish_time_min INTEGER NOT NULL,
+                    finish_time_min_random_range INTEGER NOT NULL,
+                    finish_time_max INTEGER NOT NULL,
+                    finish_time_max_random_range INTEGER NOT NULL,
+                    run_outside INTEGER NOT NULL
+                );
+                CREATE TABLE race_course_set_status (
+                    course_set_status_id INTEGER PRIMARY KEY,
+                    target_status_1 INTEGER NOT NULL,
+                    target_status_2 INTEGER NOT NULL
+                );
+                CREATE TABLE race (course_set INTEGER NOT NULL);
+                INSERT INTO race_track VALUES (10001, 4, 1);
+                INSERT INTO race_course_set
+                    VALUES (10104, 10001, 2000, 1, 1, 1, 13500, 1, 1171000, 10000, 1230000, 10000, 1);
+                INSERT INTO race_course_set_status VALUES (1, 3, 0);
+                "#,
+            )
+            .unwrap();
+
+        connection
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn exportsNewGlobalDirtCoursesWithGeometryAndOverrunLanes() {
+        let connection = courseConnection();
+        connection
+            .execute_batch(
+                "INSERT INTO race_track VALUES (10103, 0, 0), (10104, 0, 0), (10105, 0, 0);",
+            )
+            .unwrap();
+        let cases = [
+            (11301, 10103, 1400),
+            (11302, 10103, 1600),
+            (11303, 10103, 2100),
+            (11401, 10104, 1000),
+            (11402, 10104, 1600),
+            (11403, 10104, 1800),
+            (11404, 10104, 2400),
+            (11501, 10105, 1200),
+            (11502, 10105, 1600),
+            (11503, 10105, 1800),
+            (11504, 10105, 2000),
+        ];
+        for (id, track, distance) in cases {
+            connection
+                .execute(
+                    "INSERT INTO race_course_set VALUES (?1, ?2, ?3, 2, 1, 2, 12000, 0, 1, 0, 2, 0, 0)",
+                    [id, track, distance],
+                )
+                .unwrap();
+        }
+
+        let generated = generate(&connection, "test").unwrap();
+        assert_eq!(generated.courses.len(), cases.len() + 1);
+        let geometry = crate::generators::simulator_course_geometry::generate(&generated).unwrap();
+        let paths = geometry.value["courses"].as_array().unwrap();
+        assert_eq!(paths.len(), generated.courses.len());
+        for ((id, track, distance), (course, path)) in cases
+            .iter()
+            .zip(generated.courses.iter().skip(1).zip(paths.iter().skip(1)))
+        {
+            assert_eq!(course.course_id, *id as u32);
+            assert_eq!(course.race_track_id, *track as u32);
+            assert_eq!(course.distance, *distance as u16);
+            assert_eq!(course.surface, 2);
+            assert!(!course.corners.is_empty());
+            assert!(!course.straights.is_empty());
+            assert_eq!(path["course_id"], *id);
+            assert_eq!(path["position_x"].as_array().unwrap().len(), 1001);
+        }
+        crate::generators::simulator_course_geometry::generateLanes(&generated).unwrap();
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn rejectsUnbundledMasterCoursesInsteadOfDroppingThem() {
+        let connection = courseConnection();
+        connection.execute_batch("INSERT INTO race_course_set VALUES (99999, 10001, 2000, 1, 1, 1, 12000, 0, 1, 0, 2, 0, 0);").unwrap();
+        assert!(generate(&connection, "test")
+            .unwrap_err()
+            .to_string()
+            .contains("course 99999 has no bundled event params"));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn excludesUnusedLongchampPlaceholdersButRejectsThemIfTheyBecomePlayable() {
+        let connection = courseConnection();
+        connection
+            .execute_batch(
+                "INSERT INTO race_track VALUES (10201, 0, 0);
+             INSERT INTO race_course_set VALUES
+             (11201, 10201, 1000, 1, 1, 4, 12000, 0, 1, 0, 2, 0, 0),
+             (11202, 10201, 1400, 1, 1, 1, 12000, 0, 1, 0, 2, 0, 0);",
+            )
+            .unwrap();
+        assert_eq!(generate(&connection, "test").unwrap().courses.len(), 1);
+        for id in [11201, 11202] {
+            connection
+                .execute("INSERT INTO race VALUES (?1)", [id])
+                .unwrap();
+            assert!(generate(&connection, "test")
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("Longchamp course {id} is now used")));
+            connection.execute("DELETE FROM race", []).unwrap();
+        }
     }
 }

@@ -1,14 +1,20 @@
 # Global Course Event Parameters
 
 This directory pins the decoded `CourseParamTable` assets used by the current
-Global client (`1.34.0`, resource version
-`10007550`). The generator overlays all 108
+Global client (`1.35.2`, resource version
+`10008010`). The generator overlays all 119 playable
 simulator course IDs on the bundled JP set, so a Global build never silently
 inherits JP course-event boundaries.
 
-The source inventory is content-addressed by SHA-256:
-`9194f6cf260e8391ebf8f5a2f3b12647bf043e905769c0a771ca9f2fc663bc0a`. `manifest.json` records the decoded JSON hash, decrypted
-bundle hash, and normalized course-event payload hash for every included course.
+`manifest.json` records the current race asset inventory's SHA-256, decoded JSON
+hashes, decrypted bundle hashes, and current CDN asset identities. The 108
+previously bundled event tables were checked against the `10008010` manifest
+and are unchanged; the 11 Kawasaki, Funabashi, and Morioka tables are now included.
+
+The current master has 121 rows. Longchamp `11201` and `11202` are unused
+placeholders without normal-race path assets; `11201` also has an unfinished
+event table and `11202` has none. Generation rejects any other missing course
+event table instead of silently producing an incomplete simulator course list.
 
 These assets describe runtime course geometry events: corners, straights,
 slopes, lane-width changes, and the first lane-movement point. They do not

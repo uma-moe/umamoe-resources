@@ -3,7 +3,6 @@ WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY master_fetch.rs ./
 
 RUN cargo build --release --locked
 

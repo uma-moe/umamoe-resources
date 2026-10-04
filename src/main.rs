@@ -1,7 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Args, Parser, Subcommand};
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -13,7 +12,6 @@ mod cache;
 mod generators;
 mod global_news;
 mod global_social;
-#[path = "../master_fetch.rs"]
 mod master_fetch;
 mod pipeline;
 mod static_api;
@@ -32,6 +30,11 @@ struct Cli {
 enum Command {
     /// Serve resources over HTTP, generating them from master.mdb first by default.
     Serve(ServeArgs),
+    /// Check the current Global game version and download its master if needed.
+    FetchMaster {
+        #[arg(long, default_value = "master.mdb")]
+        master: PathBuf,
+    },
     /// Generate versioned .json.gz resources without starting the server.
     Generate {
         #[arg(long, default_value = "master.mdb")]
@@ -41,10 +44,10 @@ enum Command {
         #[arg(long)]
         write_json: bool,
     },
-    /// Check master_versions, refresh master.mdb if needed, regenerate, then purge current CDN URLs.
+    /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
         #[arg(long, env = "DATABASE_URL")]
-        database_url: String,
+        database_url: Option<String>,
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
         #[arg(long, default_value = "generated-data")]
@@ -106,10 +109,10 @@ struct ServeArgs {
     data_dir: PathBuf,
     #[arg(long, default_value = "master.mdb")]
     master: PathBuf,
-    /// Optional Postgres URL used to auto-refresh master.mdb from master_versions while serving.
+    /// Legacy Postgres URL accepted for compatibility; master checks use the live game version.
     #[arg(long, env = "DATABASE_URL")]
     database_url: Option<String>,
-    /// How often the server checks master_versions for a newer resource version.
+    /// How often the server checks the current Global game version.
     #[arg(long, env = "MASTER_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 300)]
     refresh_interval_seconds: u64,
     /// Purge manifest/current CDN URLs after an automatic refresh.
@@ -166,11 +169,15 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Serve(cli.server)) {
         Command::Serve(args) => serve(args).await?,
+        Command::FetchMaster { master } => {
+            master_fetch::maybeUpdateMasterMdb(&master).await?;
+        }
         Command::Generate {
             master,
             out,
             write_json,
         } => {
+            master_fetch::maybeUpdateMasterMdb(&master).await?;
             let manifest = pipeline::generate_resources(&master, &out, write_json)?;
             info!(
                 version = manifest.version,
@@ -179,16 +186,13 @@ async fn main() -> Result<()> {
             );
         }
         Command::Refresh {
-            database_url,
+            database_url: _,
             master,
             out,
             write_json,
             purge,
         } => {
-            let pool = PgPool::connect(&database_url)
-                .await
-                .context("failed to connect to DATABASE_URL")?;
-            if refresh_from_db(&pool, &master, &out, write_json, purge).await? {
+            if refreshFromGameVersion(&master, &out, write_json, purge).await? {
                 info!("master.mdb refresh completed");
             } else {
                 info!("master.mdb did not change; skipping regeneration");
@@ -316,34 +320,13 @@ async fn serve(args: ServeArgs) -> Result<()> {
         false
     };
 
-    let refresh_pool = match database_url(&args) {
-        Some(database_url) => Some(
-            PgPool::connect(database_url)
-                .await
-                .context("failed to connect to DATABASE_URL")?,
-        ),
-        None => None,
-    };
-
-    let refreshed_before_serve = if let Some(pool) = refresh_pool.as_ref() {
-        let refreshed = refresh_from_db(
-            pool,
-            &args.master,
-            &args.data_dir,
-            args.write_json,
-            args.purge_on_refresh,
-        )
-        .await?;
-        if refreshed {
-            info!("refreshed master.mdb before serving");
-        } else {
-            info!("master.mdb did not change before serving");
-        }
-        refreshed
-    } else {
-        info!("DATABASE_URL not set; automatic master refresh disabled");
-        false
-    };
+    let refreshed_before_serve = refreshFromGameVersion(
+        &args.master,
+        &args.data_dir,
+        args.write_json,
+        args.purge_on_refresh,
+    )
+    .await?;
 
     if !args.no_generate && !refreshed_before_serve {
         let manifest = pipeline::generate_resources(&args.master, &args.data_dir, args.write_json)?;
@@ -359,9 +342,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
         cache::purge_manifest_current_urls(&manifest).await?;
     }
 
-    if let Some(pool) = refresh_pool {
-        spawn_refresh_loop(pool, args.clone());
-    }
+    spawnRefreshLoop(args.clone());
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
         (Some(url), Some(path)) => {
@@ -383,13 +364,6 @@ fn confirmed_banner_dates_url(args: &ServeArgs) -> Option<&str> {
         .filter(|url| !url.is_empty())
 }
 
-fn database_url(args: &ServeArgs) -> Option<&str> {
-    args.database_url
-        .as_deref()
-        .map(str::trim)
-        .filter(|url| !url.is_empty())
-}
-
 fn confirmed_banner_dates_path(args: &ServeArgs) -> Option<PathBuf> {
     args.confirmed_banner_dates_path
         .as_ref()
@@ -401,19 +375,18 @@ fn confirmed_banner_dates_path(args: &ServeArgs) -> Option<PathBuf> {
         })
 }
 
-async fn refresh_from_db(
-    pool: &PgPool,
+#[allow(non_snake_case)]
+async fn refreshFromGameVersion(
     master: &PathBuf,
     out: &PathBuf,
     write_json: bool,
     purge: bool,
 ) -> Result<bool> {
-    let master_path = master
-        .to_str()
-        .context("master path must be valid UTF-8 for the fetcher")?;
-    let master_updated = master_fetch::maybe_update_master_mdb(pool, master_path).await?;
-
-    if !master_updated {
+    let master_updated = master_fetch::maybeUpdateMasterMdb(master).await?;
+    let master_hash = hex::encode(Sha256::digest(std::fs::read(master)?));
+    let resources_match =
+        pipeline::read_manifest(out).is_ok_and(|manifest| manifest.master.sha256 == master_hash);
+    if !master_updated && resources_match {
         return Ok(false);
     }
 
@@ -432,7 +405,8 @@ async fn refresh_from_db(
     Ok(true)
 }
 
-fn spawn_refresh_loop(pool: PgPool, args: ServeArgs) {
+#[allow(non_snake_case)]
+fn spawnRefreshLoop(args: ServeArgs) {
     let interval_seconds = args.refresh_interval_seconds;
     let master = args.master;
     let data_dir = args.data_dir;
@@ -452,7 +426,7 @@ fn spawn_refresh_loop(pool: PgPool, args: ServeArgs) {
             interval.tick().await;
 
             if let Err(error) =
-                refresh_from_db(&pool, &master, &data_dir, write_json, purge_on_refresh).await
+                refreshFromGameVersion(&master, &data_dir, write_json, purge_on_refresh).await
             {
                 warn!(error = %error, "automatic master refresh failed");
             }
@@ -564,6 +538,7 @@ async fn regenerate_after_confirmed_banner_dates_change(
     out: &PathBuf,
     write_json: bool,
 ) -> Result<()> {
+    master_fetch::maybeUpdateMasterMdb(master).await?;
     let manifest = pipeline::generate_resources(master, out, write_json)?;
     info!(
         version = manifest.version,

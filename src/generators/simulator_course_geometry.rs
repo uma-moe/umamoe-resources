@@ -380,7 +380,7 @@ mod tests {
         let source = decode_bundled_source().unwrap();
 
         assert_eq!(source.schema_version, SCHEMA_VERSION);
-        assert_eq!(source.courses.len(), 108);
+        assert_eq!(source.courses.len(), 119);
         for course in source.courses {
             validate_source_course(&course).unwrap();
         }
