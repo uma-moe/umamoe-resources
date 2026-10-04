@@ -1,7 +1,10 @@
 import importlib.util
 import struct
+import sqlite3
 import sys
+import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 
 
@@ -14,6 +17,28 @@ SPEC.loader.exec_module(MODULE)
 
 
 class CourseGeometryExtractorTests(unittest.TestCase):
+    def test_master_input_includes_new_courses_and_excludes_only_unused_placeholders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "master.mdb"
+            Path(str(path) + ".version").write_text("1.35.2:10008010\n", encoding="utf-8")
+            with closing(sqlite3.connect(path)) as connection:
+                connection.executescript("""
+                    CREATE TABLE race_course_set (id INTEGER, race_track_id INTEGER, distance INTEGER, ground INTEGER, inout INTEGER);
+                    CREATE TABLE race (course_set INTEGER);
+                    INSERT INTO race_course_set VALUES
+                        (11201, 10201, 1000, 1, 1), (11202, 10201, 1400, 1, 1),
+                        (11301, 10103, 1400, 2, 1), (11504, 10105, 2000, 2, 1);
+                """)
+            document = MODULE.load_master_courses(path)
+            self.assertEqual(document["master_version"], "1.35.2:10008010")
+            self.assertEqual([course["course_id"] for course in document["courses"]], [11301, 11504])
+            self.assertEqual(document["courses"][0]["surface"], 2)
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("INSERT INTO race VALUES (11201)")
+                connection.commit()
+            with self.assertRaisesRegex(ValueError, "placeholders now appear"):
+                MODULE.load_master_courses(path)
+
     def test_source_asset_name_matches_decompiled_formatter(self):
         course = {
             "course_id": 10307,

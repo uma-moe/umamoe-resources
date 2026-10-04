@@ -8,8 +8,10 @@ import ctypes
 import gzip
 import json
 import math
+import sqlite3
 import struct
 import sys
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -145,7 +147,9 @@ def parse_args() -> argparse.Namespace:
         default="jp",
         help="Select the UmaViewer database key for the installed client.",
     )
-    parser.add_argument("--courses", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--courses", type=Path)
+    source.add_argument("--master", type=Path, help="Read every playable course directly from the current master, including courses not yet exported.")
     parser.add_argument("--out", required=True, type=Path)
     parser.add_argument(
         "--course-id",
@@ -163,6 +167,24 @@ def load_json(path: Path) -> Any:
             return json.load(source)
     with path.open("r", encoding="utf-8") as source:
         return json.load(source)
+
+
+def load_master_courses(path: Path) -> dict[str, Any]:
+    master_version = Path(str(path) + ".version").read_text(encoding="utf-8").strip()
+    if not master_version:
+        raise ValueError("master version marker is empty; run fetch-master first")
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True)) as connection:
+        used_placeholders = connection.execute(
+            "SELECT DISTINCT course_set FROM race WHERE course_set IN (11201, 11202)"
+        ).fetchall()
+        if used_placeholders:
+            raise ValueError(f"Longchamp placeholders now appear in races: {used_placeholders}")
+        connection.row_factory = sqlite3.Row
+        courses = [dict(row) for row in connection.execute(
+            "SELECT id AS course_id, race_track_id, distance, ground AS surface, inout AS course "
+            "FROM race_course_set WHERE id NOT IN (11201, 11202) ORDER BY id"
+        )]
+    return {"master_version": master_version, "courses": courses}
 
 
 def derive_database_key(base_key: bytes, database_key: bytes) -> bytes:
@@ -312,7 +334,7 @@ def main() -> int:
     )
     asset_base_key = bytes.fromhex(config["ABKeyText"])
 
-    courses_document = load_json(args.courses)
+    courses_document = load_master_courses(args.master) if args.master else load_json(args.courses)
     master_version = str(courses_document["master_version"])
     requested = set(args.course_id)
     courses = [

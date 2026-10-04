@@ -17,7 +17,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `generated-data/manifest.json` for frontend discovery
 - HTTP serving with CDN-friendly cache headers
 - Cloudflare purge hook for mutable `manifest` and `current` URLs
-- Existing `master_fetch.rs` integration for `master_versions` driven refreshes
+- Current Global game-version checks through `https://uma.moe/api/ver` before generation and while serving
 
 The next good port is `campaign-extract.py`. Full `db-convert.py`, tierlist precompute, and statistics are larger domain ports and should be moved after the pipeline shape is stable.
 
@@ -29,7 +29,7 @@ cargo run
 
 By default, the server generates resources from `master.mdb` into `generated-data`, then serves them at `127.0.0.1:3000`.
 
-If `DATABASE_URL` is set, the server also checks `master_versions` before startup and then keeps polling in the background. When the version changes, it downloads a fresh `master.mdb`, regenerates `generated-data`, and the HTTP server starts serving the refreshed assets automatically.
+The server always checks `https://uma.moe/api/ver` before startup and every 300 seconds while serving. When the current game version changes, it downloads and validates a fresh `master.mdb`, then regenerates resources. Version-check failures are errors; Postgres and `DATABASE_URL` are not required.
 
 Equivalent explicit command:
 
@@ -43,7 +43,7 @@ If you want mutable CDN URLs purged automatically after a background refresh:
 cargo run -- serve --purge-on-refresh
 ```
 
-To serve the existing `generated-data` directory without regenerating first:
+To reuse existing resources when they match the latest master (the live version check still runs):
 
 ```powershell
 cargo run -- serve --no-generate
@@ -329,24 +329,16 @@ generated-data/
 		skills.json.gz
 ```
 
-## Refresh From `master_versions`
+## Refresh From the Current Game Version
 
-The long-running server already supports this flow automatically when `DATABASE_URL` is set. The `refresh` command is still useful for one-shot maintenance runs.
-
-When `DATABASE_URL` points at the DB containing `master_versions`, this checks for a new app/resource version, downloads a fresh `master.mdb`, regenerates resources, and optionally purges Cloudflare current URLs.
-
-Copy `.env.example` to `.env` for local configuration. The checked-in example documents the Postgres, Cloudflare, public URL, and logging variables used by the CLI.
+The long-running server always checks the live Global game version. One-shot commands use the same check:
 
 ```powershell
-$env:DATABASE_URL="postgresql://user:pass@host:5432/db"
-$env:CLOUDFLARE_ZONE_ID="..."
-$env:CLOUDFLARE_API_TOKEN="..."
-$env:PUBLIC_BASE_URL="https://uma.moe"
-
+cargo run -- fetch-master --master master.mdb
 cargo run -- refresh --master master.mdb --out generated-data --purge
 ```
 
-If the master marker has not changed, regeneration is skipped.
+`generate` also checks the live version before reading the master. Refresh regenerates resources when the master changes or the manifest is missing or has a different master hash. The legacy `--database-url` option remains accepted for compatibility.
 
 ## Cache Strategy
 
@@ -381,7 +373,7 @@ Example request from Windows PowerShell:
 curl.exe -H "X-API-Key: local-dev-token" http://127.0.0.1:3000/resources/manifest.json
 ```
 
-If you want automatic `master_versions` refreshes inside Docker, set `RESOURCE_DATABASE_URL` in `.env` instead of `DATABASE_URL`. The hostname must be reachable from the container, so use `host.docker.internal` or another container name, not `127.0.0.1`.
+Docker also checks the current Global game version automatically; no Postgres connection is needed for master refresh.
 
 ## Docker Deployment
 
@@ -426,7 +418,7 @@ Required GitHub secrets:
 
 Manual remote `env` files should contain the normal application env values only:
 
-- `DATABASE_URL`
+- `DATABASE_URL` (legacy compatibility; optional)
 - `MASTER_REFRESH_INTERVAL_SECONDS`
 - `PURGE_ON_REFRESH`
 - `CONFIRMED_BANNER_DATES_URL` if using a remote CSV instead of the mounted `/opt` file
@@ -438,14 +430,14 @@ Manual remote `env` files should contain the normal application env values only:
 
 Recommended environment-specific values:
 
-- Beta `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://beta.uma.moe`
-- Production `env`: `DATABASE_URL=...`, `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://uma.moe`
+- Beta `env`: `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://beta.uma.moe`
+- Production `env`: `MASTER_REFRESH_INTERVAL_SECONDS=300`, `PURGE_ON_REFRESH=true`, `PUBLIC_BASE_URL=https://uma.moe`
 
 Remote host requirements:
 
 - Docker installed
 - A user with permission to run `docker`
 - Enough temporary disk space under `/tmp/umamoe-resources-images` for the uploaded image archive during deployment
-- Network access from the container to the Postgres instance referenced by `DATABASE_URL`
+- Network access from the container to `https://uma.moe/api/ver` and the Global game asset CDN
 
 The workflow mounts the named Docker volume at `/data`, so refreshed `master.mdb` and generated resource artifacts persist across container replacements.

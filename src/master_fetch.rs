@@ -1,37 +1,28 @@
+#![allow(non_snake_case)]
+
 use anyhow::{bail, Context, Result};
 use data_encoding::BASE32_NOPAD;
 use sha1::Digest;
-use sqlx::PgPool;
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tracing::info;
 
-const BASE_URL: &str = "https://assets-umamusume-en.akamaized.net";
-const LZ4_FRAME_MAGIC: [u8; 4] = [0x04, 0x22, 0x4D, 0x18];
-const BSV_MAGIC: u8 = 0xBF;
-const BSV_FORMAT_VERSION: u8 = 1;
-const BSV_FORMAT_ANONYMOUS: u8 = 1;
-const USER_AGENT: &str = "UnityPlayer/2022.3.46f1 (UnityWebRequest/1.0, libcurl/8.5.0-DEV)";
-const PLATFORM: &str = "Windows";
-
-// ---------------------------------------------------------------------------
-// BSV binary format parser
-// ---------------------------------------------------------------------------
-
-enum BsvValue {
-    Text(String),
-    Int(u64),
-}
+#[path = "types/master_fetch.rs"]
+mod types;
+use types::{
+    BsvParser, BsvValue, GameVersion, ManifestEntry, BASE_URL, BSV_FORMAT_ANONYMOUS,
+    BSV_FORMAT_VERSION, BSV_MAGIC, LZ4_FRAME_MAGIC, PLATFORM, USER_AGENT, VERSION_URL,
+};
 
 impl BsvValue {
-    fn as_str(&self) -> Result<&str> {
+    fn asStr(&self) -> Result<&str> {
         match self {
             BsvValue::Text(s) => Ok(s.as_str()),
             _ => bail!("Expected string BSV value"),
         }
     }
 
-    fn as_u64(&self) -> Result<u64> {
+    fn asU64(&self) -> Result<u64> {
         match self {
             BsvValue::Int(v) => Ok(*v),
             _ => bail!("Expected integer BSV value"),
@@ -39,17 +30,12 @@ impl BsvValue {
     }
 }
 
-struct BsvParser<'a> {
-    data: &'a [u8],
-    offset: usize,
-}
-
 impl<'a> BsvParser<'a> {
     fn new(data: &'a [u8]) -> Self {
         Self { data, offset: 0 }
     }
 
-    fn read_vlq(&mut self) -> u64 {
+    fn readVlq(&mut self) -> u64 {
         let mut value: u64 = 0;
         let mut bytes_read = 0;
         while bytes_read < 8 && self.offset < self.data.len() {
@@ -64,7 +50,7 @@ impl<'a> BsvParser<'a> {
         value
     }
 
-    fn read_unum(&mut self, num_bytes: usize) -> Result<u64> {
+    fn readUnum(&mut self, num_bytes: usize) -> Result<u64> {
         if self.offset + num_bytes > self.data.len() {
             bail!(
                 "Unexpected end of BSV data reading {} bytes at offset {}",
@@ -80,7 +66,7 @@ impl<'a> BsvParser<'a> {
         Ok(value)
     }
 
-    fn read_text(&mut self) -> String {
+    fn readText(&mut self) -> String {
         let start = self.offset;
         while self.offset < self.data.len() && self.data[self.offset] != 0 {
             self.offset += 1;
@@ -92,7 +78,7 @@ impl<'a> BsvParser<'a> {
         text
     }
 
-    fn read_byte(&mut self) -> Result<u8> {
+    fn readByte(&mut self) -> Result<u8> {
         if self.offset >= self.data.len() {
             bail!("Unexpected end of BSV data");
         }
@@ -102,7 +88,7 @@ impl<'a> BsvParser<'a> {
     }
 }
 
-fn parse_anonymous_bsv(data: &[u8]) -> Result<Vec<Vec<BsvValue>>> {
+fn parseAnonymousBsv(data: &[u8]) -> Result<Vec<Vec<BsvValue>>> {
     if data.len() < 2 {
         bail!("BSV data too short");
     }
@@ -128,17 +114,17 @@ fn parse_anonymous_bsv(data: &[u8]) -> Result<Vec<Vec<BsvValue>>> {
     let mut parser = BsvParser::new(data);
     parser.offset = 2;
 
-    parser.read_unum(2)?; // header_size
-    let row_count = parser.read_vlq() as usize;
-    parser.read_vlq(); // max_row_size
-    parser.read_vlq(); // schema_version
-    let schema_count = parser.read_vlq() as usize;
+    parser.readUnum(2)?; // header_size
+    let row_count = parser.readVlq() as usize;
+    parser.readVlq(); // max_row_size
+    parser.readVlq(); // schema_version
+    let schema_count = parser.readVlq() as usize;
 
     let mut schemas: Vec<(u8, Option<usize>)> = Vec::with_capacity(schema_count);
     for _ in 0..schema_count {
-        let type_byte = parser.read_byte()?;
+        let type_byte = parser.readByte()?;
         let fixed_size = if (type_byte.wrapping_sub(0x21) & 0xCF) == 0 && type_byte != 0x51 {
-            Some(parser.read_vlq() as usize)
+            Some(parser.readVlq() as usize)
         } else {
             None
         };
@@ -151,15 +137,15 @@ fn parse_anonymous_bsv(data: &[u8]) -> Result<Vec<Vec<BsvValue>>> {
         for &(type_byte, fixed_size) in &schemas {
             let base_type = type_byte & 0xF0;
             if type_byte == 0x40 || base_type == 0x40 {
-                row.push(BsvValue::Text(parser.read_text()));
+                row.push(BsvValue::Text(parser.readText()));
             } else if type_byte == 0x11
                 || type_byte == 0x12
                 || type_byte == 0x13
                 || base_type == 0x10
             {
-                row.push(BsvValue::Int(parser.read_vlq()));
+                row.push(BsvValue::Int(parser.readVlq()));
             } else if let Some(size) = fixed_size {
-                row.push(BsvValue::Int(parser.read_unum(size)?));
+                row.push(BsvValue::Int(parser.readUnum(size)?));
             } else {
                 bail!("Unknown BSV type: 0x{:02X}", type_byte);
             }
@@ -170,20 +156,7 @@ fn parse_anonymous_bsv(data: &[u8]) -> Result<Vec<Vec<BsvValue>>> {
     Ok(rows)
 }
 
-// ---------------------------------------------------------------------------
-// Manifest parsing
-// ---------------------------------------------------------------------------
-
-struct ManifestEntry {
-    name: String,
-    #[allow(dead_code)]
-    size: u64,
-    #[allow(dead_code)]
-    checksum: u64,
-    hname: String,
-}
-
-fn calc_hname(checksum: u64, size: u64, name: &[u8]) -> String {
+fn calcHname(checksum: u64, size: u64, name: &[u8]) -> String {
     let mut header = [0u8; 16];
     header[0..8].copy_from_slice(&checksum.to_be_bytes());
     header[8..16].copy_from_slice(&size.to_be_bytes());
@@ -196,15 +169,15 @@ fn calc_hname(checksum: u64, size: u64, name: &[u8]) -> String {
     BASE32_NOPAD.encode(&hash)
 }
 
-fn parse_root_manifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
-    let rows = parse_anonymous_bsv(data)?;
+fn parseRootManifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
+    let rows = parseAnonymousBsv(data)?;
     let mut entries = Vec::new();
     for row in &rows {
         if row.len() >= 3 {
-            let name = row[0].as_str()?.to_string();
-            let size = row[1].as_u64()?;
-            let checksum = row[2].as_u64()?;
-            let hname = calc_hname(checksum, size, name.as_bytes());
+            let name = row[0].asStr()?.to_string();
+            let size = row[1].asU64()?;
+            let checksum = row[2].asU64()?;
+            let hname = calcHname(checksum, size, name.as_bytes());
             entries.push(ManifestEntry {
                 name,
                 size,
@@ -216,19 +189,19 @@ fn parse_root_manifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
     Ok(entries)
 }
 
-fn parse_content_manifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
-    let rows = parse_anonymous_bsv(data)?;
+fn parseContentManifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
+    let rows = parseAnonymousBsv(data)?;
     let mut entries = Vec::new();
     for row in &rows {
         let (name, size, checksum) = if row.len() >= 7 {
-            (row[0].as_str()?, row[4].as_u64()?, row[5].as_u64()?)
+            (row[0].asStr()?, row[4].asU64()?, row[5].asU64()?)
         } else if row.len() >= 3 {
-            (row[0].as_str()?, row[1].as_u64()?, row[2].as_u64()?)
+            (row[0].asStr()?, row[1].asU64()?, row[2].asU64()?)
         } else {
             continue;
         };
         let name = name.to_string();
-        let hname = calc_hname(checksum, size, name.as_bytes());
+        let hname = calcHname(checksum, size, name.as_bytes());
         entries.push(ManifestEntry {
             name,
             size,
@@ -243,7 +216,7 @@ fn parse_content_manifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
 // LZ4 decompression
 // ---------------------------------------------------------------------------
 
-fn decompress_lz4(data: &[u8]) -> Result<Vec<u8>> {
+fn decompressLz4(data: &[u8]) -> Result<Vec<u8>> {
     if data.len() < 4 {
         bail!("Data too short for LZ4");
     }
@@ -261,7 +234,7 @@ fn decompress_lz4(data: &[u8]) -> Result<Vec<u8>> {
     }
 }
 
-fn is_lz4_compressed(data: &[u8]) -> bool {
+fn isLz4Compressed(data: &[u8]) -> bool {
     data.len() >= 4 && data[..4] == LZ4_FRAME_MAGIC
 }
 
@@ -269,14 +242,14 @@ fn is_lz4_compressed(data: &[u8]) -> bool {
 // HTTP download + manifest chain
 // ---------------------------------------------------------------------------
 
-fn root_manifest_url(app_ver: &str) -> String {
+fn rootManifestUrl(app_ver: &str) -> String {
     format!(
         "{}/dl/vertical/{}/manifests/manifestdat/root.manifest.bsv.lz4",
         BASE_URL, app_ver
     )
 }
 
-fn manifest_url(hname: &str) -> String {
+fn manifestUrl(hname: &str) -> String {
     format!(
         "{}/dl/vertical/resources/Manifest/{}/{}",
         BASE_URL,
@@ -285,7 +258,7 @@ fn manifest_url(hname: &str) -> String {
     )
 }
 
-fn generic_url(hname: &str) -> String {
+fn genericUrl(hname: &str) -> String {
     format!(
         "{}/dl/vertical/resources/Generic/{}/{}",
         BASE_URL,
@@ -312,14 +285,14 @@ async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
     Ok(resp.bytes().await?.to_vec())
 }
 
-async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<()> {
+async fn fetchMasterMdb(resource_version: &str, output_path: &Path) -> Result<()> {
     let client = reqwest::Client::new();
 
     // Step 1: Root manifest
     info!("Fetching root manifest for version {}...", resource_version);
-    let root_data = download(&client, &root_manifest_url(resource_version)).await?;
-    let root_data = decompress_lz4(&root_data)?;
-    let root_entries = parse_root_manifest(&root_data)?;
+    let root_data = download(&client, &rootManifestUrl(resource_version)).await?;
+    let root_data = decompressLz4(&root_data)?;
+    let root_entries = parseRootManifest(&root_data)?;
 
     let platform_entry = root_entries
         .iter()
@@ -328,13 +301,13 @@ async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<(
 
     // Step 2: Platform manifest
     info!("Fetching {} platform manifest...", PLATFORM);
-    let platform_data = download(&client, &manifest_url(&platform_entry.hname)).await?;
-    let platform_data = if is_lz4_compressed(&platform_data) {
-        decompress_lz4(&platform_data)?
+    let platform_data = download(&client, &manifestUrl(&platform_entry.hname)).await?;
+    let platform_data = if isLz4Compressed(&platform_data) {
+        decompressLz4(&platform_data)?
     } else {
         platform_data
     };
-    let platform_entries = parse_content_manifest(&platform_data)?;
+    let platform_entries = parseContentManifest(&platform_data)?;
 
     let master_entry = platform_entries
         .iter()
@@ -343,13 +316,13 @@ async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<(
 
     // Step 3: Master manifest
     info!("Fetching master manifest...");
-    let master_data = download(&client, &manifest_url(&master_entry.hname)).await?;
-    let master_data = if is_lz4_compressed(&master_data) {
-        decompress_lz4(&master_data)?
+    let master_data = download(&client, &manifestUrl(&master_entry.hname)).await?;
+    let master_data = if isLz4Compressed(&master_data) {
+        decompressLz4(&master_data)?
     } else {
         master_data
     };
-    let master_entries = parse_content_manifest(&master_data)?;
+    let master_entries = parseContentManifest(&master_data)?;
 
     let mdb_entry = master_entries
         .iter()
@@ -358,15 +331,38 @@ async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<(
 
     // Step 4: Download and decompress master.mdb
     info!("Downloading master.mdb...");
-    let mdb_compressed = download(&client, &generic_url(&mdb_entry.hname)).await?;
-    let mdb_data = decompress_lz4(&mdb_compressed)?;
+    let mdb_compressed = download(&client, &genericUrl(&mdb_entry.hname)).await?;
+    let mdb_data = decompressLz4(&mdb_compressed)?;
 
-    if let Some(parent) = Path::new(output_path).parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create parent directory for {}", output_path))?;
+    anyhow::ensure!(
+        mdb_data.starts_with(b"SQLite format 3\0"),
+        "downloaded master is not a SQLite database"
+    );
+    if let Some(parent) = output_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create parent directory for {}",
+                output_path.display()
+            )
+        })?;
     }
-    std::fs::write(output_path, &mdb_data)
-        .with_context(|| format!("failed to write master.mdb to {}", output_path))?;
+    let pending_path = output_path.with_extension("mdb.download");
+    std::fs::write(&pending_path, &mdb_data)
+        .with_context(|| format!("failed to write master.mdb to {}", pending_path.display()))?;
+    {
+        let connection = rusqlite::Connection::open_with_flags(
+            &pending_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )?;
+        let course_count: u64 =
+            connection.query_row("SELECT COUNT(*) FROM race_course_set", [], |row| row.get(0))?;
+        anyhow::ensure!(course_count > 0, "downloaded master has no race courses");
+    }
+    std::fs::rename(&pending_path, output_path)
+        .with_context(|| format!("failed to replace master at {}", output_path.display()))?;
     info!(
         "Saved master.mdb: {} bytes ({:.2} MB)",
         mdb_data.len(),
@@ -376,39 +372,21 @@ async fn fetch_master_mdb(resource_version: &str, output_path: &str) -> Result<(
     Ok(())
 }
 
-/// Check `master_versions` table for a newer app_version or resource_version and re-fetch
-/// master.mdb if needed. Returns true if the file was updated.
-pub async fn maybe_update_master_mdb(pool: &PgPool, mdb_path: &str) -> Result<bool> {
-    let row: Option<(String, String)> = match sqlx::query_as(
-        "SELECT app_version, resource_version FROM master_versions ORDER BY updated_at DESC LIMIT 1",
-    )
-    .fetch_optional(pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => {
-            info!(
-                "Could not query master_versions (table may not exist yet): {}",
-                e
-            );
-            return Ok(false);
-        }
-    };
+/// Check the current Global game version on every call. Failed checks are
+/// errors, so an old local marker cannot be mistaken for the current version.
+pub async fn maybeUpdateMasterMdb(mdb_path: &Path) -> Result<bool> {
+    let version = fetchGameVersion(VERSION_URL).await?;
+    let combined = versionMarker(&version)?;
 
-    let Some((app_version, resource_version)) = row else {
-        info!("No version in master_versions table, skipping master.mdb update");
-        return Ok(false);
-    };
-
-    let combined = format!("{}:{}", app_version.trim(), resource_version.trim());
-
-    // Compare with version marker file next to master.mdb
-    let marker_path = format!("{}.version", mdb_path);
+    // Compare with version marker file next to master.mdb.
+    let mut marker_name = mdb_path.as_os_str().to_os_string();
+    marker_name.push(".version");
+    let marker_path = PathBuf::from(marker_name);
     let current = std::fs::read_to_string(&marker_path).unwrap_or_default();
-    if current.trim() == combined {
+    if current.trim() == combined && mdb_path.is_file() {
         info!(
             "master.mdb is up to date (app_version: {}, resource_version: {})",
-            app_version, resource_version
+            version.app_version, version.resource_version
         );
         return Ok(false);
     }
@@ -418,9 +396,89 @@ pub async fn maybe_update_master_mdb(pool: &PgPool, mdb_path: &str) -> Result<bo
         current.trim(),
         combined
     );
-    fetch_master_mdb(&resource_version, mdb_path).await?;
-    std::fs::write(&marker_path, &combined)
-        .with_context(|| format!("failed to write master version marker to {}", marker_path))?;
-
+    fetchMasterMdb(version.resource_version.trim(), mdb_path).await?;
+    std::fs::write(&marker_path, &combined).with_context(|| {
+        format!(
+            "failed to write master version marker to {}",
+            marker_path.display()
+        )
+    })?;
     Ok(true)
+}
+
+async fn fetchGameVersion(url: &str) -> Result<GameVersion> {
+    let version: GameVersion = reqwest::Client::new()
+        .get(url)
+        .header("Cache-Control", "no-cache")
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .await
+        .context("failed to check current Global game version")?
+        .error_for_status()
+        .context("Global game version endpoint returned an error")?
+        .json()
+        .await
+        .context("invalid Global game version response")?;
+    versionMarker(&version)?;
+    Ok(version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn checksVersionEachTimeAndRejectsFailedOrInvalidResponses() {
+        use axum::{routing::get, Json, Router};
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let app = Router::new()
+            .route("/version", get(move || {
+                let observed = observed.clone();
+                async move {
+                    let call = observed.fetch_add(1, Ordering::SeqCst);
+                    Json(serde_json::json!({"app_version": "1.35.2", "resource_version": (10008010 + call).to_string()}))
+                }
+            }))
+            .route("/invalid", get(|| async { Json(serde_json::json!({"app_version": "", "resource_version": "../old"})) }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let url = format!("http://{address}/version");
+        assert_eq!(
+            versionMarker(&fetchGameVersion(&url).await.unwrap()).unwrap(),
+            "1.35.2:10008010"
+        );
+        assert_eq!(
+            versionMarker(&fetchGameVersion(&url).await.unwrap()).unwrap(),
+            "1.35.2:10008011"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(fetchGameVersion(&format!("http://{address}/invalid"))
+            .await
+            .is_err());
+        assert!(fetchGameVersion(&format!("http://{address}/missing"))
+            .await
+            .is_err());
+        server.abort();
+    }
+}
+
+fn versionMarker(version: &GameVersion) -> Result<String> {
+    let app_version = version.app_version.trim();
+    let resource_version = version.resource_version.trim();
+    anyhow::ensure!(
+        app_version.split('.').count() == 3
+            && app_version
+                .split('.')
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+            && !resource_version.is_empty()
+            && resource_version.bytes().all(|byte| byte.is_ascii_digit()),
+        "invalid current Global game version"
+    );
+    Ok(format!("{app_version}:{resource_version}"))
 }
