@@ -49,7 +49,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 36;
+const TIMELINE_ALGORITHM_VERSION: u8 = 37;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -655,6 +655,7 @@ pub fn generate(
             .filter_map(|banner| {
                 additional_gacha_event(
                     banner,
+                    &character_names,
                     &support_names,
                     &support_card_names,
                     &confirmed_dates,
@@ -904,6 +905,7 @@ fn support_event(
 
 fn additional_gacha_event(
     banner: &AdditionalGachaBanner,
+    character_names: &BTreeMap<i64, String>,
     support_names: &BTreeMap<i64, String>,
     support_card_names: &BTreeMap<i64, String>,
     confirmed_dates: &ConfirmedDateLookup,
@@ -949,19 +951,27 @@ fn additional_gacha_event(
         )
         .then_some(3)
     });
-    let mut related_support_cards = banner
-        .pickup_card_ids
-        .iter()
-        .map(|card_id| support_name_for_card(*card_id, support_names))
-        .collect::<Vec<_>>();
-    if related_support_cards.is_empty() {
+    let mut related_support_cards = if card_type == "support" {
+        banner
+            .pickup_card_ids
+            .iter()
+            .map(|card_id| support_name_for_card(*card_id, support_names))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    if card_type == "support" && related_support_cards.is_empty() {
         related_support_cards = banner.related_support_names.clone();
     }
-    let related_support_card_names = banner
-        .pickup_card_ids
-        .iter()
-        .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
-        .collect::<Vec<_>>();
+    let related_support_card_names = if card_type == "support" {
+        banner
+            .pickup_card_ids
+            .iter()
+            .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
     let mut tags = vec![tag, "umapyoi-news"];
     if banner.is_rerun {
         tags.push("rerun-banner");
@@ -969,7 +979,15 @@ fn additional_gacha_event(
     if banner.is_scenario {
         tags.push("scenario-banner");
     }
-    let related_characters = banner.related_character_names.clone();
+    let related_characters = if card_type == "character" && !banner.pickup_card_ids.is_empty() {
+        banner
+            .pickup_card_ids
+            .iter()
+            .map(|card_id| character_name_for_card(*card_id, character_names))
+            .collect()
+    } else {
+        banner.related_character_names.clone()
+    };
     let display_names = match card_type {
         "character" => related_characters.clone(),
         "support" => related_support_cards.clone(),
@@ -1017,6 +1035,12 @@ fn additional_gacha_title(banner: &AdditionalGachaBanner, card_type: &str) -> St
         Some(15) => "Select Pickup Stamp Sheet".to_string(),
         Some(14) => "Select Step-Up".to_string(),
         Some(12) => "Pick 2 Support Card Gacha".to_string(),
+        Some(5)
+            if card_type == "character"
+                && banner.title.to_lowercase().contains("summer vacation") =>
+        {
+            "★3 Guaranteed Summer Vacation".to_string()
+        }
         Some(5) if banner.is_scenario && card_type == "support" => {
             "SSR Guaranteed New Training Scenario".to_string()
         }
@@ -6275,6 +6299,47 @@ mod tests {
         assert_eq!(events[1].title, "SSR Support Select Step-Up");
         assert_eq!(events[1].gacha_ids, vec![50078, 50079, 50080, 50081, 50082]);
         assert!(events[1].banner_duration_days > 30);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn laterPaidBannersRetainCardPoolTitles() {
+        let names = super::common::read_character_names().unwrap();
+        let character_names = names
+            .as_object()
+            .unwrap()
+            .iter()
+            .filter_map(|(id, entry)| Some((id.parse().ok()?, entry["name"].as_str()?.to_string())))
+            .collect::<BTreeMap<_, _>>();
+        let support_names = load_umapyoi_support_character_names(&character_names).unwrap();
+        let banners = crate::generators::jp_events::additional_gacha_banner_events().unwrap();
+        for (id, expected, count) in [
+            (50224, "Maruzensky + 85 more", 86),
+            (50225, "Hokko Tarumae + 71 more", 72),
+            (50226, "Neo Universe + 12 more", 13),
+            (50228, "Orfevre + 14 more", 15),
+            (50235, "★3 Guaranteed Summer Vacation", 0),
+        ] {
+            let banner = banners.iter().find(|banner| banner.gacha_id == id).unwrap();
+            let event = super::additional_gacha_event(
+                banner,
+                &character_names,
+                &support_names,
+                &BTreeMap::new(),
+                &empty_confirmed_date_lookup(),
+                &[],
+                FALLBACK_ACCELERATION_RATE,
+            )
+            .unwrap();
+            assert_eq!(event.title, expected);
+            assert_eq!(event.pickup_card_ids.len(), count);
+            assert_eq!(event.gacha_type, Some(5));
+            if event.card_type.as_deref() == Some("character") {
+                assert!(event.related_support_cards.is_empty());
+            } else {
+                assert!(event.related_characters.is_empty());
+            }
+        }
     }
 
     fn empty_confirmed_date_lookup() -> ConfirmedDateLookup {

@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -8,7 +8,7 @@ const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json")
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
-const ALGORITHM_VERSION: u8 = 8;
+const ALGORITHM_VERSION: u8 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -82,7 +82,7 @@ pub fn generate() -> Result<Value> {
     let mut archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
         .context("failed to parse bundled umapyoi archive")?;
     let known_ids = known_timeline_gacha_ids()?;
-    let candidates = additional_gacha_banners(&archive, &known_ids);
+    let candidates = additional_gacha_banners(&archive, &known_ids)?;
     archive
         .as_object_mut()
         .context("bundled umapyoi archive must be a JSON object")?
@@ -214,7 +214,7 @@ pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
     let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
         .context("failed to parse bundled umapyoi archive")?;
     let known_ids = known_timeline_gacha_ids()?;
-    let candidates = additional_gacha_banners(&archive, &known_ids);
+    let candidates = additional_gacha_banners(&archive, &known_ids)?;
     Ok(candidates
         .as_array()
         .into_iter()
@@ -273,6 +273,7 @@ pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
     digest.update(UMAPYOI_ARCHIVE);
+    digest.update(include_bytes!("../jp_data/planner_gacha_rates.json"));
     digest.update([ALGORITHM_VERSION]);
     hex::encode(digest.finalize())
 }
@@ -745,7 +746,10 @@ fn known_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
     Ok(ids)
 }
 
-fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value {
+fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Result<Value> {
+    let rates: Value =
+        serde_json::from_slice(include_bytes!("../jp_data/planner_gacha_rates.json"))
+            .context("failed to parse bundled JP gacha pools")?;
     let mut candidates = BTreeMap::<i64, Value>::new();
     let supports = archive
         .get("supports")
@@ -789,9 +793,32 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
                 .unwrap_or_default();
             let section = gacha_section(post, gacha_id);
             let kind = inferred_gacha_kind(gacha_id, &title_lower, section.as_ref());
-            let card_type = inferred_card_type(kind, section.as_ref());
-            let gacha_type = inferred_gacha_type(&title_lower);
-            let pickup_card_ids = if kind == "support_card_banner" {
+            let pool = (kind == "paid_banner")
+                .then(|| rates.get(gacha_id.to_string()))
+                .flatten();
+            let card_type = inferred_card_type(kind, section.as_ref()).or_else(|| {
+                match pool?.get("card_type")?.as_i64()? {
+                    1 => Some("character"),
+                    2 => Some("support"),
+                    _ => None,
+                }
+            });
+            let gacha_type = pool
+                .and_then(|pool| pool.get("gacha_type"))
+                .and_then(Value::as_i64)
+                .or_else(|| {
+                    let inferred = inferred_gacha_type(&title_lower);
+                    // Combined Twinkle notices describe a separate guaranteed paid gacha.
+                    if kind == "paid_banner"
+                        && inferred == Some(11)
+                        && title_lower.contains("guaranteed")
+                    {
+                        Some(5)
+                    } else {
+                        inferred
+                    }
+                });
+            let mut pickup_card_ids = if kind == "support_card_banner" {
                 support_card_ids_in_post(post, supports)
             } else {
                 Vec::new()
@@ -800,6 +827,23 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
                 .as_ref()
                 .map(|section| names_from_gacha_section(&section.body, &section.card_type))
                 .unwrap_or_default();
+            if kind == "paid_banner" {
+                pickup_card_ids = pool
+                    .and_then(|pool| pool.get("pickups"))
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|pickup| pickup.get("pickup_id")?.as_i64())
+                    .collect();
+                if pickup_card_ids.is_empty()
+                    && section_names.is_empty()
+                    && card_type == Some("support")
+                {
+                    if let Some(section) = &section {
+                        pickup_card_ids = supportPoolFromSection(&section.body, supports);
+                    }
+                }
+            }
             let related_character_names = if card_type == Some("character") {
                 section_names.clone()
             } else {
@@ -840,7 +884,7 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Value
             }
         }
     }
-    Value::Array(candidates.into_values().collect())
+    Ok(Value::Array(candidates.into_values().collect()))
 }
 
 #[derive(Debug)]
@@ -870,6 +914,11 @@ fn gacha_section(post: &Value, gacha_id: i64) -> Option<GachaSection> {
         .find("<h2")
         .map(|offset| body_start + offset)
         .unwrap_or(message.len());
+    let body_end = message[body_start..body_end]
+        .find("gacha_banner_")
+        .and_then(|offset| message[body_start..body_start + offset].rfind("<figure"))
+        .map(|offset| body_start + offset)
+        .unwrap_or(body_end);
     Some(GachaSection {
         card_type: card_type.to_string(),
         body: message[body_start..body_end].to_string(),
@@ -932,11 +981,12 @@ fn names_from_gacha_section(body: &str, card_type: &str) -> Vec<String> {
     for line in text.lines() {
         let line = line.trim().trim_start_matches(['・', '■', '●', ' ']).trim();
         let is_candidate = if card_type == "character" {
-            line.starts_with('★') || line.starts_with('☆')
+            line.starts_with('★') || line.starts_with('☆') || line.starts_with('[')
         } else {
-            ["SSR ", "SR ", "R "]
-                .into_iter()
-                .any(|rarity| line.starts_with(rarity))
+            line.starts_with('[')
+                || ["SSR ", "SR ", "R "]
+                    .into_iter()
+                    .any(|rarity| line.starts_with(rarity))
         };
         if !is_candidate {
             continue;
@@ -947,17 +997,95 @@ fn names_from_gacha_section(body: &str, card_type: &str) -> Vec<String> {
             .trim_start_matches("SR")
             .trim_start_matches('R')
             .trim();
-        let name = without_rarity
-            .rfind(']')
-            .map(|index| without_rarity[index + 1..].trim())
-            .filter(|name| !name.is_empty())
-            .unwrap_or(without_rarity)
+        // A card entry has an outfit/title in brackets, followed by its name.
+        // Prose such as "SSR support cards are only available ..." is not a card.
+        let Some((_, name)) = without_rarity.split_once(']') else {
+            continue;
+        };
+        if !without_rarity.contains('[') {
+            continue;
+        }
+        let name = name
+            .trim()
             .trim_matches(|character: char| character == '・' || character.is_whitespace());
+        if name.contains('×') || name.to_lowercase().contains(" pieces") {
+            continue;
+        }
         if !name.is_empty() && !names.iter().any(|existing| existing == name) {
             names.push(name.to_string());
         }
     }
     names
+}
+
+#[allow(non_snake_case)]
+fn supportPoolFromSection(body: &str, supports: &[Value]) -> Vec<i64> {
+    let text = html_to_text(body, "\n");
+    let sentence = text.lines().next().unwrap_or_default().to_lowercase();
+    if !sentence.contains("support card") || !sentence.contains("released") {
+        return Vec::new();
+    }
+    let (start, end) = if let Some((_, range)) = sentence.split_once("between ") {
+        let Some((start, end)) = range.split_once(" and ") else {
+            return Vec::new();
+        };
+        let Some(start) = newsPoolDate(start) else {
+            return Vec::new();
+        };
+        (Some(start), newsPoolDate(end))
+    } else if sentence.contains("candidates") {
+        (
+            None,
+            sentence
+                .split_once("through ")
+                .and_then(|(_, end)| newsPoolDate(end)),
+        )
+    } else {
+        return Vec::new();
+    };
+    let Some(end) = end else {
+        return Vec::new();
+    };
+    let specialty = ["Speed", "Stamina", "Power", "Guts", "Wisdom"]
+        .into_iter()
+        .find(|kind| {
+            let kind = kind.to_lowercase();
+            sentence.contains(&format!("{kind}-type"))
+                || sentence.contains(&format!("{kind} type"))
+                || (kind == "guts" && sentence.contains("gut-type"))
+        });
+    let mut ids = supports
+        .iter()
+        .filter_map(|support| {
+            let raw = support.get("raw")?;
+            let date = DateTime::from_timestamp(raw.get("start_date")?.as_i64()?, 0)?.date_naive();
+            (raw.get("rarity")?.as_i64()? == 3
+                && start.is_none_or(|start| date >= start)
+                && date <= end
+                && specialty
+                    .is_none_or(|kind| raw.get("type").and_then(Value::as_str) == Some(kind)))
+            .then(|| support.get("support_id")?.as_i64())
+            .flatten()
+        })
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+#[allow(non_snake_case)]
+fn newsPoolDate(value: &str) -> Option<NaiveDate> {
+    let words = value.split_whitespace().take(3).collect::<Vec<_>>();
+    for length in 1..=words.len() {
+        let date = words[..length].join(" ");
+        let date = date.trim_end_matches(|c: char| !c.is_ascii_digit());
+        for format in ["%m/%d/%Y", "%Y/%m/%d", "%B %d, %Y"] {
+            if let Ok(date) = NaiveDate::parse_from_str(date, format) {
+                return Some(date);
+            }
+        }
+    }
+    None
 }
 
 fn inferred_gacha_type(title: &str) -> Option<i64> {
@@ -1116,6 +1244,54 @@ mod tests {
         let banners = super::additional_gacha_banner_events()
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn extractsCardListsWithoutTreatingRestrictionsOrRewardsAsNames() {
+        let names = super::names_from_gacha_section(
+            "SSR support cards are only available for Wisdom-type cards.<br>\
+             [Title One] Air Groove<br>SSR [Title Two] Tokai Teio<br>\
+             [Title One] Air Groove Pieces ×90<br>",
+            "support",
+        );
+        assert_eq!(names, ["Air Groove", "Tokai Teio"]);
+        let banners = super::additional_gacha_banner_events().unwrap();
+        for (id, first) in [(50237, "Satono Diamond"), (50238, "Air Groove")] {
+            let banner = banners.iter().find(|banner| banner.gacha_id == id).unwrap();
+            assert_eq!(banner.related_support_names.len(), 8);
+            assert_eq!(banner.related_support_names[0], first);
+        }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn derivesRestrictedSupportPoolsFromReleaseDatesAndSpecialty() {
+        let supports = serde_json::json!([
+            {"support_id": 30001, "raw": {"rarity": 3, "type": "Power", "start_date": 1704067200}},
+            {"support_id": 30002, "raw": {"rarity": 3, "type": "Power", "start_date": 1774915200}},
+            {"support_id": 30003, "raw": {"rarity": 3, "type": "Power", "start_date": 1777593600}},
+            {"support_id": 30004, "raw": {"rarity": 3, "type": "Guts", "start_date": 1704067200}},
+            {"support_id": 20001, "raw": {"rarity": 2, "type": "Power", "start_date": 1704067200}},
+            {"support_id": 30005, "raw": {"rarity": 3, "type": "Power", "start_date": 1672531200}}
+        ]);
+        for range in [
+            "1/1/2024 and 4/30/2026",
+            "January 1, 2024, and April 30, 2026",
+        ] {
+            let body = format!("Only Power-type Support Cards released in gachas held between {range} will appear as SSR Support Cards.");
+            assert_eq!(
+                super::supportPoolFromSection(&body, supports.as_array().unwrap()),
+                [30001, 30002]
+            );
+        }
+        assert_eq!(super::supportPoolFromSection("SSR support cards released in gachas held between 1/1/2024 and 2026/4/30 are limited to gut-type support cards.", supports.as_array().unwrap()), [30004]);
+        assert_eq!(super::supportPoolFromSection("You can select 10 from the SSR Support Card Candidates released in gachas held through April 30, 2026.", supports.as_array().unwrap()), [30001, 30002, 30004, 30005]);
+        assert!(super::supportPoolFromSection(
+            "Only SSR Support Cards will appear.",
+            supports.as_array().unwrap()
+        )
+        .is_empty());
     }
 
     #[test]
