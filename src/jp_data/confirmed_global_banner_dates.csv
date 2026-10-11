@@ -16,10 +16,8 @@
 # Paid date rows are ignored; paid predictions use confirmed character/support releases.
 # Paid hidden rows still apply; actual Global game-data confirmations remain valid.
 #
-# Schedule months are closed automatically. If this file contains any timeline
-# entry in a global month, the predictor assumes that month was published as a
-# complete monthly schedule and will not place unconfirmed entries inside that
-# month.
+# Character and support entries close their global month as a complete banner
+# schedule. Other event confirmations do not move banner predictions.
 #
 # Example:
 # character,30104,2026-07-02

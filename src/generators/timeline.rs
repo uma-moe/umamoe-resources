@@ -49,7 +49,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 37;
+const TIMELINE_ALGORITHM_VERSION: u8 = 38;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
     "https://gametora.com/images/umamusume/events/2022/03_legend_race.png";
 const LEGEND_RACE_FALLBACK_IMAGE_PATH: &str =
@@ -723,7 +723,6 @@ pub fn generate(
     annotate_rerun_banners(&mut events);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
-    apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     align_paid_banners_with_releases(&mut events, observed_rate);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
@@ -2245,7 +2244,14 @@ fn apply_closed_schedule_adjustment(
 
     let Some(latest_confirmed_event) = events
         .iter()
-        .filter(|event| event.is_confirmed)
+        .filter(|event| {
+            event.is_confirmed
+                && matches!(
+                    event.event_type,
+                    BannerTimelineEventType::CharacterBanner
+                        | BannerTimelineEventType::SupportCardBanner
+                )
+        })
         .max_by_key(|event| (event.global_release_date, event.jp_release_date))
     else {
         return;
@@ -2256,6 +2262,11 @@ fn apply_closed_schedule_adjustment(
         .iter()
         .filter(|event| {
             !event.is_confirmed
+                && matches!(
+                    event.event_type,
+                    BannerTimelineEventType::CharacterBanner
+                        | BannerTimelineEventType::SupportCardBanner
+                )
                 && normalize_to_midnight_utc(event.jp_release_date) >= latest_confirmed_jp
                 && event.global_release_date < schedule_floor
         })
@@ -3035,70 +3046,80 @@ fn build_confirmed_date_lookup(
     }
 
     for confirmed_dates_csv in confirmed_banner_dates_csv_sources()? {
-        for confirmed_date in parse_confirmed_banner_dates(&confirmed_dates_csv)? {
-            let hidden_key = (confirmed_date.kind, confirmed_date.key.clone());
-            let Some(global_date) = confirmed_date.global_date else {
-                lookup.hidden.insert(hidden_key);
-                lookup.remove_confirmation(confirmed_date.kind, &confirmed_date.key);
-                continue;
-            };
-            lookup.hidden.remove(&hidden_key);
+        applyConfirmedDatesCsv(&mut lookup, &confirmed_dates_csv)?;
+    }
+
+    Ok(lookup)
+}
+
+fn applyConfirmedDatesCsv(lookup: &mut ConfirmedDateLookup, input: &str) -> Result<()> {
+    for confirmed_date in parse_confirmed_banner_dates(input)? {
+        let hidden_key = (confirmed_date.kind, confirmed_date.key.clone());
+        let Some(global_date) = confirmed_date.global_date else {
+            lookup.hidden.insert(hidden_key);
+            lookup.remove_confirmation(confirmed_date.kind, &confirmed_date.key);
+            continue;
+        };
+        lookup.hidden.remove(&hidden_key);
+        if matches!(
+            confirmed_date.kind,
+            ConfirmedTimelineKind::Character | ConfirmedTimelineKind::Support
+        ) {
             lookup
                 .closed_global_months
                 .insert((global_date.year(), global_date.month()));
-            match confirmed_date.kind {
-                ConfirmedTimelineKind::Character => {
-                    if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup.character.insert(gacha_id, global_date);
-                    }
+        }
+        match confirmed_date.kind {
+            ConfirmedTimelineKind::Character => {
+                if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
+                    lookup.character.insert(gacha_id, global_date);
                 }
-                ConfirmedTimelineKind::Support => {
-                    if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
-                        lookup.support.insert(gacha_id, global_date);
-                    }
+            }
+            ConfirmedTimelineKind::Support => {
+                if let Some(gacha_id) = parse_confirmed_banner_id(&confirmed_date.key) {
+                    lookup.support.insert(gacha_id, global_date);
                 }
-                ConfirmedTimelineKind::Paid => {}
-                ConfirmedTimelineKind::Story => {
-                    lookup
-                        .story
-                        .insert(image_key(&confirmed_date.key), global_date);
-                }
-                ConfirmedTimelineKind::Champions => {
-                    lookup.champions.insert(
-                        indexed_event_key("champions_meeting", &confirmed_date.key),
-                        global_date,
-                    );
-                }
-                ConfirmedTimelineKind::Legend => {
-                    lookup.legend.insert(
-                        indexed_event_key("legend_race", &confirmed_date.key),
-                        global_date,
-                    );
-                }
-                ConfirmedTimelineKind::Campaign => {
-                    lookup
-                        .campaign
-                        .insert(image_key(&confirmed_date.key), global_date);
-                }
-                ConfirmedTimelineKind::LeagueOfHeroes
-                | ConfirmedTimelineKind::MastersChallenge
-                | ConfirmedTimelineKind::TrainerSkillsTest
-                | ConfirmedTimelineKind::FactorResearch
-                | ConfirmedTimelineKind::StrongestTeam
-                | ConfirmedTimelineKind::RacingCarnival
-                | ConfirmedTimelineKind::TrainingScenario => {
-                    lookup.news_events.insert(confirmed_date.key, global_date);
-                }
-                ConfirmedTimelineKind::Anniversary => {
-                    if let Some(index) = parse_confirmed_anniversary_index(&confirmed_date.key) {
-                        lookup.anniversary.insert(index, global_date);
-                    }
+            }
+            ConfirmedTimelineKind::Paid => {}
+            ConfirmedTimelineKind::Story => {
+                lookup
+                    .story
+                    .insert(image_key(&confirmed_date.key), global_date);
+            }
+            ConfirmedTimelineKind::Champions => {
+                lookup.champions.insert(
+                    indexed_event_key("champions_meeting", &confirmed_date.key),
+                    global_date,
+                );
+            }
+            ConfirmedTimelineKind::Legend => {
+                lookup.legend.insert(
+                    indexed_event_key("legend_race", &confirmed_date.key),
+                    global_date,
+                );
+            }
+            ConfirmedTimelineKind::Campaign => {
+                lookup
+                    .campaign
+                    .insert(image_key(&confirmed_date.key), global_date);
+            }
+            ConfirmedTimelineKind::LeagueOfHeroes
+            | ConfirmedTimelineKind::MastersChallenge
+            | ConfirmedTimelineKind::TrainerSkillsTest
+            | ConfirmedTimelineKind::FactorResearch
+            | ConfirmedTimelineKind::StrongestTeam
+            | ConfirmedTimelineKind::RacingCarnival
+            | ConfirmedTimelineKind::TrainingScenario => {
+                lookup.news_events.insert(confirmed_date.key, global_date);
+            }
+            ConfirmedTimelineKind::Anniversary => {
+                if let Some(index) = parse_confirmed_anniversary_index(&confirmed_date.key) {
+                    lookup.anniversary.insert(index, global_date);
                 }
             }
         }
     }
-
-    Ok(lookup)
+    Ok(())
 }
 
 impl ConfirmedDateLookup {
@@ -4998,21 +5019,23 @@ fn round_rate(rate: f64) -> f64 {
 mod tests {
     use super::{
         align_paid_banners_with_releases, annotate_calendar_likelihoods, annotate_rerun_banners,
-        append_unmatched_campaign_news, apply_closed_schedule_adjustment, apply_family_adjustment,
-        build_anniversary_schedule_anchors, build_confirmed_date_lookup, calculate_global_date,
-        calculate_recent_acceleration_rate, first_release_after_global_month, gacha_type_name,
-        include_jp_campaign, latest_closed_global_month, legend_boss_metadata,
-        load_bundled_support_card_names, load_timeline_campaigns, load_timeline_character_banners,
-        load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
-        load_timeline_support_banners, load_umapyoi_support_card_names,
-        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
-        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
-        news_timeline_event, parse_confirmed_banner_dates, standardized_jp_mission_title,
-        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
-        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
-        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
-        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
-        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
+        append_unmatched_campaign_news, applyConfirmedDatesCsv, apply_closed_schedule_adjustment,
+        apply_family_adjustment, apply_grouped_event_adjustment,
+        build_anniversary_schedule_anchors, build_banner_confirmed_anchors,
+        build_confirmed_date_lookup, calculate_global_date, calculate_recent_acceleration_rate,
+        first_release_after_global_month, gacha_type_name, include_jp_campaign,
+        latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
+        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
+        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
+        load_umapyoi_support_card_names, load_umapyoi_support_character_names, merge_campaign_news,
+        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
+        monotonic_schedule_anchors, news_timeline_event, parse_confirmed_banner_dates,
+        standardized_jp_mission_title, timeline_anniversaries_through, utc_date,
+        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
+        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
+        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
+        TimelineCampaign, TimelineCharacterBanner, TimelineSupportBanner,
+        FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
@@ -5835,6 +5858,167 @@ mod tests {
         assert_eq!(events[2].global_release_date, utc_date(2026, 7, 8, 22));
         assert_eq!(events[1].prediction.schedule_adjustment_days, Some(2));
         assert_eq!(events[2].prediction.schedule_adjustment_days, Some(2));
+    }
+
+    #[test]
+    fn onlyCharacterAndSupportConfirmationsCloseBannerMonths() {
+        let mut lookup = empty_confirmed_date_lookup();
+        applyConfirmedDatesCsv(
+            &mut lookup,
+            "character,30140,2026-10-24\nsupport,30141,2026-10-27\ncampaign,209,2026-11-10\nstory,story-banner,2026-12-01\npaid,50015,2027-01-01\nanniversary,4,2026-11-26\n",
+        )
+        .expect("confirmation CSV should parse");
+
+        assert_eq!(lookup.closed_global_months, BTreeSet::from([(2026, 10)]));
+        assert_eq!(
+            lookup.campaign.get("209"),
+            Some(&utc_date(2026, 11, 10, 22))
+        );
+        assert_eq!(
+            lookup.story.get("story-banner"),
+            Some(&utc_date(2026, 12, 1, 22))
+        );
+        assert_eq!(
+            lookup.anniversary.get(&4),
+            Some(&utc_date(2026, 11, 26, 22))
+        );
+    }
+
+    #[test]
+    fn missionCampaignAndOldStoryDoNotDelayFutureScouts() {
+        let mut events = vec![
+            test_timeline_event(
+                "prior-character",
+                utc_date(2022, 12, 12, 0),
+                utc_date(2026, 10, 7, 22),
+                true,
+            ),
+            test_timeline_event_with_type(
+                "prior-story",
+                BannerTimelineEventType::StoryEvent,
+                utc_date(2022, 12, 12, 0),
+                utc_date(2026, 10, 7, 22),
+                true,
+            ),
+            test_timeline_event(
+                "new-year-character",
+                utc_date(2022, 12, 29, 0),
+                utc_date(2026, 10, 20, 22),
+                true,
+            ),
+            test_timeline_event(
+                "latest-character",
+                utc_date(2023, 1, 10, 0),
+                utc_date(2026, 10, 24, 22),
+                true,
+            ),
+            test_timeline_event_with_type(
+                "latest-support",
+                BannerTimelineEventType::SupportCardBanner,
+                utc_date(2023, 1, 10, 0),
+                utc_date(2026, 10, 27, 22),
+                true,
+            ),
+            test_timeline_event_with_type(
+                "mission-campaign",
+                BannerTimelineEventType::Campaign,
+                utc_date(2022, 12, 22, 0),
+                utc_date(2026, 11, 10, 22),
+                true,
+            ),
+            test_timeline_event_with_type(
+                "old-story",
+                BannerTimelineEventType::StoryEvent,
+                utc_date(2022, 12, 29, 0),
+                utc_date(2026, 10, 20, 22),
+                false,
+            ),
+            test_timeline_event(
+                "helios",
+                utc_date(2023, 1, 20, 0),
+                utc_date(2026, 11, 3, 22),
+                false,
+            ),
+            test_timeline_event(
+                "cb",
+                utc_date(2023, 2, 24, 0),
+                utc_date(2026, 11, 26, 22),
+                false,
+            ),
+            test_timeline_event_with_type(
+                "unconfirmed-campaign",
+                BannerTimelineEventType::Campaign,
+                utc_date(2023, 1, 14, 0),
+                utc_date(2026, 10, 30, 22),
+                false,
+            ),
+            test_timeline_event_with_type(
+                "unconfirmed-paid",
+                BannerTimelineEventType::PaidBanner,
+                utc_date(2023, 1, 14, 0),
+                utc_date(2026, 10, 30, 22),
+                false,
+            ),
+        ];
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.closed_global_months.insert((2026, 10));
+        let before = events.clone();
+
+        apply_closed_schedule_adjustment(&mut events, &lookup);
+        apply_grouped_event_adjustment(&mut events);
+        apply_closed_schedule_adjustment(&mut events, &lookup);
+
+        for (event, original) in events.iter().zip(&before) {
+            assert_eq!(
+                event.global_release_date, original.global_release_date,
+                "{}",
+                event.id
+            );
+            assert_eq!(
+                event.estimated_end_date, original.estimated_end_date,
+                "{}",
+                event.id
+            );
+        }
+        assert_eq!(events[7].prediction.schedule_adjustment_days, None);
+        assert_eq!(events[8].prediction.schedule_adjustment_days, None);
+    }
+
+    #[test]
+    fn offsetCharacterAndSupportBannersKeepTheirConfirmedDates() {
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.character.insert(90002, utc_date(2026, 10, 24, 22));
+        lookup.support.insert(90003, utc_date(2026, 10, 27, 22));
+        lookup.closed_global_months.insert((2026, 10));
+        let character = test_timeline_character_banner(90002, vec![100101]);
+        let support = test_timeline_support_banner(90003, vec![30001]);
+        let anchors = monotonic_schedule_anchors(&build_banner_confirmed_anchors(
+            std::slice::from_ref(&character),
+            std::slice::from_ref(&support),
+            &lookup,
+        ));
+        assert_eq!(anchors.len(), 2);
+        let rate = calculate_recent_acceleration_rate(&anchors);
+        let future =
+            calculate_global_date(support.start_at + Duration::days(10), None, &anchors, rate);
+        assert_eq!(future.anchor_global_date, Some(utc_date(2026, 10, 27, 22)));
+        let mut events = vec![
+            super::character_event(&character, &BTreeMap::new(), &lookup, &anchors, rate),
+            super::support_event(
+                &support,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &lookup,
+                &anchors,
+                rate,
+            ),
+        ];
+        apply_closed_schedule_adjustment(&mut events, &lookup);
+        apply_grouped_event_adjustment(&mut events);
+
+        assert_eq!(events[0].global_release_date, utc_date(2026, 10, 24, 22));
+        assert_eq!(events[1].global_release_date, utc_date(2026, 10, 27, 22));
+        assert!(events.iter().all(|event| event.is_confirmed));
     }
 
     #[test]
