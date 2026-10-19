@@ -38,7 +38,6 @@ const SKILL_DATA_SELECT: &str = r#"
                ability_type_2_3, ability_value_usage_2_3, additional_activate_type_2_3, ability_value_level_usage_2_3, float_ability_value_2_3, target_type_2_3, target_value_2_3,
                tag_id
           FROM skill_data
-         WHERE is_general_skill = 1 OR rarity >= 3
          ORDER BY id
         "#;
 
@@ -328,7 +327,7 @@ fn invalid_tag_id_error(
 #[cfg(test)]
 mod tests {
     use super::{
-        as_binary_u8, parse_tag_ids, race_items, skill_data_select_query,
+        as_binary_u8, generate, parse_tag_ids, race_items, skill_data_select_query,
         ADDITIONAL_ACTIVATE_TYPE_COLUMNS,
     };
     use rusqlite::Connection;
@@ -361,6 +360,23 @@ mod tests {
         for column in ADDITIONAL_ACTIVATE_TYPE_COLUMNS {
             assert!(query.contains(&format!("0 AS {column}")));
         }
+    }
+
+    /// Captured runners own scenario-only skills too (the Race Enthusiast passives are rarity 1
+    /// and not general), so the simulator needs every skill the master defines.
+    #[test]
+    fn exports_every_master_skill() {
+        let connection =
+            Connection::open(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb"))
+                .unwrap();
+        let count: usize = connection
+            .query_row("SELECT COUNT(*) FROM skill_data", [], |row| row.get(0))
+            .unwrap();
+
+        let set = generate(&connection, "test").unwrap();
+
+        assert_eq!(set.skills.len(), count);
+        assert!(set.skills.iter().any(|skill| skill.skill_id == 1_200_021));
     }
 
     #[test]
