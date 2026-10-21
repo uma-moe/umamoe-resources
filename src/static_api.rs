@@ -70,7 +70,7 @@ pub async fn serve(data_dir: PathBuf, master_path: PathBuf, bind: SocketAddr) ->
 fn resource_router(mut state: AppState, protected: bool) -> Router {
     let mut public_state = state.clone();
     public_state.protected = false;
-    let mut public = Router::new()
+    let public = Router::new()
         .route("/health", get(healthz))
         .route("/healthz", get(healthz))
         .route("/resources", get(get_manifest))
@@ -81,14 +81,12 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
-        );
-    if !protected {
-        public = public.route(
+        )
+        .route(
             "/resources/simulator/:version/master.mdb.gz",
             get(getSimulatorMaster),
-        );
-    }
-    let public = public.with_state(public_state);
+        )
+        .with_state(public_state);
 
     state.protected = protected;
     let sql = Router::new().route("/resources/current/sql", get(get_current_sql));
@@ -221,7 +219,8 @@ async fn get_manifest(
     Ok((headers, manifest_bytes).into_response())
 }
 
-/// The public listener never registers this route. Each database belongs to its export.
+/// Serves the exact database each export was generated from, for the simulator and the
+/// frontend's Master Data browser. Versioned paths never change, so CDNs may keep them.
 #[allow(non_snake_case)]
 async fn getSimulatorMaster(
     State(state): State<AppState>,
@@ -252,7 +251,7 @@ async fn getSimulatorMaster(
         (CONTENT_ENCODING, HeaderValue::from_static("gzip")),
         (
             CACHE_CONTROL,
-            HeaderValue::from_static("private, max-age=31536000, immutable"),
+            HeaderValue::from_static(resource_cache_control(false, true)),
         ),
         (
             ETAG,
@@ -642,7 +641,7 @@ impl IntoResponse for ApiError {
 mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
-    async fn simulatorMasterIsPrivateAndManifestSupportsConditionalChecks() {
+    async fn masterDatabaseIsPublicAndManifestSupportsConditionalChecks() {
         use crate::pipeline::{MasterInfo, ResourceManifest};
         use axum::http::StatusCode;
         let root = std::env::temp_dir().join(format!(
@@ -703,15 +702,12 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            if protected {
-                assert!(matches!(
-                    response.status(),
-                    StatusCode::NOT_FOUND | StatusCode::FORBIDDEN
-                ));
-            } else {
-                assert_eq!(response.status(), StatusCode::OK);
-                assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
-            }
+            assert_eq!(response.status(), StatusCode::OK);
+            assert_eq!(
+                response.headers()[super::CACHE_CONTROL],
+                "public, max-age=31536000, immutable"
+            );
+            assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
             task.abort();
         }
         std::fs::remove_dir_all(root).unwrap();
