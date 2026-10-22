@@ -1,3 +1,4 @@
+use crate::master_history::{self, sqliteValueToJson};
 use crate::pipeline::{read_manifest, read_version_manifest, ResourceManifest};
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
@@ -9,7 +10,6 @@ use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -82,6 +82,11 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
             "/resources/:version/:file_name",
             get(get_versioned_resource),
         )
+        .route(
+            "/resources/masterdata/versions.json",
+            get(getMasterVersions),
+        )
+        .route("/resources/masterdata/diffs/:file_name", get(getMasterDiff))
         .route(
             "/resources/simulator/:version/master.mdb.gz",
             get(getSimulatorMaster),
@@ -258,6 +263,64 @@ async fn getSimulatorMaster(
             header_value(format!("\"sha256-{}\"", manifest.master.sha256))?,
         ),
     ];
+    Ok((headers, bytes).into_response())
+}
+
+/// The release list grows with each master, so it uses the short mutable-resource cache.
+#[allow(non_snake_case)]
+async fn getMasterVersions(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let path = master_history::versionsPath(&state.data_dir);
+    let bytes = fs::read(&path).await.map_err(|error| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("failed to read {}: {}", path.display(), error),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(resource_cache_control(false, false)),
+    );
+    headers.insert(VARY, HeaderValue::from_static(resource_vary_header(false)));
+    headers.insert(CONTENT_LENGTH, header_value(bytes.len())?);
+    Ok((headers, bytes).into_response())
+}
+
+/// A release's diff never changes once written, so it is cached like versioned resources.
+#[allow(non_snake_case)]
+async fn getMasterDiff(
+    State(state): State<AppState>,
+    Path(file_name): Path<String>,
+) -> Result<Response, ApiError> {
+    let short_hash = file_name
+        .strip_suffix(".json.gz")
+        .filter(|short_hash| master_history::isShortHash(short_hash))
+        .ok_or_else(|| ApiError::new(StatusCode::BAD_REQUEST, "invalid master diff name"))?;
+    let path = master_history::diffPath(&state.data_dir, short_hash);
+    let bytes = fs::read(&path).await.map_err(|error| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("failed to read {}: {}", path.display(), error),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(CONTENT_ENCODING, HeaderValue::from_static("gzip"));
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(resource_cache_control(false, true)),
+    );
+    headers.insert(VARY, HeaderValue::from_static(resource_vary_header(false)));
+    headers.insert(CONTENT_LENGTH, header_value(bytes.len())?);
     Ok((headers, bytes).into_response())
 }
 
@@ -583,7 +646,7 @@ fn execute_sql_query(master_path: &FsPath, sql: &str) -> Result<SqlQueryResponse
 
         let mut output_row = Vec::with_capacity(columns.len());
         for index in 0..columns.len() {
-            output_row.push(sqlite_value_to_json(row.get_ref(index)?));
+            output_row.push(sqliteValueToJson(row.get_ref(index)?));
         }
         values.push(output_row);
     }
@@ -593,16 +656,6 @@ fn execute_sql_query(master_path: &FsPath, sql: &str) -> Result<SqlQueryResponse
         rows: values,
         truncated,
     })
-}
-
-fn sqlite_value_to_json(value: ValueRef<'_>) -> serde_json::Value {
-    match value {
-        ValueRef::Null => serde_json::Value::Null,
-        ValueRef::Integer(value) => serde_json::Value::from(value),
-        ValueRef::Real(value) => serde_json::Value::from(value),
-        ValueRef::Text(value) => serde_json::Value::String(String::from_utf8_lossy(value).into()),
-        ValueRef::Blob(value) => serde_json::json!({ "blob_hex": hex::encode(value) }),
-    }
 }
 
 fn header_value(value: impl ToString) -> Result<HeaderValue, ApiError> {
@@ -710,6 +763,77 @@ mod tests {
             assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
             task.abort();
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn masterHistoryIsPublicWithResourceCacheRules() {
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "master-history-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("masterdata/diffs")).unwrap();
+        std::fs::write(root.join("masterdata/versions.json"), b"[]").unwrap();
+        std::fs::write(root.join("masterdata/diffs/0123456789ab.json.gz"), b"gz").unwrap();
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: true,
+        };
+        let app = super::resource_router(state, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        let versions = client
+            .get(format!("{origin}/resources/masterdata/versions.json"))
+            .send()
+            .await
+            .unwrap();
+        let diff = client
+            .get(format!(
+                "{origin}/resources/masterdata/diffs/0123456789ab.json.gz"
+            ))
+            .send()
+            .await
+            .unwrap();
+        let invalid_diff = client
+            .get(format!(
+                "{origin}/resources/masterdata/diffs/..%2Fversions.json.gz"
+            ))
+            .send()
+            .await
+            .unwrap();
+        let missing_diff = client
+            .get(format!(
+                "{origin}/resources/masterdata/diffs/ffffffffffff.json.gz"
+            ))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(versions.status(), StatusCode::OK);
+        assert_eq!(
+            versions.headers()[super::CACHE_CONTROL],
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+        );
+        assert_eq!(versions.bytes().await.unwrap().as_ref(), b"[]");
+        assert_eq!(diff.status(), StatusCode::OK);
+        assert_eq!(
+            diff.headers()[super::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(diff.headers()[super::CONTENT_ENCODING], "gzip");
+        assert_eq!(invalid_diff.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(missing_diff.status(), StatusCode::NOT_FOUND);
+        task.abort();
         std::fs::remove_dir_all(root).unwrap();
     }
 
