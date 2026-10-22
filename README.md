@@ -123,11 +123,12 @@ Docker firewall path to the private resource ports. No Nginx route or service
 authentication key is needed for the subnet connection.
 
 `master.path` in the manifest points to
-`/resources/simulator/{version}/master.mdb.gz`, available **only on the internal
-listener**. `master.bytes` and `master.sha256` describe the uncompressed SQLite
+`/resources/simulator/{version}/master.mdb.gz`, served on both listeners with a
+one-year immutable cache. The simulator and the frontend's Master Data browser load
+it. `master.bytes` and `master.sha256` describe the uncompressed SQLite
 database. Generation exports all resources from these exact database bytes and
 includes their hash in the version. This avoids mixing a refreshed live database
-with resources from an earlier export. The database is not a public artifact.
+with resources from an earlier export.
 
 The manifest supports `ETag` and `If-None-Match` (`304` when unchanged). The
 simulator checks every five minutes, downloads only changed simulator artifacts,
