@@ -13,6 +13,7 @@ mod generators;
 mod global_news;
 mod global_social;
 mod master_fetch;
+mod master_history;
 mod pipeline;
 mod static_api;
 mod umapyoi;
