@@ -24,7 +24,10 @@ pub async fn purge_manifest_current_urls(manifest: &ResourceManifest) -> Result<
         return Ok(());
     };
 
-    let mut paths = vec!["/resources/manifest.json".to_string()];
+    let mut paths = vec![
+        "/resources/manifest.json".to_string(),
+        "/resources/masterdata/versions.json".to_string(),
+    ];
     paths.extend(
         manifest
             .artifacts
