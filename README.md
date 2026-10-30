@@ -150,6 +150,15 @@ primary key are only added or removed. Internal `sqlite_*` tables are ignored.
 The diff is computed against the snapshot of the export being replaced; when
 that snapshot is unavailable, the release is listed with a `null` summary.
 
+`backfill-master-history --data-dir generated-data` rebuilds the history from every
+resource version on `https://uma.moe/api/ver/history`, oldest first. Each master is
+downloaded to `masterdata/backfill/`, diffed against the previous one and deleted,
+so only `versions.json` and the diffs are kept. Versions whose master is unchanged
+are listed once; a version the CDN no longer serves is skipped and the next diff
+starts from the last available master. Releases recorded after the backfill's newest
+master are kept. If the recorded history does not contain that master, the command
+fails and leaves the history unchanged.
+
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
 
 Simulator course geometry is bundled into one artifact with shared

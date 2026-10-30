@@ -57,6 +57,20 @@ pub struct MasterSnapshot<'a> {
     pub path: &'a std::path::Path,
 }
 
+/// `GET /api/ver/history`: the live game version and every earlier one, newest first.
+#[derive(Debug, Deserialize)]
+pub struct GameVersionHistory {
+    pub current: GameVersionRecord,
+    pub history: Vec<GameVersionRecord>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GameVersionRecord {
+    pub resource_version: String,
+    /// When uma.moe first saw this version, as `YYYY-MM-DDTHH:MM:SS` in UTC.
+    pub updated_at: String,
+}
+
 /// A table's columns in declaration order and the indexes of its primary-key columns in key order.
 pub(super) struct TableSchema {
     pub(super) columns: Vec<String>,

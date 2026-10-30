@@ -2,10 +2,12 @@
 //! release, and `masterdata/diffs/<short_hash>.json.gz` holds its row-level changes.
 #![allow(non_snake_case)]
 
+mod backfill;
 mod diff;
 #[path = "../types/master_history.rs"]
 mod types;
 
+pub use backfill::backfillMasterHistory;
 pub(crate) use diff::sqliteValueToJson;
 pub use types::MasterSnapshot;
 use types::{DiffSummary, MasterDiff, MasterRelease, SHORT_HASH_LENGTH};
@@ -68,12 +70,7 @@ pub fn recordRelease(
     });
 
     // The diff is written first, so the history never lists a diff that is not there yet.
-    if let Some(parent) = versions_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create {}", parent.display()))?;
-    }
-    writeAtomic(&versions_path, &serde_json::to_vec_pretty(&releases)?)
-        .with_context(|| format!("failed to write {}", versions_path.display()))?;
+    writeReleases(&versions_path, &releases)?;
     info!(short_hash, ?summary, "recorded master release");
     Ok(())
 }
@@ -96,6 +93,16 @@ fn writeDiff(
         return Ok(None);
     };
 
+    writeDiffFile(data_dir, previous, current, date).map(Some)
+}
+
+/// Diffs two masters and writes the result under the current release's short hash.
+fn writeDiffFile(
+    data_dir: &Path,
+    previous: &MasterSnapshot,
+    current: &MasterSnapshot,
+    date: &str,
+) -> Result<DiffSummary> {
     let diff = diffMasterFiles(previous, current, date)?;
     let path = diffPath(data_dir, &current.sha256[..SHORT_HASH_LENGTH]);
     if let Some(parent) = path.parent() {
@@ -104,7 +111,7 @@ fn writeDiff(
     }
     writeAtomic(&path, &gzip(&serde_json::to_vec(&diff)?)?)
         .with_context(|| format!("failed to write {}", path.display()))?;
-    Ok(Some(diff.summary))
+    Ok(diff.summary)
 }
 
 fn diffMasterFiles(
@@ -127,6 +134,15 @@ fn diffMasterFiles(
 fn openReadOnly(path: &Path) -> Result<Connection> {
     Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("failed to open master snapshot {}", path.display()))
+}
+
+fn writeReleases(path: &Path, releases: &[MasterRelease]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    writeAtomic(path, &serde_json::to_vec_pretty(releases)?)
+        .with_context(|| format!("failed to write {}", path.display()))
 }
 
 fn readReleases(path: &Path) -> Result<Vec<MasterRelease>> {
