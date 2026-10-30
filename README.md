@@ -113,6 +113,10 @@ Useful routes:
   all current courses' 1,001-frame world transforms in one `courses` array
 - `/resources/{version}/simulator_course_lanes.json.gz` - retained finish-line
   continuation lanes and their shared transform assets
+- `/resources/masterdata/versions.json` - short CDN cache, every master release
+  (`hash`, `short_hash`, `date`, `previous_hash`, `summary`), oldest first
+- `/resources/masterdata/diffs/{short_hash}.json.gz` - one-year immutable CDN cache,
+  the release's row-level changes against the previous release
 
 The simulator on the separate host reads this API directly over the subnet.
 Deployment publishes the existing internal container listener (`3204`) at
@@ -135,6 +139,16 @@ simulator checks every five minutes, downloads only changed simulator artifacts,
 validates them and switches complete snapshots. Deploy this resource API update
 before starting a simulator with an empty cache. Its required files are courses,
 skills, course geometry, continuation lanes and the versioned master database.
+
+Each export whose master hash is new appends a release to
+`masterdata/versions.json` and writes `masterdata/diffs/{short_hash}.json.gz`:
+`{ from_hash, to_hash, date, summary, tables: { name: { columns, added, removed,
+modified: [{ key, before, after }] } } }`. Hashes are the master's SHA-256, the
+same value as `master.sha256`. Rows are matched by each table's primary key
+(`key` is the value, or an array for a composite key); rows of tables without a
+primary key are only added or removed. Internal `sqlite_*` tables are ignored.
+The diff is computed against the snapshot of the export being replaced; when
+that snapshot is unavailable, the release is listed with a `null` summary.
 
 All resource JSON routes return precompressed bytes with `Content-Encoding: gzip` and `Content-Type: application/json; charset=utf-8`.
 

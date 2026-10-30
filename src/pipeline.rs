@@ -1,4 +1,5 @@
 use crate::generators;
+use crate::master_history::{self, MasterSnapshot};
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -10,6 +11,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 const PUBLIC_TIMELINE_GZIP_BUDGET: u64 = 300 * 1024;
 const PLANNER_MANIFEST_GZIP_BUDGET: usize = 10 * 1024;
@@ -107,6 +109,8 @@ pub fn generate_resources(
         jp_reward_source_version,
         &master_sha256[..12],
     ));
+    // Read before this export replaces it, so the release history can diff against its master.
+    let previous_manifest = read_manifest(out_dir).ok();
     let version_dir = out_dir.join(&version);
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("failed to create {}", version_dir.display()))?;
@@ -141,9 +145,10 @@ pub fn generate_resources(
         PUBLIC_TIMELINE_GZIP_BUDGET,
     )?;
 
+    let generated_at = Utc::now();
     let manifest = ResourceManifest {
         version: version.clone(),
-        generated_at: Utc::now().to_rfc3339(),
+        generated_at: generated_at.to_rfc3339(),
         base_path: format!("/resources/{}", version),
         master: MasterInfo {
             marker,
@@ -161,6 +166,16 @@ pub fn generate_resources(
         .with_context(|| format!("failed to write manifest in {}", version_dir.display()))?;
     writeAtomic(&out_dir.join("manifest.json"), &manifest_json)
         .with_context(|| format!("failed to write manifest in {}", out_dir.display()))?;
+    let current_master = MasterSnapshot {
+        sha256: &manifest.master.sha256,
+        path: &snapshot,
+    };
+    recordMasterRelease(
+        out_dir,
+        &current_master,
+        previous_manifest.as_ref(),
+        &generated_at.format("%Y-%m-%d").to_string(),
+    );
 
     let planner_root = out_dir.join("planner");
     let planner_version_dir = planner_root.join(&version);
@@ -245,8 +260,29 @@ fn write_outputs(
     Ok(artifacts)
 }
 
+/// The history is supplementary, so a failure is logged instead of blocking the export.
 #[allow(non_snake_case)]
-fn writeAtomic(path: &Path, bytes: &[u8]) -> Result<()> {
+fn recordMasterRelease(
+    out_dir: &Path,
+    current: &MasterSnapshot,
+    previous_manifest: Option<&ResourceManifest>,
+    date: &str,
+) {
+    let previous_path =
+        previous_manifest.map(|manifest| out_dir.join(&manifest.version).join("master.mdb"));
+    let previous = previous_manifest
+        .zip(previous_path.as_deref())
+        .map(|(manifest, path)| MasterSnapshot {
+            sha256: &manifest.master.sha256,
+            path,
+        });
+    if let Err(error) = master_history::recordRelease(out_dir, current, previous.as_ref(), date) {
+        warn!(error = %error, "failed to record the master release history");
+    }
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn writeAtomic(path: &Path, bytes: &[u8]) -> Result<()> {
     let temporary = path.with_extension("next");
     fs::write(&temporary, bytes)?;
     fs::rename(temporary, path)?;
@@ -343,7 +379,7 @@ fn sanitize_version(version: &str) -> String {
         .collect()
 }
 
-fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
+pub(crate) fn gzip(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::best());
     encoder.write_all(bytes)?;
     Ok(encoder.finish()?)
