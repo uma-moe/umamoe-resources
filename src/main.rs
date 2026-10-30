@@ -58,6 +58,12 @@ enum Command {
         #[arg(long)]
         purge: bool,
     },
+    /// Rebuild the master release history from every game version on uma.moe/api/ver/history.
+    /// Masters are downloaded only to be diffed; the data directory keeps just the diffs.
+    BackfillMasterHistory {
+        #[arg(long, default_value = "generated-data")]
+        data_dir: PathBuf,
+    },
     /// Purge Cloudflare cache for manifest/current resource URLs from the latest manifest.
     Purge {
         #[arg(long, default_value = "generated-data")]
@@ -198,6 +204,9 @@ async fn main() -> Result<()> {
             } else {
                 info!("master.mdb did not change; skipping regeneration");
             }
+        }
+        Command::BackfillMasterHistory { data_dir } => {
+            master_history::backfillMasterHistory(&data_dir).await?;
         }
         Command::Purge { data_dir } => {
             let manifest = pipeline::read_manifest(&data_dir)?;
