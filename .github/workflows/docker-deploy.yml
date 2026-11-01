@@ -167,6 +167,7 @@ jobs:
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
           CONFIG_DIR: ${{ env.BETA_CONFIG_DIR }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
+          HISTORY_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
           CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.BETA_SHARED_SERVICE_ALIAS }}
@@ -180,7 +181,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -196,6 +197,7 @@ jobs:
           shared_network_name="${11}"
           shared_service_alias="${12}"
           auth_internal_base_url="${13}"
+          history_volume_name="${14}"
 
           if [ ! -f "$env_file" ]; then
             echo "Missing container env file: $env_file" >&2
@@ -206,6 +208,8 @@ jobs:
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
           mkdir -p "$config_dir"
 
+          # Beta serves production's master release history read-only, so both show one
+          # history and only production writes it. volume-subpath needs Docker Engine 26+.
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
             --name "$container_name" \
@@ -222,6 +226,7 @@ jobs:
             -p "192.168.100.2:${host_port}:${internal_app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
+            --mount "type=volume,src=${history_volume_name},dst=/data/generated-data/masterdata,volume-subpath=generated-data/masterdata,readonly" \
             "$image_tag"
 
           for _ in $(seq 1 60); do
