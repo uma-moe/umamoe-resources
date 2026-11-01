@@ -6110,8 +6110,17 @@ fn load_global_news_rewards(
             );
             reward.available_until = available_until;
             rewards.push(reward);
-        } else if let Some((daily, total, evidence)) = extract_global_login_bonus_total(&text) {
-            let login_days = total / daily;
+        } else if let Some((total, login_days, evidence)) = extract_global_login_bonus_total(&text)
+            .map(|(daily, total, evidence)| {
+                let login_days = total / daily;
+                (
+                    total,
+                    login_days,
+                    format!("{login_days} days × {daily} Carats = {total} Carats; {evidence}"),
+                )
+            })
+            .or_else(|| extract_global_login_day_table_bonus(title, &text))
+        {
             let (available_at, available_until) =
                 extract_global_login_bonus_window(&text, &posted_at).unwrap_or_else(|| {
                     (
@@ -6127,7 +6136,7 @@ fn load_global_news_rewards(
                 available_at,
                 "all_login_days_global",
                 &post.page_url,
-                format!("{login_days} days × {daily} Carats = {total} Carats; {evidence}"),
+                evidence,
             );
             reward.available_until = Some(available_until);
             rewards.push(reward);
@@ -6603,20 +6612,75 @@ fn extract_global_login_bonus_total(text: &str) -> Option<(i64, i64, String)> {
     })
 }
 
-fn extract_global_login_bonus_window(text: &str, posted_at: &str) -> Option<(String, String)> {
-    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
-    for (index, line) in lines.iter().enumerate() {
-        let heading = normalized_global_heading(line);
-        if !(heading == "availability period" || heading == "availability periods") {
+/// A login bonus told in a day-by-day table ("Login Day 1: Carats × 150")
+/// instead of a daily amount. Returns the Carat total, the last login day
+/// that grants Carats, and the evidence.
+fn extract_global_login_day_table_bonus(title: &str, text: &str) -> Option<(i64, i64, String)> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("login bonus")
+        || !lower.contains("carat")
+        || !is_confirmed_global_login_notice(title, text)
+    {
+        return None;
+    }
+    let mut total = 0;
+    let mut last_day = 0;
+    let mut evidence = Vec::new();
+    for line in text.lines().map(str::trim) {
+        let lower_line = line.to_ascii_lowercase();
+        let Some((day, reward)) = lower_line
+            .strip_prefix("login days ")
+            .or_else(|| lower_line.strip_prefix("login day "))
+            .and_then(|rest| rest.split_once(':'))
+        else {
+            continue;
+        };
+        if !reward.contains("carat") {
             continue;
         }
-        if let Some((start, end)) = lines
-            .iter()
-            .skip(index + 1)
-            .take(4)
-            .find_map(|candidate| global_period_window(candidate, posted_at))
-        {
-            return Some((start.to_rfc3339(), end.to_rfc3339()));
+        // A day range ("Login Days 8-12") could mean per day or once; leave
+        // Carats on one to the audit rather than guess.
+        let day = day.trim().parse::<i64>().ok()?;
+        let &[amount] = carat_amounts_from_line(reward).as_slice() else {
+            return None;
+        };
+        if reward.contains("paid carat") || !(1..=10_000).contains(&amount) {
+            return None;
+        }
+        total += amount;
+        last_day = last_day.max(day);
+        evidence.push(line);
+    }
+    (total > 0).then(|| {
+        (
+            total,
+            last_day,
+            format!(
+                "Login day table: {total} Carats by login day {last_day}; {}",
+                evidence.join("; ")
+            ),
+        )
+    })
+}
+
+fn extract_global_login_bonus_window(text: &str, posted_at: &str) -> Option<(String, String)> {
+    let lines = text.lines().map(str::trim).collect::<Vec<_>>();
+    // A notice bundling several events gives the login bonus its own
+    // heading; prefer it over the first generic availability period.
+    for prefix in ["login bonus ", ""] {
+        for (index, line) in lines.iter().enumerate() {
+            let heading = normalized_global_heading(line);
+            if !(heading == format!("{prefix}availability period")
+                || heading == format!("{prefix}availability periods"))
+            {
+                continue;
+            }
+            if let Some((start, end)) = lines.iter().skip(index + 1).take(4).find_map(|candidate| {
+                // Newer notices join the endpoints with an unspaced en dash.
+                global_period_window(&candidate.replace('\u{2013}', " - "), posted_at)
+            }) {
+                return Some((start.to_rfc3339(), end.to_rfc3339()));
+            }
         }
     }
     None
@@ -8343,16 +8407,17 @@ mod tests {
         amounts_before_word, append_master_reward_catalog_rows, apply_news_free_pulls,
         archive_combined_text, audit_global_news_reward_posts, build_event_benefits,
         build_global_reward_comparison, extract_free_pull_total, extract_global_direct_gifts,
-        extract_global_login_bonus_total, extract_global_period_login_bonus,
-        extract_login_bonus_total, extract_month_day_time, extract_news_free_pull_claims,
-        extract_news_free_pull_pinned_banner_kinds, extract_news_free_pull_target_windows,
-        global_news_timeline_metadata, has_cost_context, has_sales_context, html_to_text,
-        is_global_correction_notice, is_projectable_jp_news_reward, jewel_amounts_from_line,
-        load_archive, load_campaign_reward_catalog, load_competitive_reward_metadata,
-        load_competitive_variants, load_competitive_variants_for, load_daily_pack_rules,
-        load_event_exchange_rewards, load_factor_research_rewards_for, load_gachas,
-        load_general_event_mission_items, load_global_news_archive, load_global_news_rewards,
-        load_global_social_rewards, load_login_bonus_rewards_for, load_mission_campaign_rewards,
+        extract_global_login_bonus_total, extract_global_login_day_table_bonus,
+        extract_global_period_login_bonus, extract_login_bonus_total, extract_month_day_time,
+        extract_news_free_pull_claims, extract_news_free_pull_pinned_banner_kinds,
+        extract_news_free_pull_target_windows, global_news_timeline_metadata, has_cost_context,
+        has_sales_context, html_to_text, is_global_correction_notice,
+        is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
+        load_campaign_reward_catalog, load_competitive_reward_metadata, load_competitive_variants,
+        load_competitive_variants_for, load_daily_pack_rules, load_event_exchange_rewards,
+        load_factor_research_rewards_for, load_gachas, load_general_event_mission_items,
+        load_global_news_archive, load_global_news_rewards, load_global_social_rewards,
+        load_login_bonus_rewards_for, load_mission_campaign_rewards,
         load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
         load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
@@ -9106,6 +9171,82 @@ mod tests {
             audit.issues[0].reason,
             "confirmed EN Carat login bonus produced no planner reward"
         );
+    }
+
+    #[test]
+    fn parses_post_1093_login_day_table() {
+        // Excerpt of https://umapyoi.net/en/news/1093. The login bonus is a
+        // day-by-day table, and the first generic availability period belongs
+        // to a different event in the same notice.
+        let message = "\u{a0}As of 10:00 p.m., Oct 7, 2026 (UTC), part 2 of our Holiday Celebration has begun!<br>\
+            \u{a0}The in-game collaboration event with Tokyo Mega Illumination, Sparkly Magic Show, is set to kick off at 10:00 p.m., Oct 15, 2026 (UTC).<br>\
+            <h2 class=\"heading\">\u{a0}Availability Period</h2>\
+            \u{a0}10:00 p.m., Oct 15\u{2013}9:59 p.m., Oct 18, 2026 (UTC)<br>\
+            <h2 class=\"heading\">\u{a0}Important Information</h2>\
+            \u{a0}2. The event schedule and contents are subject to change without notice.<br>\
+            <br>\
+            \u{a0}As of 10:00 p.m., Oct 7, 2026 (UTC), the Sparkly Magic Show Holiday Present event is underway!<br>\
+            \u{a0}In this event, you can acquire a variety of rewards based on the number of days you log in and the availability period.<br>\
+            \u{a0}In addition, starting from 3:00 p.m., Oct 19 (UTC), you can obtain 500 carats as a holiday gift!<br>\
+            <h2 class=\"heading\">\u{a0}Login Bonus Availability Period</h2>\
+            \u{a0}10:00 p.m., Oct 7\u{2013}2:59 p.m., Oct 19, 2026 (UTC)<br>\
+            <h2 class=\"heading\">\u{a0}Login Bonus Reward Contents</h2>\
+            \u{a0}Login Day 1: Carats \u{d7} 150<br>\
+            \u{a0}Login Day 2: Book of Hints \u{d7} 5<br>\
+            \u{a0}Login Day 3: Friend Pt \u{d7} 500<br>\
+            \u{a0}Login Day 4: Goddess Statue \u{d7} 1<br>\
+            \u{a0}Login Day 5: Carrot Jelly Mini \u{d7} 5<br>\
+            \u{a0}Login Day 6: Pleasing Parfait \u{d7} 5<br>\
+            \u{a0}Login Day 7: Tokyo Daishoten Winner's Sash \u{d7} 10<br>\
+            \u{a0}Login Days 8-12: Support Pt \u{d7} 1000<br>\
+            <h2 class=\"heading\">\u{a0}Holiday Present Availability Period</h2>\
+            \u{a0}3:00 p.m., Oct 19\u{2013}2:59 p.m., Oct 21, 2026 (UTC)<br>\
+            <h2 class=\"heading\">\u{a0}Holiday Present Reward Contents</h2>\
+            \u{a0}Carats \u{d7} 500<br>\
+            (The holiday present can only be obtained once during the availability period.)<br>";
+        let mut post = global_post(1093, "Holiday Celebration Part 2 now available!", message);
+        post.snapshots[0].raw["post_at"] = json!(1_791_410_400_i64);
+        let archive = GlobalNewsArchive { posts: vec![post] };
+
+        let rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+        let login = rewards
+            .iter()
+            .find(|reward| reward.id == "global-news-1093-login-bonus")
+            .unwrap();
+        assert_eq!(login.amount, Some(150));
+        assert_eq!(login.assumption, "all_login_days_global");
+        assert_eq!(login.available_at, "2026-10-07T22:00:00+00:00");
+        assert_eq!(
+            login.available_until.as_deref(),
+            Some("2026-10-19T14:59:00+00:00")
+        );
+        assert_eq!(
+            login.evidence.as_deref(),
+            Some("Login day table: 150 Carats by login day 1; Login Day 1: Carats × 150")
+        );
+
+        let audit = audit_global_news_reward_posts(&archive);
+        assert_eq!(audit.reward_posts, 1);
+        assert!(audit.issues.is_empty(), "{:?}", audit.issues);
+    }
+
+    #[test]
+    fn login_day_table_leaves_carats_on_a_day_range_to_the_audit() {
+        let text = "Login Bonus has begun!\nLogin Day 1: Carats × 150\nLogin Days 2-6: Carats × 50";
+
+        assert!(extract_global_login_day_table_bonus("Celebration now available!", text).is_none());
+        let audit = audit_global_news_reward_posts(&GlobalNewsArchive {
+            posts: vec![global_post(
+                999_993,
+                "Celebration now available!",
+                &text.replace('\n', "<br>"),
+            )],
+        });
+        assert_eq!(audit.issues.len(), 1);
     }
 
     #[test]
