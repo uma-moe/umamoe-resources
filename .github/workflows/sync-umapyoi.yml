@@ -24,9 +24,14 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # The default branch is ruleset-protected; pushes go through a write deploy key that only
+    # the "sync" environment holds, and that environment only accepts the default branch.
+    environment: sync
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.SYNC_DEPLOY_KEY }}
 
       - uses: dtolnay/rust-toolchain@stable
 
