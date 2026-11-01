@@ -1,5 +1,5 @@
 use anyhow::{bail, Context, Result};
-use chrono::{TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -11,6 +11,7 @@ use tokio::time::sleep;
 
 const ARCHIVE_VERSION: u8 = 1;
 const ACCOUNT: &str = "umamusume_eng";
+const ARCHIVE_INDEX_LOOKBACK_DAYS: i64 = 90;
 const HISTORICAL_SEED_STATUS_IDS: &[&str] = &[
     // Official posts supplied after they had already fallen out of the live
     // profile response, plus X URLs recovered from a public archival URL
@@ -37,6 +38,8 @@ pub struct GlobalSocialArchive {
     pub version: u8,
     pub profile_source: String,
     pub syndication_source: String,
+    #[serde(default)]
+    pub archive_index_source: String,
     pub oembed_source: String,
     #[serde(default)]
     pub posts: Vec<GlobalSocialPost>,
@@ -71,6 +74,7 @@ pub struct SyncSummary {
 pub async fn sync(
     profile_url: &str,
     syndication_url: &str,
+    archive_index_endpoint: &str,
     oembed_endpoint: &str,
     output_path: &Path,
 ) -> Result<SyncSummary> {
@@ -92,10 +96,16 @@ pub async fn sync(
     let mut status_ids = BTreeSet::new();
     let mut source_errors = Vec::new();
 
-    let profile_html = get_text_with_retry(&client, profile_url)
-        .await
-        .context("failed to discover current official X posts")?;
-    status_ids.extend(extract_status_ids(&profile_html));
+    // X refuses its logged-out profile page to datacenter IPs such as GitHub's runners and rate
+    // limits the syndication history, so every discovery source is best effort. The public web
+    // archive index still lists posts that have left the profile. Whichever source lists an ID,
+    // the post is only stored once X's own oEmbed confirms @umamusume_eng wrote it.
+    match get_text_with_retry(&client, profile_url).await {
+        Ok(profile_html) => status_ids.extend(extract_status_ids(&profile_html)),
+        Err(error) => {
+            source_errors.push(format!("official X profile could not be read: {error:#}"))
+        }
+    }
 
     match get_text_with_retry(&client, syndication_url).await {
         Ok(timeline_html) => {
@@ -110,13 +120,24 @@ pub async fn sync(
         )),
     }
 
+    let index_url = archive_index_url(archive_index_endpoint, Utc::now());
+    match get_text_with_retry(&client, &index_url).await {
+        Ok(index) => {
+            status_ids.extend(
+                extract_status_ids(&index)
+                    .into_iter()
+                    .filter(|status_id| !posts.contains_key(status_id)),
+            );
+        }
+        Err(error) => source_errors.push(format!(
+            "web archive index of official X posts could not be read: {error:#}"
+        )),
+    }
+
     for status_id in HISTORICAL_SEED_STATUS_IDS {
         if !posts.contains_key(*status_id) {
             status_ids.insert((*status_id).to_string());
         }
-    }
-    if status_ids.is_empty() {
-        bail!("official X profile did not expose any {ACCOUNT} status IDs");
     }
 
     let captured_at = Utc::now().to_rfc3339();
@@ -124,44 +145,22 @@ pub async fn sync(
     let mut new_posts = 0;
     let mut updated_posts = 0;
     for status_id in status_ids {
-        let oembed_url = format!(
-            "{oembed_endpoint}?url=https%3A%2F%2Fx.com%2F{ACCOUNT}%2Fstatus%2F{status_id}&omit_script=true"
-        );
-        let oembed = match get_json_with_retry(&client, &oembed_url).await {
-            Ok(value) => value,
-            Err(error) if posts.contains_key(&status_id) => {
+        let (status_url, raw) = match fetch_post(&client, oembed_endpoint, &status_id).await {
+            Ok(post) => post,
+            Err(error) => {
+                // One unreadable post must not hold back the news archives committed in the same
+                // job. A new post is tried again whenever a source lists it.
+                let action = if posts.contains_key(&status_id) {
+                    "refreshed"
+                } else {
+                    "archived"
+                };
                 source_errors.push(format!(
-                    "status {status_id} could not be refreshed: {error:#}"
+                    "status {status_id} could not be {action}: {error:#}"
                 ));
                 continue;
             }
-            Err(error) => {
-                return Err(error).context(format!("failed to archive status {status_id}"))
-            }
         };
-        let author_url = oembed
-            .get("author_url")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        if !author_url.trim_end_matches('/').ends_with(ACCOUNT) {
-            bail!("status {status_id} was not authored by @{ACCOUNT}");
-        }
-        let html = oembed
-            .get("html")
-            .and_then(Value::as_str)
-            .context("official X oEmbed response is missing html")?;
-        let text = extract_post_text(html)
-            .with_context(|| format!("status {status_id} is missing embedded post text"))?;
-        let created_at = snowflake_timestamp(&status_id)
-            .with_context(|| format!("invalid X status ID {status_id}"))?;
-        let status_url = format!("https://x.com/{ACCOUNT}/status/{status_id}");
-        let raw = json!({
-            "status_id": status_id,
-            "status_url": status_url,
-            "created_at": created_at,
-            "text": text,
-            "oembed": oembed,
-        });
         let content_hash = hash_value(&raw)?;
         match posts.get_mut(&status_id) {
             Some(post)
@@ -200,6 +199,7 @@ pub async fn sync(
         version: ARCHIVE_VERSION,
         profile_source: profile_url.to_string(),
         syndication_source: syndication_url.to_string(),
+        archive_index_source: archive_index_endpoint.to_string(),
         oembed_source: oembed_endpoint.to_string(),
         posts: posts.into_values().collect(),
     };
@@ -216,6 +216,61 @@ pub async fn sync(
         changed,
         source_errors,
     })
+}
+
+/// Fetches one post through X's oEmbed endpoint and returns its canonical URL and raw record.
+async fn fetch_post(
+    client: &Client,
+    oembed_endpoint: &str,
+    status_id: &str,
+) -> Result<(String, Value)> {
+    let oembed_url = format!(
+        "{oembed_endpoint}?url=https%3A%2F%2Fx.com%2F{ACCOUNT}%2Fstatus%2F{status_id}&omit_script=true"
+    );
+    let oembed = get_json_with_retry(client, &oembed_url).await?;
+    let author_url = oembed
+        .get("author_url")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if !is_official_author(author_url) {
+        bail!("status {status_id} was not authored by @{ACCOUNT}");
+    }
+    let html = oembed
+        .get("html")
+        .and_then(Value::as_str)
+        .context("official X oEmbed response is missing html")?;
+    let text = extract_post_text(html)
+        .with_context(|| format!("status {status_id} is missing embedded post text"))?;
+    let created_at = snowflake_timestamp(status_id)
+        .with_context(|| format!("invalid X status ID {status_id}"))?;
+    let status_url = format!("https://x.com/{ACCOUNT}/status/{status_id}");
+    let raw = json!({
+        "status_id": status_id,
+        "status_url": status_url,
+        "created_at": created_at,
+        "text": text,
+        "oembed": oembed,
+    });
+    Ok((status_url, raw))
+}
+
+/// The oEmbed author must be the official account exactly. Anyone can get a URL into the web
+/// archive index, so a look-alike such as @fake_umamusume_eng must not pass a suffix match.
+fn is_official_author(author_url: &str) -> bool {
+    author_url
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .is_some_and(|account| account.eq_ignore_ascii_case(ACCOUNT))
+}
+
+/// Internet Archive CDX query for official status URLs captured in the last
+/// `ARCHIVE_INDEX_LOOKBACK_DAYS`.
+fn archive_index_url(endpoint: &str, now: DateTime<Utc>) -> String {
+    let since = (now - chrono::Duration::days(ARCHIVE_INDEX_LOOKBACK_DAYS)).format("%Y%m%d");
+    format!(
+        "{endpoint}?url=x.com/{ACCOUNT}/status/&matchType=prefix&from={since}&fl=original&collapse=urlkey"
+    )
 }
 
 async fn get_text_with_retry(client: &Client, url: &str) -> Result<String> {
@@ -341,6 +396,7 @@ fn load_archive(path: &Path) -> Result<GlobalSocialArchive> {
             version: ARCHIVE_VERSION,
             profile_source: String::new(),
             syndication_source: String::new(),
+            archive_index_source: String::new(),
             oembed_source: String::new(),
             posts: Vec::new(),
         });
@@ -370,7 +426,45 @@ fn write_archive(path: &Path, archive: &GlobalSocialArchive) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_post_text, extract_status_ids, snowflake_timestamp};
+    use super::{
+        archive_index_url, extract_post_text, extract_status_ids, is_official_author,
+        snowflake_timestamp,
+    };
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn accepts_only_the_exact_official_author() {
+        assert!(is_official_author("https://twitter.com/umamusume_eng"));
+        assert!(is_official_author("https://x.com/Umamusume_ENG/"));
+        assert!(!is_official_author(
+            "https://twitter.com/fake_umamusume_eng"
+        ));
+        assert!(!is_official_author("https://twitter.com/umamusume_eng_fan"));
+        assert!(!is_official_author(""));
+    }
+
+    #[test]
+    fn queries_the_archive_index_for_recent_official_status_urls() {
+        let now = Utc.with_ymd_and_hms(2026, 11, 1, 12, 0, 0).unwrap();
+        assert_eq!(
+            archive_index_url("https://web.archive.org/cdx/search/cdx", now),
+            "https://web.archive.org/cdx/search/cdx?url=x.com/umamusume_eng/status/\
+             &matchType=prefix&from=20260803&fl=original&collapse=urlkey"
+        );
+    }
+
+    #[test]
+    fn discovers_status_ids_in_archive_index_lines() {
+        let index = "https://x.com/umamusume_eng/status/2112401161940529303\n\
+                     https://x.com/umamusume_eng/status/2105840693138575450/photo/1\n";
+        assert_eq!(
+            extract_status_ids(index).into_iter().collect::<Vec<_>>(),
+            vec![
+                "2105840693138575450".to_string(),
+                "2112401161940529303".to_string()
+            ]
+        );
+    }
 
     #[test]
     fn discovers_plain_and_json_escaped_official_status_ids() {
