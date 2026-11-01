@@ -459,9 +459,15 @@ Recommended environment-specific values:
 
 Remote host requirements:
 
-- Docker installed
+- Docker Engine 26 or newer, for the beta history mount's `volume-subpath`
 - A user with permission to run `docker`
 - Enough temporary disk space under `/tmp/umamoe-resources-images` for the uploaded image archive during deployment
 - Network access from the container to `https://uma.moe/api/ver` and the Global game asset CDN
 
 The workflow mounts the named Docker volume at `/data`, so refreshed `master.mdb` and generated resource artifacts persist across container replacements.
+
+Beta also mounts production's `generated-data/masterdata` read-only over its own, so both
+serve one master release history and only production records releases. Run
+`backfill-master-history` in the production container; beta shows the result immediately.
+While beta sees a new master before production does, it logs that it could not record the
+release; production records it on its next refresh.
