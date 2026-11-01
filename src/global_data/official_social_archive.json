@@ -2,6 +2,7 @@
   "version": 1,
   "profile_source": "https://x.com/umamusume_eng",
   "syndication_source": "https://syndication.twitter.com/srv/timeline-profile/screen-name/umamusume_eng",
+  "archive_index_source": "https://web.archive.org/cdx/search/cdx",
   "oembed_source": "https://publish.twitter.com/oembed",
   "posts": [
     {
@@ -4955,6 +4956,66 @@
       ]
     },
     {
+      "status_id": "2099619247035212021",
+      "status_url": "https://x.com/umamusume_eng/status/2099619247035212021",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "a1399c5f40b8925e072fc35fe14433f0db73acef8ad0db297202d90a9c815dc6",
+          "raw": {
+            "created_at": "2026-09-14T22:00:12.189+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📢 New characters are on their way to debut on Sep 15 (UTC):<br><br>🥕 3★ Nakayama Festa will appear in the Pretty Derby Scout!<br>🤝 Tenno Sho (Autumn) winners SSR Mr. C.B. and SSR Super Creek will appear in the Support Card Scout!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/jmqKTvlok9\">pic.twitter.com/jmqKTvlok9</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2099619247035212021?ref_src=twsrc%5Etfw\">September 14, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2099619247035212021",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2099619247035212021",
+            "status_url": "https://x.com/umamusume_eng/status/2099619247035212021",
+            "text": "📢 New characters are on their way to debut on Sep 15 (UTC):\n🥕 3★ Nakayama Festa will appear in the Pretty Derby Scout!\n🤝 Tenno Sho (Autumn) winners SSR Mr. C.B. and SSR Super Creek will appear in the Support Card Scout!#Umamusume pic.twitter.com/jmqKTvlok9"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2099982915446923552",
+      "status_url": "https://x.com/umamusume_eng/status/2099982915446923552",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "f455e4be6335a2a768d68a8cfb6c1b934e028ee205b32929976cc3b428bc9d49",
+          "raw": {
+            "created_at": "2026-09-15T22:05:17.495+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">3★ [Desperate Measures] Nakayama Festa, out now! (Voice: Shino Shimoji)<br><br>A natural outlaw who loves taking risks. She tears across medium-distance tracks towards victory with her all-or-nothing late surge.<br><br>Scout her now and get 90 Nakayama Festa Star Pieces as a bonus!… <a href=\"https://t.co/AmxrOsqpUE\">pic.twitter.com/AmxrOsqpUE</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2099982915446923552?ref_src=twsrc%5Etfw\">September 15, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2099982915446923552",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2099982915446923552",
+            "status_url": "https://x.com/umamusume_eng/status/2099982915446923552",
+            "text": "3★ [Desperate Measures] Nakayama Festa, out now! (Voice: Shino Shimoji)\nA natural outlaw who loves taking risks. She tears across medium-distance tracks towards victory with her all-or-nothing late surge.\nScout her now and get 90 Nakayama Festa Star Pieces as a bonus!… pic.twitter.com/AmxrOsqpUE"
+          }
+        }
+      ]
+    },
+    {
       "status_id": "2100044563247460396",
       "status_url": "https://x.com/umamusume_eng/status/2100044563247460396",
       "first_seen_at": "2026-09-19T15:53:45.129941437+00:00",
@@ -5220,6 +5281,156 @@
             "status_id": "2102520833050890514",
             "status_url": "https://x.com/umamusume_eng/status/2102520833050890514",
             "text": "🤝 Here's your first look at a new SSR Support Card!\nPresenting [Danke Schön] Eishin Flash!\nFor details, please check the Featured Cards section on the top right of the Scout screen available from Sep 23 (UTC).#Umamusume pic.twitter.com/fmIb4UHwJB"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2102963735971131841",
+      "status_url": "https://x.com/umamusume_eng/status/2102963735971131841",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "d39ed6a417f44696fc3161ccceb48191314ecb68fee09bcf0e7b39f3d3c050e9",
+          "raw": {
+            "created_at": "2026-09-24T03:30:00.489+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Sakura Chiyono O&#39;s SUPER! KEEN ADVICE! 🌸<br><br>Episode 2: Potential Level and Book of Hints<br><br>Tune in to learn all about acquiring skills!<br>Our guest this time is Yaeno Muteki! Looks like things are heating up between her and Maruzensky...<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/KZew4CgZTA\">pic.twitter.com/KZew4CgZTA</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2102963735971131841?ref_src=twsrc%5Etfw\">September 24, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2102963735971131841",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2102963735971131841",
+            "status_url": "https://x.com/umamusume_eng/status/2102963735971131841",
+            "text": "Sakura Chiyono O's SUPER! KEEN ADVICE! 🌸\nEpisode 2: Potential Level and Book of Hints\nTune in to learn all about acquiring skills!\nOur guest this time is Yaeno Muteki! Looks like things are heating up between her and Maruzensky...#Umamusume pic.twitter.com/KZew4CgZTA"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2103967892584927578",
+      "status_url": "https://x.com/umamusume_eng/status/2103967892584927578",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "9b9aff5c826b4558a4561d6d4109763d47713474b4fb457f0140a2e21eeed2c8",
+          "raw": {
+            "created_at": "2026-09-26T22:00:10.082+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">An Aim for the Stars! Dream Team event is set to begin at 10:00 p.m., Sep 27 (UTC)!<br><br>For more details, please check the in-game notice.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/xxHJL82G55\">pic.twitter.com/xxHJL82G55</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2103967892584927578?ref_src=twsrc%5Etfw\">September 26, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2103967892584927578",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2103967892584927578",
+            "status_url": "https://x.com/umamusume_eng/status/2103967892584927578",
+            "text": "An Aim for the Stars! Dream Team event is set to begin at 10:00 p.m., Sep 27 (UTC)!\nFor more details, please check the in-game notice.#Umamusume pic.twitter.com/xxHJL82G55"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2104332777051373833",
+      "status_url": "https://x.com/umamusume_eng/status/2104332777051373833",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "a34090f5d43051638b9c4bf2504127f927e049f543b541de847739d32c3a4069",
+          "raw": {
+            "created_at": "2026-09-27T22:10:05.318+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">🎊 Here&#39;s your first look at the new 3★ character!<br><br>Introducing [Nuit Étoilée de Scarlet] Daiwa Scarlet!<br><br>For details, please check the Featured Trainees section on the top right of the Scout screen available from Sep 28 (UTC).<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/Wwe6WiRZYe\">pic.twitter.com/Wwe6WiRZYe</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2104332777051373833?ref_src=twsrc%5Etfw\">September 27, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2104332777051373833",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2104332777051373833",
+            "status_url": "https://x.com/umamusume_eng/status/2104332777051373833",
+            "text": "🎊 Here's your first look at the new 3★ character!\nIntroducing [Nuit Étoilée de Scarlet] Daiwa Scarlet!\nFor details, please check the Featured Trainees section on the top right of the Scout screen available from Sep 28 (UTC).#Umamusume pic.twitter.com/Wwe6WiRZYe"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2105840693138575450",
+      "status_url": "https://x.com/umamusume_eng/status/2105840693138575450",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "99e61014fdae6e09dcdff6ee3534812291e857e2771e613bf4dfb0620d5a2380",
+          "raw": {
+            "created_at": "2026-10-02T02:02:00.529+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Live stream tickets for 7th EVENT: THE STAGE in LOS ANGELES are available now!<br><br>Check out our official site for details:<a href=\"https://t.co/w9oLHWUuKp\">https://t.co/w9oLHWUuKp</a><a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://x.com/hashtag/Umamusume7th?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume7th</a> <a href=\"https://t.co/JDiv6V0iIz\">pic.twitter.com/JDiv6V0iIz</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2105840693138575450?ref_src=twsrc%5Etfw\">October 2, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2105840693138575450",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2105840693138575450",
+            "status_url": "https://x.com/umamusume_eng/status/2105840693138575450",
+            "text": "Live stream tickets for 7th EVENT: THE STAGE in LOS ANGELES are available now!\nCheck out our official site for details:https://t.co/w9oLHWUuKp#Umamusume #Umamusume7th pic.twitter.com/JDiv6V0iIz"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2112401161940529303",
+      "status_url": "https://x.com/umamusume_eng/status/2112401161940529303",
+      "first_seen_at": "2026-11-01T22:02:29.922461046+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-01T22:02:29.922461046+00:00",
+          "content_hash": "13a7b1eafe6490c718ed7948b1c159b2725b51c34cc2444e3b215512941f10f4",
+          "raw": {
+            "created_at": "2026-10-20T04:30:58.179+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">It is with heavy hearts that we must announce the cancellation of the Umamusume: Pretty Derby – 7th EVENT: THE STAGE in LOS ANGELES concerts planned for Oct 22–23, 2026.<br><br>Although we have coordinated repeatedly with all parties concerned and explored every possible option in our…</p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2112401161940529303?ref_src=twsrc%5Etfw\">October 20, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2112401161940529303",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2112401161940529303",
+            "status_url": "https://x.com/umamusume_eng/status/2112401161940529303",
+            "text": "It is with heavy hearts that we must announce the cancellation of the Umamusume: Pretty Derby – 7th EVENT: THE STAGE in LOS ANGELES concerts planned for Oct 22–23, 2026.\nAlthough we have coordinated repeatedly with all parties concerned and explored every possible option in our…"
           }
         }
       ]
