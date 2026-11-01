@@ -3263,10 +3263,16 @@ fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate
             continue;
         }
 
+        // A leading '-' hides the row, so any date after the key is ignored.
+        let (excluded, line) = match line.strip_prefix('-') {
+            Some(rest) => (true, rest.trim_start()),
+            None => (false, line),
+        };
+
         let fields = line.split(',').map(str::trim).collect::<Vec<_>>();
-        if fields.len() != 3 {
+        if fields.len() != 3 && !(excluded && fields.len() == 2) {
             anyhow::bail!(
-                "confirmed_global_banner_dates.csv line {line_number} must be type,banner,date-or-hidden"
+                "confirmed_global_banner_dates.csv line {line_number} must be type,banner,date-or-hidden or -type,banner"
             );
         }
 
@@ -3286,10 +3292,11 @@ fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate
         dates.push(ConfirmedTimelineDate {
             kind,
             key,
-            global_date: if matches!(
-                fields[2].to_ascii_lowercase().as_str(),
-                "hidden" | "hide" | "excluded" | "exclude"
-            ) {
+            global_date: if excluded
+                || matches!(
+                    fields[2].to_ascii_lowercase().as_str(),
+                    "hidden" | "hide" | "excluded" | "exclude"
+                ) {
                 None
             } else {
                 Some(parse_confirmed_global_date(fields[2]).with_context(|| {
@@ -5109,6 +5116,27 @@ mod tests {
         assert_eq!(dates[8].kind, ConfirmedTimelineKind::Character);
         assert_eq!(dates[8].key, "30130");
         assert_eq!(dates[8].global_date, None);
+    }
+
+    #[test]
+    fn confirmed_dates_csv_dash_prefix_hides_row() {
+        let dates = parse_confirmed_banner_dates(
+            r#"
+            -character,2022_30130.webp
+            - support,30131,2026-07-02
+            "#,
+        )
+        .expect("dash-prefixed rows should parse");
+
+        assert_eq!(dates.len(), 2);
+        assert_eq!(dates[0].kind, ConfirmedTimelineKind::Character);
+        assert_eq!(dates[0].key, "30130");
+        assert_eq!(dates[0].global_date, None);
+        assert_eq!(dates[1].kind, ConfirmedTimelineKind::Support);
+        assert_eq!(dates[1].key, "30131");
+        assert_eq!(dates[1].global_date, None);
+
+        assert!(parse_confirmed_banner_dates("character,30130").is_err());
     }
 
     #[test]
