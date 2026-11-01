@@ -14,6 +14,10 @@ const PAGE_SIZE: usize = 32;
 const MAX_PAGES: usize = 100;
 const REQUEST_INTERVAL: Duration = Duration::from_millis(150);
 const UMAPYOI_EN_NEWS_ROOT: &str = "https://umapyoi.net/en/news";
+/// Feed fields that describe where a post sits in Umapyoi's listing, not what it says.
+/// `row_number` shifts every time a newer post is published, so these fields are neither
+/// hashed nor archived; otherwise every sync that adds a post re-snapshots every post.
+const VOLATILE_FEED_FIELDS: &[&str] = &["row_number"];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GlobalNewsArchive {
@@ -64,45 +68,8 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
         })
         .collect::<BTreeMap<_, _>>();
     let captured_at = Utc::now().to_rfc3339();
-    let mut new_posts = 0;
-    let mut updated_posts = 0;
-
-    for raw in fetch_all_posts(&client, endpoint).await? {
-        let announce_id =
-            announce_id(&raw).context("official EN news post is missing announce_id")?;
-        let content_hash = hash_value(&raw)?;
-        match posts.get_mut(&announce_id) {
-            Some(post)
-                if post
-                    .snapshots
-                    .last()
-                    .is_some_and(|snapshot| snapshot.content_hash == content_hash) => {}
-            Some(post) => {
-                post.snapshots.push(GlobalNewsSnapshot {
-                    captured_at: captured_at.clone(),
-                    content_hash,
-                    raw,
-                });
-                updated_posts += 1;
-            }
-            None => {
-                posts.insert(
-                    announce_id,
-                    GlobalNewsPost {
-                        announce_id,
-                        page_url: umapyoi_en_page_url(announce_id),
-                        first_seen_at: captured_at.clone(),
-                        snapshots: vec![GlobalNewsSnapshot {
-                            captured_at: captured_at.clone(),
-                            content_hash,
-                            raw,
-                        }],
-                    },
-                );
-                new_posts += 1;
-            }
-        }
-    }
+    let fetched = fetch_all_posts(&client, endpoint).await?;
+    let (new_posts, updated_posts) = merge_posts(&mut posts, fetched, &captured_at)?;
 
     let archive = GlobalNewsArchive {
         version: ARCHIVE_VERSION,
@@ -120,6 +87,69 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
         updated_posts,
         changed,
     })
+}
+
+/// Appends a snapshot to each fetched post whose content differs from its latest snapshot and
+/// returns `(new_posts, updated_posts)`.
+fn merge_posts(
+    posts: &mut BTreeMap<i64, GlobalNewsPost>,
+    fetched: Vec<Value>,
+    captured_at: &str,
+) -> Result<(usize, usize)> {
+    let mut new_posts = 0;
+    let mut updated_posts = 0;
+    for raw in fetched {
+        let announce_id =
+            announce_id(&raw).context("official EN news post is missing announce_id")?;
+        let raw = without_volatile_fields(raw);
+        let content_hash = hash_value(&raw)?;
+        match posts.get_mut(&announce_id) {
+            Some(post) if latest_content_hash(post)?.as_deref() == Some(content_hash.as_str()) => {}
+            Some(post) => {
+                post.snapshots.push(GlobalNewsSnapshot {
+                    captured_at: captured_at.to_string(),
+                    content_hash,
+                    raw,
+                });
+                updated_posts += 1;
+            }
+            None => {
+                posts.insert(
+                    announce_id,
+                    GlobalNewsPost {
+                        announce_id,
+                        page_url: umapyoi_en_page_url(announce_id),
+                        first_seen_at: captured_at.to_string(),
+                        snapshots: vec![GlobalNewsSnapshot {
+                            captured_at: captured_at.to_string(),
+                            content_hash,
+                            raw,
+                        }],
+                    },
+                );
+                new_posts += 1;
+            }
+        }
+    }
+    Ok((new_posts, updated_posts))
+}
+
+/// Hash of the latest snapshot without volatile feed fields. Snapshots archived before those
+/// fields were stripped still carry them in `raw` and in `content_hash`.
+fn latest_content_hash(post: &GlobalNewsPost) -> Result<Option<String>> {
+    post.snapshots
+        .last()
+        .map(|snapshot| hash_value(&without_volatile_fields(snapshot.raw.clone())))
+        .transpose()
+}
+
+fn without_volatile_fields(mut raw: Value) -> Value {
+    if let Some(fields) = raw.as_object_mut() {
+        for field in VOLATILE_FEED_FIELDS {
+            fields.remove(*field);
+        }
+    }
+    raw
 }
 
 pub(crate) fn umapyoi_en_page_url(announce_id: i64) -> String {
@@ -220,9 +250,73 @@ fn write_archive(path: &Path, archive: &GlobalNewsArchive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        hash_value, umapyoi_en_page_url, GlobalNewsArchive, GlobalNewsPost, GlobalNewsSnapshot,
+        hash_value, merge_posts, umapyoi_en_page_url, GlobalNewsArchive, GlobalNewsPost,
+        GlobalNewsSnapshot,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use std::collections::BTreeMap;
+
+    fn archived_post(raw: Value) -> BTreeMap<i64, GlobalNewsPost> {
+        BTreeMap::from([(
+            10,
+            GlobalNewsPost {
+                announce_id: 10,
+                page_url: umapyoi_en_page_url(10),
+                first_seen_at: "2026-01-01T00:00:00Z".to_string(),
+                snapshots: vec![GlobalNewsSnapshot {
+                    captured_at: "2026-01-01T00:00:00Z".to_string(),
+                    content_hash: hash_value(&raw).unwrap(),
+                    raw,
+                }],
+            },
+        )])
+    }
+
+    #[test]
+    fn row_number_only_change_adds_no_snapshot() {
+        let mut posts = archived_post(json!({"announce_id": 10, "message": "Carats x 1,350"}));
+        let fetched =
+            vec![json!({"announce_id": 10, "message": "Carats x 1,350", "row_number": 7})];
+
+        let (new_posts, updated_posts) =
+            merge_posts(&mut posts, fetched, "2026-01-02T00:00:00Z").unwrap();
+
+        assert_eq!((new_posts, updated_posts), (0, 0));
+        assert_eq!(posts[&10].snapshots.len(), 1);
+    }
+
+    #[test]
+    fn snapshots_archived_with_a_row_number_are_not_resnapshotted() {
+        let mut posts = archived_post(json!({"announce_id": 10, "message": "Hi", "row_number": 6}));
+        let fetched = vec![json!({"announce_id": 10, "message": "Hi", "row_number": 7})];
+
+        let (_, updated_posts) = merge_posts(&mut posts, fetched, "2026-01-02T00:00:00Z").unwrap();
+
+        assert_eq!(updated_posts, 0);
+        assert_eq!(posts[&10].snapshots.len(), 1);
+    }
+
+    #[test]
+    fn content_changes_add_a_snapshot_without_volatile_fields() {
+        let mut posts = archived_post(json!({"announce_id": 10, "message": "Carats x 1,350"}));
+        let corrected = json!({"announce_id": 10, "message": "Correct Amount: 1,500 carats"});
+        let fetched = vec![
+            json!({"announce_id": 10, "message": "Correct Amount: 1,500 carats", "row_number": 8}),
+            json!({"announce_id": 11, "message": "New post", "row_number": 1}),
+        ];
+
+        let (new_posts, updated_posts) =
+            merge_posts(&mut posts, fetched, "2026-01-02T00:00:00Z").unwrap();
+
+        assert_eq!((new_posts, updated_posts), (1, 1));
+        let latest = posts[&10].snapshots.last().unwrap();
+        assert_eq!(latest.raw, corrected);
+        assert_eq!(latest.content_hash, hash_value(&corrected).unwrap());
+        assert_eq!(
+            posts[&11].snapshots[0].raw,
+            json!({"announce_id": 11, "message": "New post"})
+        );
+    }
 
     #[test]
     fn snapshots_can_preserve_multiple_versions_of_a_deleted_or_corrected_post() {
