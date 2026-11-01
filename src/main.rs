@@ -101,6 +101,8 @@ enum Command {
             default_value = "https://syndication.twitter.com/srv/timeline-profile/screen-name/umamusume_eng"
         )]
         syndication_url: String,
+        #[arg(long, default_value = "https://web.archive.org/cdx/search/cdx")]
+        archive_index_endpoint: String,
         #[arg(long, default_value = "https://publish.twitter.com/oembed")]
         oembed_endpoint: String,
         #[arg(long, default_value = "src/global_data/official_social_archive.json")]
@@ -267,11 +269,18 @@ async fn main() -> Result<()> {
         Command::SyncGlobalSocial {
             profile_url,
             syndication_url,
+            archive_index_endpoint,
             oembed_endpoint,
             out,
         } => {
-            let summary =
-                global_social::sync(&profile_url, &syndication_url, &oembed_endpoint, &out).await?;
+            let summary = global_social::sync(
+                &profile_url,
+                &syndication_url,
+                &archive_index_endpoint,
+                &oembed_endpoint,
+                &out,
+            )
+            .await?;
             info!(
                 posts = summary.posts,
                 discovered_posts = summary.discovered_posts,
@@ -281,6 +290,16 @@ async fn main() -> Result<()> {
                 "official Global social archive synchronized"
             );
             for error in summary.source_errors {
+                if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                    // Shown on the run summary, so a source X starts blocking doesn't go unnoticed.
+                    println!(
+                        "::warning title=Official X sync::{}",
+                        error
+                            .replace('%', "%25")
+                            .replace('\r', "%0D")
+                            .replace('\n', "%0A")
+                    );
+                }
                 warn!(
                     error,
                     "official Global social source could not be fully synchronized"
