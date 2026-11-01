@@ -64,9 +64,10 @@ pub async fn sync(endpoint: &str, output_path: &Path) -> Result<SyncSummary> {
         .into_iter()
         .map(|mut post| {
             post.page_url = umapyoi_en_page_url(post.announce_id);
-            (post.announce_id, post)
+            compact_snapshots(&mut post)?;
+            Ok((post.announce_id, post))
         })
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Result<BTreeMap<_, _>>>()?;
     let captured_at = Utc::now().to_rfc3339();
     let fetched = fetch_all_posts(&client, endpoint).await?;
     let (new_posts, updated_posts) = merge_posts(&mut posts, fetched, &captured_at)?;
@@ -104,7 +105,11 @@ fn merge_posts(
         let raw = without_volatile_fields(raw);
         let content_hash = hash_value(&raw)?;
         match posts.get_mut(&announce_id) {
-            Some(post) if latest_content_hash(post)?.as_deref() == Some(content_hash.as_str()) => {}
+            Some(post)
+                if post
+                    .snapshots
+                    .last()
+                    .is_some_and(|snapshot| snapshot.content_hash == content_hash) => {}
             Some(post) => {
                 post.snapshots.push(GlobalNewsSnapshot {
                     captured_at: captured_at.to_string(),
@@ -134,13 +139,24 @@ fn merge_posts(
     Ok((new_posts, updated_posts))
 }
 
-/// Hash of the latest snapshot without volatile feed fields. Snapshots archived before those
-/// fields were stripped still carry them in `raw` and in `content_hash`.
-fn latest_content_hash(post: &GlobalNewsPost) -> Result<Option<String>> {
-    post.snapshots
-        .last()
-        .map(|snapshot| hash_value(&without_volatile_fields(snapshot.raw.clone())))
-        .transpose()
+/// Strips volatile feed fields from every archived snapshot and drops each snapshot that then
+/// matches the one before it, keeping the earliest capture of every version. Snapshots archived
+/// before those fields were stripped differ only in feed position; real edits are kept.
+fn compact_snapshots(post: &mut GlobalNewsPost) -> Result<()> {
+    let mut snapshots: Vec<GlobalNewsSnapshot> = Vec::with_capacity(post.snapshots.len());
+    for mut snapshot in std::mem::take(&mut post.snapshots) {
+        snapshot.raw = without_volatile_fields(snapshot.raw);
+        snapshot.content_hash = hash_value(&snapshot.raw)?;
+        if snapshots
+            .last()
+            .is_some_and(|previous| previous.content_hash == snapshot.content_hash)
+        {
+            continue;
+        }
+        snapshots.push(snapshot);
+    }
+    post.snapshots = snapshots;
+    Ok(())
 }
 
 fn without_volatile_fields(mut raw: Value) -> Value {
@@ -250,8 +266,8 @@ fn write_archive(path: &Path, archive: &GlobalNewsArchive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        hash_value, merge_posts, umapyoi_en_page_url, GlobalNewsArchive, GlobalNewsPost,
-        GlobalNewsSnapshot,
+        compact_snapshots, hash_value, merge_posts, umapyoi_en_page_url, GlobalNewsArchive,
+        GlobalNewsPost, GlobalNewsSnapshot,
     };
     use serde_json::{json, Value};
     use std::collections::BTreeMap;
@@ -286,14 +302,54 @@ mod tests {
     }
 
     #[test]
-    fn snapshots_archived_with_a_row_number_are_not_resnapshotted() {
-        let mut posts = archived_post(json!({"announce_id": 10, "message": "Hi", "row_number": 6}));
-        let fetched = vec![json!({"announce_id": 10, "message": "Hi", "row_number": 7})];
+    fn compaction_collapses_snapshots_that_differ_only_in_row_number() {
+        let original = json!({"announce_id": 10, "message": "Carats x 1,350"});
+        let corrected = json!({"announce_id": 10, "message": "Correct Amount: 1,500 carats"});
+        let mut posts = archived_post(json!({}));
+        let post = posts.get_mut(&10).unwrap();
+        post.snapshots = [
+            (1, &original),
+            (2, &original),
+            (3, &corrected),
+            (4, &corrected),
+            (5, &original),
+        ]
+        .into_iter()
+        .map(|(day, raw)| {
+            let mut raw = raw.clone();
+            raw["row_number"] = json!(day);
+            GlobalNewsSnapshot {
+                captured_at: format!("2026-01-0{day}T00:00:00Z"),
+                content_hash: hash_value(&raw).unwrap(),
+                raw,
+            }
+        })
+        .collect();
 
-        let (_, updated_posts) = merge_posts(&mut posts, fetched, "2026-01-02T00:00:00Z").unwrap();
+        compact_snapshots(post).unwrap();
 
+        let kept = post
+            .snapshots
+            .iter()
+            .map(|snapshot| (snapshot.captured_at.as_str(), &snapshot.raw))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            kept,
+            [
+                ("2026-01-01T00:00:00Z", &original),
+                ("2026-01-03T00:00:00Z", &corrected),
+                ("2026-01-05T00:00:00Z", &original),
+            ]
+        );
+        assert!(post
+            .snapshots
+            .iter()
+            .all(|snapshot| snapshot.content_hash == hash_value(&snapshot.raw).unwrap()));
+
+        let fetched =
+            vec![json!({"announce_id": 10, "message": "Carats x 1,350", "row_number": 6})];
+        let (_, updated_posts) = merge_posts(&mut posts, fetched, "2026-01-06T00:00:00Z").unwrap();
         assert_eq!(updated_posts, 0);
-        assert_eq!(posts[&10].snapshots.len(), 1);
     }
 
     #[test]
