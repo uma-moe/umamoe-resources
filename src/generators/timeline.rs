@@ -869,10 +869,11 @@ fn support_event(
         observed_rate,
     );
     let duration = banner_duration_days(banner.start_at, banner.end_at);
+    // Global support scouts end with their paired character scout.
     let adjustment = if is_berlin_dst(prediction.global_date) {
-        -1
-    } else {
         0
+    } else {
+        1
     };
     let banner_id = banner.gacha_id.to_string();
     let (estimated_end_date, banner_duration_days) = event_end_date(
@@ -5317,6 +5318,35 @@ mod tests {
         let event = super::character_event(&character, &BTreeMap::new(), &lookup, &[], 1.0);
         assert_eq!(event.estimated_end_date, utc_date(2026, 10, 30, 22));
         assert_eq!(event.banner_duration_days, 6);
+    }
+
+    #[test]
+    fn support_banners_end_with_their_paired_character_banner() {
+        let character = test_timeline_character_banner(90002, vec![100101]);
+        let support = test_timeline_support_banner(90003, vec![30001]);
+
+        // Winter and Berlin summer time use different end offsets.
+        for (global_start, expected_end) in [
+            (utc_date(2026, 11, 5, 22), utc_date(2026, 11, 12, 22)),
+            (utc_date(2026, 8, 25, 22), utc_date(2026, 8, 31, 22)),
+        ] {
+            let mut lookup = empty_confirmed_date_lookup();
+            lookup.character.insert(90002, global_start);
+            lookup.support.insert(90003, global_start);
+
+            let character_event =
+                super::character_event(&character, &BTreeMap::new(), &lookup, &[], 1.0);
+            let support_event = super::support_event(
+                &support,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &lookup,
+                &[],
+                1.0,
+            );
+            assert_eq!(character_event.estimated_end_date, expected_end);
+            assert_eq!(support_event.estimated_end_date, expected_end);
+        }
     }
 
     #[test]
