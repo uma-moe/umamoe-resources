@@ -343,8 +343,10 @@ struct TimelineStoryEvent {
 struct TimelineChampionsMeeting {
     index: usize,
     name: String,
+    // Race start; the JP schedule opens signup a few days earlier.
     start_at: DateTime<Utc>,
-    end_at: DateTime<Utc>,
+    // Full JP schedule length from signup through results.
+    schedule_days: i64,
     track: Option<String>,
     distance: Option<String>,
     conditions: Option<String>,
@@ -446,7 +448,7 @@ struct RawTimelineStoryEvent {
 struct RawTimelineChampionsMeeting {
     name: String,
     start_date: String,
-    end_date: String,
+    schedule_days: i64,
     track: Option<String>,
     distance: Option<String>,
     conditions: Option<String>,
@@ -555,7 +557,7 @@ pub fn generate(
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
     let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
-    let confirmed_dates = build_confirmed_date_lookup(
+    let mut confirmed_dates = build_confirmed_date_lookup(
         character_banners,
         support_banners,
         paid_banners,
@@ -573,6 +575,11 @@ pub fn generate(
         &mut news_timeline_events,
         &news_campaigns,
         &matched_campaign_posts,
+    );
+    alias_campaign_post_rows(
+        &mut confirmed_dates,
+        &timeline_campaigns,
+        &news_timeline_events,
     );
     merge_legend_race_news(
         &mut timeline_legend_races,
@@ -796,16 +803,11 @@ fn character_event(
         observed_rate,
     );
     let duration = banner_duration_days(banner.start_at, banner.end_at);
-    let adjustment = if is_berlin_dst(prediction.global_date) {
-        0
-    } else {
-        1
-    };
     let banner_id = banner.gacha_id.to_string();
     let (estimated_end_date, banner_duration_days) = event_end_date(
         prediction.global_date,
         duration,
-        adjustment,
+        reset_end_adjustment(prediction.global_date, duration),
         confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Character, &banner_id),
     );
 
@@ -869,17 +871,11 @@ fn support_event(
         observed_rate,
     );
     let duration = banner_duration_days(banner.start_at, banner.end_at);
-    // Global support scouts end with their paired character scout.
-    let adjustment = if is_berlin_dst(prediction.global_date) {
-        0
-    } else {
-        1
-    };
     let banner_id = banner.gacha_id.to_string();
     let (estimated_end_date, banner_duration_days) = event_end_date(
         prediction.global_date,
         duration,
-        adjustment,
+        reset_end_adjustment(prediction.global_date, duration),
         confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Support, &banner_id),
     );
 
@@ -1746,10 +1742,11 @@ fn story_event(
         event.start_at,
         family_adjustments,
     );
+    let duration = banner_duration_days(event.start_at, event.end_at);
     let (estimated_end_date, banner_duration_days) = event_end_date(
         prediction.global_date,
-        banner_duration_days(event.start_at, event.end_at),
-        0,
+        duration,
+        reset_end_adjustment(prediction.global_date, duration),
         confirmed_global_date
             .and_then(|_| confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Story, &key)),
     );
@@ -1809,16 +1806,10 @@ fn champions_meeting_event(
         event.start_at,
         family_adjustments,
     );
-    let duration = banner_duration_days(event.start_at, event.end_at);
-    let signup_period_adjustment = if is_berlin_dst(prediction.global_date) {
-        2
-    } else {
-        4
-    };
     let (estimated_end_date, banner_duration_days) = event_end_date(
         prediction.global_date,
-        duration,
-        signup_period_adjustment,
+        event.schedule_days,
+        reset_end_adjustment(prediction.global_date, event.schedule_days),
         confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Champions, &key),
     );
     let image_path = event.image_path.clone().or_else(|| {
@@ -1882,15 +1873,10 @@ fn legend_race_event(
         family_adjustments,
     );
     let duration = banner_duration_days(event.start_at, event.end_at);
-    let adjustment = if is_berlin_dst(prediction.global_date) {
-        0
-    } else {
-        1
-    };
     let (estimated_end_date, banner_duration_days) = event_end_date(
         prediction.global_date,
         duration,
-        adjustment,
+        reset_end_adjustment(prediction.global_date, duration),
         confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Legend, &key),
     );
     let (boss_names, boss_card_ids, _) = legend_boss_metadata(event);
@@ -2002,11 +1988,7 @@ fn campaign_event(
         _ => banner_duration_days(event.start_at, event.end_at),
     }
     .max(1);
-    let adjustment = if is_berlin_dst(prediction.global_date) {
-        0
-    } else {
-        1
-    };
+    let adjustment = reset_end_adjustment(prediction.global_date, duration);
 
     BannerTimelineEvent {
         id: format!("campaign-{}", event.campaign_id),
@@ -4108,7 +4090,7 @@ fn load_timeline_champions_meetings() -> Result<Vec<TimelineChampionsMeeting>> {
                 index: 0,
                 name: event.name,
                 start_at: parse_timeline_date(&event.start_date)?,
-                end_at: parse_timeline_date(&event.end_date)?,
+                schedule_days: event.schedule_days,
                 track: event.track,
                 distance: event.distance,
                 conditions: event.conditions,
@@ -4188,6 +4170,51 @@ fn merge_campaign_news(
         }
     }
     matched
+}
+
+// Campaign rows may also name a campaign's news post id, unless another campaign owns that key.
+fn alias_campaign_post_rows(
+    confirmed_dates: &mut ConfirmedDateLookup,
+    campaigns: &[TimelineCampaign],
+    news_events: &[NewsTimelineEvent],
+) {
+    let owned_keys = campaigns
+        .iter()
+        .flat_map(|campaign| [image_key(&campaign.image), campaign.campaign_id.to_string()])
+        .collect::<BTreeSet<_>>();
+    let linked_posts = campaigns
+        .iter()
+        .filter_map(|campaign| Some((campaign.source_post_id?, image_key(&campaign.image))))
+        .chain(
+            news_events
+                .iter()
+                .filter(|event| {
+                    matches!(
+                        event.kind,
+                        NewsTimelineKind::UmaSanpo
+                            | NewsTimelineKind::HolidayCelebration
+                            | NewsTimelineKind::Campaign
+                    )
+                })
+                .map(|event| (event.source_post_id, image_key(&event.key))),
+        );
+    for (post_id, key) in linked_posts {
+        let post_key = post_id.to_string();
+        if owned_keys.contains(&post_key) {
+            continue;
+        }
+        if let Some(date) = confirmed_dates.campaign.get(&post_key).copied() {
+            confirmed_dates.campaign.entry(key.clone()).or_insert(date);
+        }
+        if let Some(end_date) =
+            confirmed_dates.confirmed_end_date(ConfirmedTimelineKind::Campaign, &post_key)
+        {
+            confirmed_dates
+                .end_dates
+                .entry((ConfirmedTimelineKind::Campaign, key))
+                .or_insert(end_date);
+        }
+    }
 }
 
 fn include_jp_campaign(
@@ -5116,6 +5143,16 @@ fn is_berlin_dst(date: DateTime<Utc>) -> bool {
     date.with_timezone(&Berlin).offset().fix().local_minus_utc() == 7200
 }
 
+// Global events close at the 22:00 UTC reset. Ends are stored at 22:00 UTC, which Berlin summer
+// time already shows as the next day, so only ends that fall in winter time need one more day.
+fn reset_end_adjustment(global_date: DateTime<Utc>, duration: i64) -> i64 {
+    if is_berlin_dst(calculate_end_date(global_date, duration)) {
+        0
+    } else {
+        1
+    }
+}
+
 fn days_between(start: DateTime<Utc>, end: DateTime<Utc>) -> i64 {
     (end - start).num_days()
 }
@@ -5159,24 +5196,24 @@ fn round_rate(rate: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::{
-        align_paid_banners_with_releases, annotate_calendar_likelihoods, annotate_rerun_banners,
-        append_unmatched_campaign_news, applyConfirmedDatesCsv, apply_closed_schedule_adjustment,
-        apply_family_adjustment, apply_grouped_event_adjustment,
+        alias_campaign_post_rows, align_paid_banners_with_releases, annotate_calendar_likelihoods,
+        annotate_rerun_banners, append_unmatched_campaign_news, applyConfirmedDatesCsv,
+        apply_closed_schedule_adjustment, apply_family_adjustment, apply_grouped_event_adjustment,
         build_anniversary_schedule_anchors, build_banner_confirmed_anchors,
         build_confirmed_date_lookup, calculate_global_date, calculate_recent_acceleration_rate,
         first_release_after_global_month, gacha_type_name, include_jp_campaign,
         latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
-        load_timeline_campaigns, load_timeline_character_banners, load_timeline_legend_races,
-        load_timeline_paid_banners, load_timeline_story_events, load_timeline_support_banners,
-        load_umapyoi_support_card_names, load_umapyoi_support_character_names, merge_campaign_news,
-        merge_global_mission_campaigns, merge_legend_race_news, mission_signature_fingerprint,
-        monotonic_schedule_anchors, news_timeline_event, parse_confirmed_banner_dates,
-        standardized_jp_mission_title, timeline_anniversaries_through, utc_date,
-        BannerTimelineEvent, BannerTimelineEventType, CalendarLikelihoodModel, CalibrationAnchor,
-        ConfirmedDateLookup, ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel,
-        FamilyAdjustmentModels, FamilyAdjustmentSample, PredictionInfo, PredictionKind,
-        TimelineCampaign, TimelineCharacterBanner, TimelineSupportBanner,
-        FALLBACK_ACCELERATION_RATE,
+        load_timeline_campaigns, load_timeline_champions_meetings, load_timeline_character_banners,
+        load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
+        load_timeline_support_banners, load_umapyoi_support_card_names,
+        load_umapyoi_support_character_names, merge_campaign_news, merge_global_mission_campaigns,
+        merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
+        news_timeline_event, parse_confirmed_banner_dates, standardized_jp_mission_title,
+        timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
+        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
+        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
+        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
+        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
@@ -5312,11 +5349,11 @@ mod tests {
         assert_eq!(event.estimated_end_date, utc_date(2026, 11, 3, 22));
         assert_eq!(event.banner_duration_days, 10);
 
-        // A later row without an end date restores the projected end.
+        // A later row without an end date restores the projected end, which lands in winter time.
         applyConfirmedDatesCsv(&mut lookup, "character,90002,2026-10-24\n")
             .expect("confirmation CSV should parse");
         let event = super::character_event(&character, &BTreeMap::new(), &lookup, &[], 1.0);
-        assert_eq!(event.estimated_end_date, utc_date(2026, 10, 30, 22));
+        assert_eq!(event.estimated_end_date, utc_date(2026, 10, 31, 22));
         assert_eq!(event.banner_duration_days, 6);
     }
 
@@ -5347,6 +5384,88 @@ mod tests {
             assert_eq!(character_event.estimated_end_date, expected_end);
             assert_eq!(support_event.estimated_end_date, expected_end);
         }
+    }
+
+    #[test]
+    fn story_and_champions_ends_match_global_reset_days() {
+        let no_adjustments = FamilyAdjustmentModels {
+            models: BTreeMap::new(),
+        };
+        let mut lookup = empty_confirmed_date_lookup();
+        applyConfirmedDatesCsv(
+            &mut lookup,
+            "story,07_uma_musume_summer_story_banner,2025-10-14\n\
+             story,09_make_up_in_halloween_banner,2025-11-24\n\
+             champions,4,2025-11-16\n\
+             champions,14,2026-06-21\n",
+        )
+        .expect("confirmation CSV should parse");
+
+        // Global ends from master.mdb; the summer story event ends after the October clock change.
+        let stories = load_timeline_story_events(None).expect("story timeline data should parse");
+        for (image, expected_end) in [
+            (
+                "07_uma_musume_summer_story_banner.webp",
+                utc_date(2025, 10, 27, 22),
+            ),
+            (
+                "09_make_up_in_halloween_banner.webp",
+                utc_date(2025, 12, 6, 22),
+            ),
+        ] {
+            let story = stories.iter().find(|event| event.image == image).unwrap();
+            let event = super::story_event(story, &lookup, &[], &no_adjustments, 1.0);
+            assert_eq!(event.estimated_end_date, expected_end, "{image}");
+        }
+
+        // Champions ends include the signup days before the bundled race window.
+        let champions =
+            load_timeline_champions_meetings().expect("champions timeline data should parse");
+        for (index, expected_end) in [
+            (4, utc_date(2025, 11, 26, 22)),
+            (14, utc_date(2026, 6, 29, 22)),
+        ] {
+            let event = super::champions_meeting_event(
+                &champions[index],
+                &lookup,
+                &[],
+                &no_adjustments,
+                1.0,
+            );
+            assert_eq!(event.estimated_end_date, expected_end, "champions {index}");
+        }
+    }
+
+    #[test]
+    fn campaign_rows_accept_the_linked_news_post_id() {
+        let mut campaigns = load_timeline_campaigns(&mission_connection()).unwrap();
+        merge_campaign_news(&mut campaigns, &campaign_timeline_metadata().unwrap());
+        let mut lookup = empty_confirmed_date_lookup();
+        applyConfirmedDatesCsv(
+            &mut lookup,
+            "campaign,1182,2026-11-21\ncampaign,823,2026-12-01\n",
+        )
+        .expect("confirmation CSV should parse");
+        alias_campaign_post_rows(&mut lookup, &campaigns, &[]);
+        let no_adjustments = FamilyAdjustmentModels {
+            models: BTreeMap::new(),
+        };
+        let campaign_event = |campaign_id| {
+            let campaign = campaigns
+                .iter()
+                .find(|campaign| campaign.campaign_id == campaign_id)
+                .unwrap();
+            super::campaign_event(campaign, &lookup, &[], &no_adjustments, 1.0)
+        };
+
+        // Post 1182 announced the 2nd Anniversary campaign 301.
+        let anniversary = campaign_event(301);
+        assert!(anniversary.is_confirmed);
+        assert_eq!(anniversary.global_release_date, utc_date(2026, 11, 21, 22));
+
+        // Post 823 belongs to campaign 180, but 823 is also a campaign id, which wins.
+        assert!(campaign_event(823).is_confirmed);
+        assert!(!campaign_event(180).is_confirmed);
     }
 
     #[test]
