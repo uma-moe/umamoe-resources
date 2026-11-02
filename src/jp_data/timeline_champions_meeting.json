@@ -3,6 +3,7 @@
     "name": "MILE",
     "start_date": "13 Apr 2024, 5:00",
     "end_date": "19 Apr 2024, 4:59",
+    "schedule_days": 9,
     "track": "Hanshin - Turf",
     "distance": "1600m - Mile - Clockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -11,6 +12,7 @@
     "name": "SPRINT",
     "start_date": "18 Feb 2024, 4:00",
     "end_date": "24 Feb 2024, 3:59",
+    "schedule_days": 9,
     "track": "Hanshin - Turf",
     "distance": "1400m - Short - Clockwise",
     "conditions": "Good - Winter - Cloudy"
@@ -19,6 +21,7 @@
     "name": "LONG",
     "start_date": "14 Dec 2023, 4:00",
     "end_date": "20 Dec 2023, 3:59",
+    "schedule_days": 8,
     "track": "Nakayama - Turf",
     "distance": "2500m - Long - Clockwise",
     "conditions": "Soft - Winter - Snow"
@@ -27,6 +30,7 @@
     "name": "CLASSIC",
     "start_date": "13 Oct 2023, 5:00",
     "end_date": "19 Oct 2023, 4:59",
+    "schedule_days": 8,
     "track": "Longchamp - Turf",
     "distance": "2400m - Medium - Clockwise",
     "conditions": "Soft - Autumn - Rain"
@@ -35,6 +39,7 @@
     "name": "DIRT",
     "start_date": "18 Aug 2023, 5:00",
     "end_date": "24 Aug 2023, 4:59",
+    "schedule_days": 9,
     "track": "Funabashi - Dirt",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Firm - Summer - Sunny"
@@ -43,6 +48,7 @@
     "name": "MILE",
     "start_date": "13 Jun 2023, 5:00",
     "end_date": "19 Jun 2023, 4:59",
+    "schedule_days": 9,
     "track": "Tokyo - Turf",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Heavy - Spring - Rain"
@@ -51,6 +57,7 @@
     "name": "Aries Cup",
     "start_date": "13 Apr 2023, 5:00",
     "end_date": "19 Apr 2023, 4:59",
+    "schedule_days": 8,
     "track": "Kyoto - Turf",
     "distance": "3200m - Long - Clockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -59,6 +66,7 @@
     "name": "Pisces Cup",
     "start_date": "14 Mar 2023, 4:00",
     "end_date": "20 Mar 2023, 3:59",
+    "schedule_days": 9,
     "track": "Nakayama - Turf",
     "distance": "2000m - Medium - Clockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -67,6 +75,7 @@
     "name": "Aquarius Cup",
     "start_date": "17 Feb 2023, 4:00",
     "end_date": "23 Feb 2023, 3:59",
+    "schedule_days": 9,
     "track": "Tokyo - Dirt",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Soft - Winter - Snow"
@@ -75,6 +84,7 @@
     "name": "Capricorn Cup",
     "start_date": "14 Jan 2023, 4:00",
     "end_date": "20 Jan 2023, 3:59",
+    "schedule_days": 9,
     "track": "Chukyo - Turf",
     "distance": "1200m - Short - Counterclockwise",
     "conditions": "Firm - Winter - Sunny"
@@ -83,6 +93,7 @@
     "name": "Sagittarius Cup",
     "start_date": "15 Dec 2022, 4:00",
     "end_date": "21 Dec 2022, 3:59",
+    "schedule_days": 8,
     "track": "Nakayama - Turf",
     "distance": "2500m - Long - Clockwise",
     "conditions": "Good - Winter - Cloudy"
@@ -91,6 +102,7 @@
     "name": "Scorpio Cup",
     "start_date": "13 Nov 2022, 4:00",
     "end_date": "19 Nov 2022, 3:59",
+    "schedule_days": 9,
     "track": "Kyoto - Turf",
     "distance": "2200m - Medium - Clockwise",
     "conditions": "Firm - Autumn - Sunny"
@@ -99,6 +111,7 @@
     "name": "Libra Cup",
     "start_date": "14 Oct 2022, 5:00",
     "end_date": "20 Oct 2022, 4:59",
+    "schedule_days": 8,
     "track": "Hanshin - Turf",
     "distance": "1600m - Mile - Clockwise",
     "conditions": "Firm - Autumn - Cloudy"
@@ -107,6 +120,7 @@
     "name": "Virgo Cup",
     "start_date": "15 Sept 2022, 5:00",
     "end_date": "21 Sept 2022, 4:59",
+    "schedule_days": 8,
     "track": "Ooi - Dirt",
     "distance": "2000m - Medium - Clockwise",
     "conditions": "Good - Autumn - Sunny"
@@ -115,6 +129,7 @@
     "name": "Leo Cup",
     "start_date": "13 Aug 2022, 5:00",
     "end_date": "19 Aug 2022, 4:59",
+    "schedule_days": 8,
     "track": "Nakayama - Turf",
     "distance": "1200m - Short - Clockwise",
     "conditions": "Firm - Summer - Sunny"
@@ -123,6 +138,7 @@
     "name": "Cancer Cup",
     "start_date": "14 Jul 2022, 5:00",
     "end_date": "20 Jul 2022, 4:59",
+    "schedule_days": 8,
     "track": "Hanshin - Turf",
     "distance": "2200m - Medium - Clockwise",
     "conditions": "Good - Summer - Cloudy"
@@ -131,6 +147,7 @@
     "name": "Gemini Cup",
     "start_date": "14 Jun 2022, 5:00",
     "end_date": "20 Jun 2022, 4:59",
+    "schedule_days": 9,
     "track": "Tokyo - Turf",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -139,6 +156,7 @@
     "name": "Taurus Cup",
     "start_date": "24 May 2022, 5:00",
     "end_date": "30 May 2022, 4:59",
+    "schedule_days": 9,
     "track": "Tokyo - Turf",
     "distance": "2400m - Medium - Counterclockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -147,6 +165,7 @@
     "name": "Aries Cup",
     "start_date": "22 Apr 2022, 5:00",
     "end_date": "28 Apr 2022, 4:59",
+    "schedule_days": 8,
     "track": "Nakayama - Turf",
     "distance": "2000m - Medium - Clockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -155,6 +174,7 @@
     "name": "Pisces Cup",
     "start_date": "22 Mar 2022, 4:00",
     "end_date": "28 Mar 2022, 4:59",
+    "schedule_days": 9,
     "track": "Hanshin - Turf",
     "distance": "3200m - Long - Clockwise",
     "conditions": "Heavy - Spring - Rain"
@@ -163,6 +183,7 @@
     "name": "Aquarius Cup",
     "start_date": "18 Feb 2022, 4:00",
     "end_date": "24 Feb 2022, 3:59",
+    "schedule_days": 9,
     "track": "Tokyo - Dirt",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Firm - Winter - Sunny"
@@ -171,6 +192,7 @@
     "name": "Capricorn Cup",
     "start_date": "22 Jan 2022, 4:00",
     "end_date": "28 Jan 2022, 3:59",
+    "schedule_days": 9,
     "track": "Chukyo - Turf",
     "distance": "1200m - Short - Counterclockwise",
     "conditions": "Soft - Winter - Snow"
@@ -179,6 +201,7 @@
     "name": "Sagittarius Cup",
     "start_date": "21 Dec 2021, 4:00",
     "end_date": "27 Dec 2021, 3:59",
+    "schedule_days": 9,
     "track": "Nakayama - Turf",
     "distance": "2500m - Long - Clockwise",
     "conditions": "Firm - Winter - Sunny"
@@ -187,6 +210,7 @@
     "name": "Scorpio Cup",
     "start_date": "23 Nov 2021, 4:00",
     "end_date": "29 Nov 2021, 3:59",
+    "schedule_days": 9,
     "track": "Tokyo - Turf",
     "distance": "2000m - Medium - Counterclockwise",
     "conditions": "Soft - Autumn - Rain"
@@ -195,6 +219,7 @@
     "name": "Libra Cup",
     "start_date": "22 Oct 2021, 5:00",
     "end_date": "28 Oct 2021, 4:59",
+    "schedule_days": 9,
     "track": "Kyoto - Turf",
     "distance": "3000m - Long - Clockwise",
     "conditions": "Firm - Autumn - Sunny"
@@ -203,6 +228,7 @@
     "name": "Virgo Cup",
     "start_date": "21 Sept 2021, 5:00",
     "end_date": "27 Sept 2021, 4:59",
+    "schedule_days": 9,
     "track": "Hanshin - Turf",
     "distance": "1600m - Mile - Clockwise",
     "conditions": "Firm - Autumn - Sunny"
@@ -211,6 +237,7 @@
     "name": "Leo Cup",
     "start_date": "24 Aug 2021, 5:00",
     "end_date": "30 Aug 2021, 4:59",
+    "schedule_days": 9,
     "track": "Hanshin - Turf",
     "distance": "2200m - Medium - Clockwise",
     "conditions": "Firm - Summer - Sunny"
@@ -219,6 +246,7 @@
     "name": "Cancer Cup",
     "start_date": "23 Jul 2021, 5:00",
     "end_date": "29 Jul 2021, 4:59",
+    "schedule_days": 8,
     "track": "Tokyo - Turf",
     "distance": "1600m - Mile - Counterclockwise",
     "conditions": "Good - Summer - Sunny"
@@ -227,6 +255,7 @@
     "name": "Gemini Cup",
     "start_date": "14 Jun 2021, 5:00",
     "end_date": "20 Jun 2021, 4:59",
+    "schedule_days": 9,
     "track": "Kyoto - Turf",
     "distance": "3200m - Long - Clockwise",
     "conditions": "Firm - Spring - Sunny"
@@ -235,6 +264,7 @@
     "name": "Taurus Cup",
     "start_date": "14 May 2021, 5:00",
     "end_date": "20 May 2021, 4:59",
+    "schedule_days": 9,
     "track": "Tokyo - Turf",
     "distance": "2400m - Medium - Counterclockwise",
     "conditions": "Firm - Spring - Sunny"

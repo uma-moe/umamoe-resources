@@ -302,7 +302,7 @@ Or prefix the row with `-`. The date is optional and ignored, so an existing row
 
 Hidden rows are not emitted in `banner_timeline.json` and do not participate in banner-date calibration. Sources are applied in order, so a later dated row for the same type and gacha ID restores and confirms the banner if it is announced after all.
 
-Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. Anniversary rows use the marker index, where `1` is the first half-anniversary. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
+Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Campaign rows also accept the umapyoi news post id, unless another campaign already uses that number as its id or image stem. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. Anniversary rows use the marker index, where `1` is the first half-anniversary. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
 
 Months are inferred as complete banner schedules from confirmed character and support CSV entries. Unknown future scouts are shifted out of those months, with related future events following the same adjustment. Campaign, story, paid-banner and other event confirmations cannot close a month for scouts or shift their release sequence. Character and support confirmations retain their individual dates when a release is split; both contribute to the baseline calibration. Unconfirmed anniversary markers also respect the closed banner months.
 
