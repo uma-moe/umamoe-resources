@@ -280,6 +280,12 @@ training_scenario,2022-08-24,2026-12-20
 anniversary,1,2025-10-26
 ```
 
+To set a custom global end, add a second date after the start. It replaces the projected end, and `banner_duration_days` becomes the global start-to-end span. Official Global news and game-data end dates still take priority. Anniversary and hidden rows do not take an end date, paid rows ignore both dates, and a later row without an end date restores the projected end:
+
+```csv
+character,30104,2026-07-02,2026-07-12
+```
+
 To omit a JP banner that Global may skip, use `hidden` in place of the date:
 
 ```csv
