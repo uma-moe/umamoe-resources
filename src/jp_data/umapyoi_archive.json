@@ -1,19 +1,19 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-01T22:01:23.062321424+00:00",
+  "fetched_at": "2026-11-02T05:59:06.502938886+00:00",
   "analysis": {
-    "news_posts": 2702,
-    "classified_news_posts": 2322,
-    "news_posts_with_images": 1784,
-    "news_posts_with_banner_candidates": 1779,
+    "news_posts": 2705,
+    "classified_news_posts": 2325,
+    "news_posts_with_images": 1786,
+    "news_posts_with_banner_candidates": 1781,
     "event_type_counts": {
       "campaign": 709,
       "career_event": 153,
       "challenge_event": 115,
       "champions_meeting": 211,
       "factor_research": 117,
-      "gacha": 855,
+      "gacha": 856,
       "league_of_heroes": 128,
       "legend_race": 214,
       "login_bonus": 125,
@@ -25,17 +25,47 @@
       "story_event": 299,
       "strongest_team": 37,
       "trainer_skills_test": 67,
-      "training_scenario": 337,
-      "update": 813
+      "training_scenario": 338,
+      "update": 815
     },
-    "discovered_gacha_banner_images": 949,
+    "discovered_gacha_banner_images": 951,
     "unique_discovered_gacha_ids": 567,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-10-28T09:00:00+00:00",
+    "latest_news_at": "2026-11-02T03:00:00+00:00",
     "api_gacha_banners": 229,
     "support_cards": 566
   },
   "news": [
+    {
+      "post_id": 3533,
+      "page_url": "https://umapyoi.net/news/3533?lang=jp",
+      "title": "Update Notice [Published November 2 at 11:00 a.m.]",
+      "title_jp": "アップデートのお知らせ【11/2 11:00公開】",
+      "posted_at": "2026-11-02T02:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "training_scenario",
+        "update"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3533,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "<p data-local-id=\"b77164051c33\" data-renderer-start-pos=\"2360\">11/2 11:00にアップデートを行いました。<br><span data-renderer-mark=\"true\" data-text-custom-color=\"#172b4d\">※強制アップデートは、11/6 11:00ごろに行う予定です。</span><br>アップデート内容の詳細は下記のとおりです。</p><h3 class=\"subheading\">アップデート内容</h3><p data-local-id=\"0d9e09e0b88f\" data-renderer-start-pos=\"2458\">・トレーナーノートの衣装着せ替え画面において、カメラのズームと上下移動ができるようにしました。<br>・一部のレースで適性の合わないレースに出走する時、確認ダイアログを表示するオプションを追加しました。<br>・育成プランシートにおいて、目標スキルの絞り込み設定とスキルセットの絞り込み設定を別で保存するようにしました。<br>・育成プランシートにおいて、「目標スキル設定」および「目標汎用因子設定」を、「スキルセット」から設定できるようにしました。<br>・各種UIや演出を調整しました。</p><h3 class=\"subheading\">修正した不具合</h3><p data-local-id=\"729aed7577bf\" data-renderer-start-pos=\"2546\">・育成シナリオ「朋、史解き　―午式駿大祭―」の教えセットにおいて、「伝受教え設定」ポップアップ内の期間の表記が、意図しないものになっている不具合を修正しました。<br>・自主トレ育成中、特定の手順を行ってから「編成情報」を開くと、レンタルした継承専用ウマ娘が正しく表示されず、詳細を確認できない不具合を修正しました。<br>・育成シナリオ「朋、史解き　―午式駿大祭―」において、各演目稽古のボタンが意図しない表示になる場合がある不具合を修正しました。<br>・育成シナリオ「朋、史解き　―午式駿大祭―」の教え伝受画面において、特定の操作を行った際に意図しない挙動になる不具合を修正しました。<br>・トレーナーノートにおいて、[衣装着せ替え]で衣装を変更後に特定の操作をすると、「衣装着せ替え」画面でカーソルの表示が意図しないものになる不具合を修正しました。<br>・軽微な不具合を修正しました。</p><p data-local-id=\"d2f8d008bafc\" data-renderer-start-pos=\"2909\">ご利用のお客様に、ご迷惑をおかけしましたことを、お詫び申し上げます。&nbsp;</p><h3 class=\"subheading\">注意事項</h3><p data-local-id=\"eefdbeae4b9b\" data-renderer-start-pos=\"2958\">1. アップデート情報がストアに反映されるまで、時間がかかる場合がございます。<br>2. 端末本体内の一時保存データの蓄積を原因として、アップデートできない場合がございます。<br>アップデートできない場合は、端末本体の電源を切り、1～2分お待ちいただいた後にあらためて端末本体の起動と、ストアからのアップデートを行ってください。</p>",
+        "message_english": "<p data-local-id=\"b77164051c33\" data-renderer-start-pos=\"2360\">We released an update on November 2 at 11:00 a.m.<br><span data-renderer-mark=\"true\" data-text-custom-color=\"#172b4d\">*A mandatory update is scheduled for around 11:00 AM on November 6.</span><br> Details of the update are as follows.</p><h3 class=\"subheading\"> Update Details</h3><p data-local-id=\"0d9e09e0b88f\" data-renderer-start-pos=\"2458\"> ・We have added the ability to zoom and pan the camera on the Trainer Note’s outfit customization screen.<br> ・An option has been added to display a confirmation dialog when entering certain races that do not match your Pokémon’s suitability.<br> ・In the Training Plan Sheet, settings for filtering by target skills and skill sets are now saved separately.<br> ・On the Training Plan Sheet, you can now configure “Target Skill Settings” and “Target General Factor Settings” from the “Skill Set” menu.<br> ・Various UI elements and visual effects have been adjusted.</p><h3 class=\"subheading\"> Fixed Issues</h3><p data-local-id=\"729aed7577bf\" data-renderer-start-pos=\"2546\"> ・Fixed a bug in the training scenario “Tomo and Fumi’s Mystery: Go-shiki Shunda Festival” where the duration displayed in the “Inherited Training Settings” pop-up was incorrect.<br> ・Fixed a bug where, during self-training, if you performed a specific sequence of steps and then opened “Team Information,” rented Umamusume designated exclusively for inheritance would not display correctly, preventing you from viewing their details.<br> ・Fixed a bug in the training scenario “Tomo and Fumi Unravel the Mystery — Go-shiki Shun Grand Festival —” where the buttons for rehearsing each performance would sometimes display incorrectly.<br> ・Fixed a bug in the “Passing Down Knowledge” screen of the training scenario “Tomo and Fumi’s Story: The Go-shiki Shun Grand Festival” where performing a specific action caused unintended behavior.<br> ・In the Trainer Notes, we fixed a bug where, after changing an outfit via [Change Outfit], performing a specific action would cause the cursor to display incorrectly on the “Change Outfit” screen.<br> ・Minor bugs have been fixed.</p><p data-local-id=\"d2f8d008bafc\" data-renderer-start-pos=\"2909\"> We apologize for any inconvenience this may have caused our users. </p><h3 class=\"subheading\"> Important Notes</h3><p data-local-id=\"eefdbeae4b9b\" data-renderer-start-pos=\"2958\"> 1. It may take some time for the update information to appear in the store.<br> 2. You may be unable to update due to the accumulation of temporary data on your device.<br> If you are unable to update, please turn off your device, wait 1–2 minutes, then turn it back on and try updating from the Store again.</p>",
+        "post_at": 1793584800,
+        "post_platform_flag": 62,
+        "row_number": 4,
+        "title": "アップデートのお知らせ【11/2 11:00公開】",
+        "title_english": "Update Notice [Published November 2 at 11:00 a.m.]",
+        "update_at": null
+      }
+    },
     {
       "post_id": 3532,
       "page_url": "https://umapyoi.net/news/3532?lang=jp",
@@ -86,6 +116,41 @@
         "row_number": 3,
         "title": "「そこそこぱかライブTV Vol.56」10月30日(金)19時公開！そこそこなトークをゆるりとお届け！",
         "title_english": "\"Sokosoko PakaLiveTV Vol. 56\" Premieres Friday, October 30, at 7:00 PM! We'll be bringing you some laid-back, casual conversation!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3531,
+      "page_url": "https://umapyoi.net/news/3531?lang=jp",
+      "title": "Evolution skills have been added to some trainable Umamusume!",
+      "title_jp": "一部育成ウマ娘に進化スキル追加！",
+      "posted_at": "2026-11-02T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3531/Thumbnail/banner_RC_20261102_001.png?c=20261026183850",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "raw": {
+        "announce_id": 3531,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3531/Thumbnail/banner_RC_20261102_001.png?c=20261026183850",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/2 12:00ごろに、下記アップデートを実施しました。<br><h3 class=\"subheading\">一部育成ウマ娘に進化スキル追加！</h3>下記育成ウマ娘の一部レアスキルについて、育成完了時に選択できる進化スキルを追加します。<br>※育成ウマ娘の覚醒Lvをアップして解放できる、レアスキルの追加はございません。<br>・[慈雨華影]スーパークリーク<br><h3 class=\"subheading\">注意事項</h3>1. レアスキルを進化させるには、該当のスキルを解放できるまで育成ウマ娘の覚醒Lvをアップする必要がございます。<br>2. 各育成ウマ娘のレアスキルの進化条件や進化スキルの効果は育成ウマ娘詳細、または育成中のスキル獲得画面からご確認いただけます。<br>3. 同じレアスキルから進化する、2つの進化スキルの進化条件をどちらも満たした場合でも、育成完了時に選択できる進化スキルはどちらか1つのみです。<br>4. 11/2 12:00より前に開始した育成では新しく追加する進化スキルを選択できません。<br>5. 本お知らせの内容は、予告なく変更する場合がございます。",
+        "message_english": "Around 12:00 on November 2, we implemented the following update.<br><h3 class=\"subheading\"> Evolution Skills Added to Select Trainable Umamusume!</h3> For certain rare skills of the following trainable Umamusume, we are adding evolution skills that can be selected upon completing their training.<br> *Please note that no new rare skills will be added that can be unlocked by raising the Awakening Level of a Trainable Umamusume.<br> ・[Flowery Shadow Amongst the Gentle Rain] Super Creek<br><h3 class=\"subheading\"> Important Notes</h3> 1. To evolve a rare skill, you must raise the Training Umamusume’s Awakening Level until that skill is unlocked.<br> 2. You can check the evolution conditions for each trainable Umamusume’s rare skills and the effects of their evolution skills in the trainable Umamusume details or on the skill acquisition screen while training.<br> 3. Even if you meet the evolution requirements for both of the two evolved skills derived from the same rare skill, you can only select one of them upon completing the training.<br> 4. You cannot select the newly added evolved skill for training sessions started before 12:00 PM on November 2.<br> 5. The contents of this announcement are subject to change without prior notice.",
+        "post_at": 1793588400,
+        "post_platform_flag": 62,
+        "row_number": 2,
+        "title": "一部育成ウマ娘に進化スキル追加！",
+        "title_english": "Evolution skills have been added to some trainable Umamusume!",
         "update_at": null
       }
     },
@@ -1647,6 +1712,71 @@
         "row_number": 15,
         "title": "「★3確定」「SSR確定」新育成シナリオ応援ガチャ開催！",
         "title_english": "\"★3 Guaranteed\" and \"SSR Guaranteed\" New Training Scenario Support Gacha Now Live!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3507,
+      "page_url": "https://umapyoi.net/news/3507?lang=jp",
+      "title": "The Twinkle Collection \"Pretty Derby\" Gacha and the SSR-Guaranteed Wisdom Gacha are now live!",
+      "title_jp": "トゥインクルコレクション プリティーダービーガチャとSSR確定賢さガチャ開催！",
+      "posted_at": "2026-11-02T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_30480.png?c=20261020171607",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_30480.png?c=20261020171607",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_50252.png?c=20261020171607",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_50252.png?c=20261020171607",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3507/Thumbnail/announce_banner_3480.png?c=20261020171607",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 30480,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_30480.png?c=20261020171607"
+        },
+        {
+          "gacha_id": 50252,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_50252.png?c=20261020171607"
+        }
+      ],
+      "raw": {
+        "announce_id": 3507,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3507/Thumbnail/announce_banner_3480.png?c=20261020171607",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/2 12:00から、「トゥインクルコレクション プリティーダービーガチャ」と「SSR確定賢さガチャ」が開催しました。<br>「トゥインクルコレクション プリティーダービーガチャ」では、★3育成ウマ娘は以下に記載の対象ウマ娘8人のみが出現します。<br><br>「トゥインクルコレクション プリティーダービーガチャ」では、お一人様1回限定で有償ジュエル1500個を使用して『10回引く!（有償）』をご利用いただけます。<br>『10回引く!（有償）』の10回目には、★3育成ウマ娘が確定で出現します！<br><br>さらに、有償ジュエル50個を使用する『1日1回限定』、有償もしくは無償ジュエル150個または育成ウマ娘ガチャチケットを使用する『1回引く!』、有償または無償ジュエル1500個を使用する『10回引く!（通常）』もご利用いただけます。<br>※『10回引く!（通常）』では、有償ジュエルを使用しても、10回目に★3育成ウマ娘が確定で出現するわけではございません。<br><br>「SSR確定賢さガチャ」は、お一人様1回限定で、有償ジュエル1500個を使用して利用できるガチャです。<br>『10回引く!』の10回目には、SSRサポートカードが確定で出現します！<h2 class=\"heading\">開催期間</h2>11/2 12:00 ～ 12/1 11:59<br><h2 class=\"heading\">育成ウマ娘</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_30480.png?c=20261020171607\"></figure>■対象ウマ娘<br>★★★[餓狼]ナリタブライアン<br>★★★[Engineered Victory]ビワハヤヒデ<br>★★★[ろっきん☆MewMeow]マヤノトップガン<br>★★★[慈雨華影]スーパークリーク<br>★★★[結願のしまい華]キタサンブラック<br>★★★[Nouvelle pousse]サクラローレル<br>★★★[Celestial Road]ナリタトップロード<br>★★★[Sunlit Outsider]ステイゴールド<br><h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_50252.png?c=20261020171607\"></figure>SSRサポートカードは2024/1/1から2026/9/30までに開催されたガチャでリリースされた賢さタイプのサポートカードのみが出現します。<br>RサポートカードとSRサポートカードは2026/10/31までに開催されたガチャでリリースされたサポートカードが出現します。<br>詳細は、ガチャ画面右上の[ガチャ詳細]、[サポートカード詳細]をご確認ください。<h2 class=\"heading\">注意事項</h2>1. ★3育成ウマ娘とSSRサポートカードは、10回目だけでなく、1回目から9回目からも各ガチャで指定された内容のみが出現します。<br>2. 「SSR確定賢さガチャ」では、「サポートカード交換Pt」は獲得できません。<br>3. 「トゥインクルコレクション プリティーダービーガチャ」で獲得した「育成ウマ娘交換Pt」は、開催中のほかのガチャや、次回以降のガチャに引き継がれません。<br>4. 「トゥインクルコレクション プリティーダービーガチャ」では、ガチャ開催期間中に使用しなかった200Pt未満の「育成ウマ娘交換Pt」は、ガチャ終了後に自動で「クローバー」へと変換されます。<br>5. 「トゥインクルコレクション プリティーダービーガチャ」では、『10回引く!（有償）』でガチャを引いた場合も「育成ウマ娘交換Pt」を獲得できます。<br>6. ガチャの詳細、提供割合およびその他の注意事項は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br>7. 継承スキルの詳細は、ガチャ画面右上の[育成ウマ娘詳細]＞[スキル詳細]からご確認ください。<br>8. 開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "Starting at 12:00 on November 2, the “Twinkle Collection Pretty Derby Gacha” and the “SSR-Guaranteed Wisdom Gacha” went live.<br> In the “Twinkle Collection Pretty Derby Gacha,” only the 8 eligible Umamusume listed below will appear as ★3 Trainable Umamusume.<br><br> In the “Twinkle Collection Pretty Derby Gacha,” you can use 1,500 paid Jewels to perform the “10 Draws! (Paid)” feature once per player.<br> On the 10th pull of “10 Pulls! (Paid),” a ★3 Trainable Umamusume is guaranteed to appear!<br><br> Additionally, you can use the “1 Draw! (Paid)” option, which requires 50 Paid Jewels and is limited to once per day; the “10 Draws! (Paid)” option, which requires 1,500 Paid or Free Jewels or a Training Umamusume Gacha Ticket; and the “10 Draws! (Regular)” option, which requires 1,500 Paid or Free Jewels.<br> *Please note that in the “10 Draws! (Standard)” gacha, even if you use paid Jewels, a ★3 Training Umamusume is not guaranteed to appear on the 10th draw.<br><br> The “SSR Guaranteed Wisdom Gacha” is a gacha available only once per player, which requires 1,500 paid Jewels to use.<br> The 10th pull in “10 Pulls!” is guaranteed to yield an SSR Support Card!<h2 class=\"heading\"> Event Period</h2> November 2 at 12:00 PM – December 1 at 11:59 AM<br><h2 class=\"heading\"> Trainable Umamusume</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_30480.png?c=20261020171607\"></figure> ■ Eligible Umamusume<br> ★★★[Hungry Wolf] Narita Brian<br> ★★★[Engineered Victory] Biwa Hayahide<br> ★★★[Rocking​☆​MewMeow] Mayano Top Gun<br> ★★★[Flowery Shadow Amongst the Gentle Rain] Super Creek<br> ★★★[Final Bloom] Kitasan Black<br> ★★★[Nouvelle Pousse] Sakura Laurel<br> ★★★[Celestial Road] Narita Top Road<br> ★★★[Sunlit Outsider]Stay Gold<br><h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3507/Header/gacha_banner_50252.png?c=20261020171607\"></figure> Only Wisdom-type Support Cards released in gacha events held between January 1, 2024, and September 30, 2026, will appear as SSR Support Cards.<br> R and SR Support Cards include all Support Cards released in gacha events held through October 31, 2026.<br> For details, please check [Gacha Details] and [Support Card Details] in the upper-right corner of the gacha screen.<h2 class=\"heading\"> Important Notes</h2> 1. ★3 Trainable Umamusume and SSR Support Cards will appear only as specified for each gacha—not just on the 10th pull, but also on pulls 1 through 9.<br> 2. You cannot earn “Support Card Exchange Points” from the “SSR Guaranteed Wisdom Gacha.”<br> 3. “Training Umamusume Exchange Points” obtained from the “Twinkle Collection Pretty Derby Gacha” will not carry over to other currently active gachas or to future gachas.<br> 4. In the “Twinkle Collection Pretty Derby Gacha,” any “Training Umamusume Exchange Points” totaling less than 200 points that are not used during the gacha event period will be automatically converted to “Clover” after the gacha ends.<br> 5. In the “Twinkle Collection Pretty Derby Gacha,” you can also earn “Training Umamusume Exchange Points” when you draw using the “10 Draws! (Paid)” option.<br> 6. For gacha details, drop rates, and other important notes, please check [Gacha Details] at the top of the gacha screen.<br> 7. For details on inherited skills, please check [Training Umamusume Details] &gt; [Skill Details] in the upper-right corner of the gacha screen.<br> 8. The event period and content are subject to change without prior notice.",
+        "post_at": 1793588400,
+        "post_platform_flag": 62,
+        "row_number": 3,
+        "title": "トゥインクルコレクション プリティーダービーガチャとSSR確定賢さガチャ開催！",
+        "title_english": "The Twinkle Collection \"Pretty Derby\" Gacha and the SSR-Guaranteed Wisdom Gacha are now live!",
         "update_at": null
       }
     },
