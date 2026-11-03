@@ -13716,6 +13716,31 @@
       ]
     },
     {
+      "announce_id": 1090,
+      "page_url": "https://umapyoi.net/en/news/1090",
+      "first_seen_at": "2026-11-03T23:21:29.962125531+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-03T23:21:29.962125531+00:00",
+          "content_hash": "7ceac530333f8346e8ece63982984876bc769c8a98b736694d1da73597aa281c",
+          "raw": {
+            "announce_id": 1090,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_25900005_new_L1793743200.png?c=20260917092542",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " To celebrate the Arima Kinen G1 race, bonus Star Piece rewards are available in certain Career races for a limited time!<br>\r\n<br>\r\n During the availability period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day.<br>\r\n You can earn bonus rewards just by entering, but you'll get more if you manage to win!<br>\r\n<br>\r\n See below for more details.<br> \r\n<h2 class=\"heading\"> Race / Period / Rewards</h2>\r\n Arima Kinen<br>\r\n 3:00 p.m., Nov 3–2:59 p.m., Nov 5, 2026 (UTC)<br>\r\n [Beyond the Horizon] Tokai Teio Star Pieces<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.",
+            "post_at": 1793743200,
+            "post_platform_flag": 62,
+            "title": "Bonus Star Piece rewards in Career!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1093,
       "page_url": "https://umapyoi.net/en/news/1093",
       "first_seen_at": "2026-11-01T22:01:37.470356060+00:00",
