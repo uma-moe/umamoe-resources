@@ -1,15 +1,15 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-02T05:59:06.502938886+00:00",
+  "fetched_at": "2026-11-04T14:37:33.388722898+00:00",
   "analysis": {
-    "news_posts": 2705,
-    "classified_news_posts": 2325,
+    "news_posts": 2706,
+    "classified_news_posts": 2326,
     "news_posts_with_images": 1786,
     "news_posts_with_banner_candidates": 1781,
     "event_type_counts": {
       "campaign": 709,
-      "career_event": 153,
+      "career_event": 154,
       "challenge_event": 115,
       "champions_meeting": 211,
       "factor_research": 117,
@@ -24,18 +24,50 @@
       "racing_carnival": 24,
       "story_event": 299,
       "strongest_team": 37,
-      "trainer_skills_test": 67,
-      "training_scenario": 338,
-      "update": 815
+      "trainer_skills_test": 68,
+      "training_scenario": 339,
+      "update": 816
     },
     "discovered_gacha_banner_images": 951,
     "unique_discovered_gacha_ids": 567,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-11-02T03:00:00+00:00",
+    "latest_news_at": "2026-11-04T07:16:00+00:00",
     "api_gacha_banners": 229,
     "support_cards": 566
   },
   "news": [
+    {
+      "post_id": 3538,
+      "page_url": "https://umapyoi.net/news/3538?lang=jp",
+      "title": "Regarding a Bug in Some Training Events for Calstone Light O in the \"Shundai Festival\" Training Scenario",
+      "title_jp": "育成シナリオ「駿大祭編」におけるカルストンライトオの一部育成イベントの不具合について",
+      "posted_at": "2026-11-04T07:16:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "training_scenario",
+        "career_event",
+        "update",
+        "trainer_skills_test"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3538,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "育成シナリオ「駿大祭編」において、[真実一路]カルストンライトオの一部育成イベントに下記の不具合が発生しております。<br><br> ■不具合内容<br> 育成イベント「いつかの『最高速』」が発生し、スピードおよび流鏑馬（※作中は点2つ）の演目稽古以外のトレーニングが制限されたターンにおいて、流鏑馬（※作中は点2つ）の演目稽古を実行した場合、育成イベント「今でも変わらないもの」が発生しない。<br><br> 修正による影響を考慮いたしまして、本不具合の修正は10/26より開催中の「トレーナー技能試験」終了後とさせていただきます。<br> また、本不具合の対応といたしまして、お詫びを予定しております。<br> 対応が完了次第、本お知らせにてご報告いたします。 <br><br>ご利用のお客様に、ご迷惑をおかけしておりますことを、お詫び申し上げます。",
+        "message_english": "In the training scenario \"Shundai Festival,\" the following issue has occurred in some training events for [One True Path] Calstone Light O.<br><br>  ■ Issue Details<br>  When the training event “Some Day’s ‘Top Speed’” occurs, and training other than Speed and Yabusame (marked with two dots in-game) is restricted for a turn, if you perform the Yabusame (marked with two dots in-game) routine during that turn, the training event “What Remains Unchanged” will not trigger.<br><br>  Taking into account the impact of the fix, we will address this issue after the “Trainer Skills Exam,” which has been underway since October 26, concludes.<br>  Additionally, we plan to issue an apology in response to this issue.<br>  We will provide an update via this announcement as soon as the fix is implemented. <br><br> We sincerely apologize for any inconvenience this may have caused our users.",
+        "post_at": 1793776560,
+        "post_platform_flag": 56,
+        "row_number": 2,
+        "title": "育成シナリオ「駿大祭編」におけるカルストンライトオの一部育成イベントの不具合について",
+        "title_english": "Regarding a Bug in Some Training Events for Calstone Light O in the \"Shundai Festival\" Training Scenario",
+        "update_at": null
+      }
+    },
     {
       "post_id": 3533,
       "page_url": "https://umapyoi.net/news/3533?lang=jp",
