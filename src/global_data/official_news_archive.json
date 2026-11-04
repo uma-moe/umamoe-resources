@@ -14066,6 +14066,31 @@
       ]
     },
     {
+      "announce_id": 1116,
+      "page_url": "https://umapyoi.net/en/news/1116",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "2ed7b2aa86f46287c1b5dc200cd88631aaf56c23595d661f2a076c89132133ad",
+          "raw": {
+            "announce_id": 1116,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " At 10:00 p.m., Nov 5, 2026 (UTC), a special celebration to commemorate Umamusume: Pretty Derby the Stage – Sprinters' Story is set to begin!<br>\r\n<br>\r\n Important Information<br>\r\n 1. For more information on this event, please refer to the notice that will be posted when the event begins.<br>\r\n 2. The event schedule and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "Umamusume: Pretty Derby the Stage – Sprinters' Story Celebration coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1119,
       "page_url": "https://umapyoi.net/en/news/1119",
       "first_seen_at": "2026-11-01T22:01:37.470356060+00:00",
@@ -14435,6 +14460,131 @@
             "post_at": 1793484000,
             "post_platform_flag": 62,
             "title": "The race event Champions Meeting: Capricorn Cup is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1145,
+      "page_url": "https://umapyoi.net/en/news/1145",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "0dc64b0b30fb09d5a8a818c9e75665a2266e73ebffc0829f5f94eee12bdef234",
+          "raw": {
+            "announce_id": 1145,
+            "announce_label": 1,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30142_L1793829600.png?c=20260917095631",
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " A new Spotlight Pretty Derby Scout and Spotlight Support Card Scout are set to begin at 10:00 p.m., Nov 5, 2026 (UTC)!<br>\r\n They will feature a new Trainee Umamusume and new Support Cards.<br>\r\n<br>\r\n During the spotlight period, if you obtain a spotlighted 3★ Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30142_L1793829600.png?c=20260917095631\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Fun☆Fun☆Party Night] Daitaku Helios<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume<br>\r\n ★★★ [Fun☆Fun☆Party Night] Daitaku Helios<br>\r\n Scout Bonus:<br>\r\n [Fun☆Fun☆Party Night] Daitaku Helios Star Piece × 90<br> \r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30143_L1793829600.png?c=20260917095631\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [To You] K.S.Miracle<br>\r\n • SR [A Clip to Keep Your Heart Warm] Aston Machan<br>\r\n • R [Tracen Academy] Aston Machan<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. When scouting a spotlighted 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>\r\n 2. Scout schedules and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "New Spotlight Pretty Derby and Spotlight Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1148,
+      "page_url": "https://umapyoi.net/en/news/1148",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "f3c3ada7ccdaacecc4d2baf25b57ae09f05cd0886e7fa57a6a2f2e2b26366f32",
+          "raw": {
+            "announce_id": 1148,
+            "announce_label": 1,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30144_L1793829600.png?c=20260917095925",
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " A Unity Cup Pretty Derby Scout and Unity Cup Support Card Scout are set to begin at 10:00 p.m., Nov 5, 2026 (UTC)!<br>\r\n The Trainee Umamusume and Support Cards spotlighted in these Scouts are featured as Scenario Link characters in the Career Scenario Unity Cup: Shine On, Team Spirit!<br>\r\n<br>\r\n During the spotlight period, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Unity Cup Scout Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30144_L1793829600.png?c=20260917095925\"></figure>\r\n ■ Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Vampire Makeover!] Rice Shower<br>\r\n ★★★ [New Year ♪ New Urara!] Haru Urara<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 1<br>\r\n ★★★ [Vampire Makeover!] Rice Shower<br>\r\n Scout Bonus:<br>\r\n [Vampire Makeover!] Rice Shower Star Piece × 90<br> \r\n<br>\r\n ■ Spotlight Trainee Umamusume 2<br>\r\n ★★★ [New Year ♪ New Urara!] Haru Urara<br>\r\n Scout Bonus:<br>\r\n [New Year ♪ New Urara!] Haru Urara Star Piece × 90<br> \r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30145_L1793829600.png?c=20260917095925\"></figure>\r\n ■ Support Cards (Spotlight)<br>\r\n • SSR [Hands Up, Crook!] Taiki Shuttle<br>\r\n • SSR [Touching Sleeves Is Good Luck! ♪] Matikanefukukitaru<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. When scouting a spotlighted 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>\r\n 2. Trainee Umamusume with the same name cannot be on the same team, nor can they be selected as Legacy Umamusume at the same time in Career mode.<br>\r\n 3. Scout schedules and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "Unity Cup Pretty Derby and Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1150,
+      "page_url": "https://umapyoi.net/en/news/1150",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "03000df46424604b31f00cd36170525cf47bb6ca10376a0791a3d24d78929e11",
+          "raw": {
+            "announce_id": 1150,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30700005_L1793829600.png?c=20261006095349",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " At 10:00 p.m., Nov 5, 2026 (UTC), a Racing Carnival event is set to begin!<br>\r\n In Racing Carnival events, you can face off against specific Umamusume in special races that are available for a limited time only.<br>\r\n Place well in these races to earn Carnival Points, which can be exchanged for a variety of useful items!<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 12, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on this event, please refer to the notice that will be posted when it begins, or tap the Help button at the top right of the Racing Carnival event screen.<br>\r\n 2. The event schedule and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "A Racing Carnival event is coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1153,
+      "page_url": "https://umapyoi.net/en/news/1153",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "c441a354e489b039daf3e97a622d93a6112b6d1b6e4c04d72e3a6b72684a1325",
+          "raw": {
+            "announce_id": 1153,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_26200001_L1793829600.png?c=20260917100031",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " A Let's Go! Uma Outing event is set to begin at 10:00 p.m., Nov 5, 2026 (UTC)!<br>\r\n During this event, you can go on Outings with your trainees up to twice a day!<br>\r\n To go on Outings, you will need to fill the Outing Gauge.<br>\r\n You will receive one full Outing Gauge each day from this event's login bonus, and the gauge can also be filled by playing Careers, Team Trials, Daily Races, and Daily Legend Races.<br>\r\n<br>\r\n Going on Outings will increase your trainee's Bond, and you can acquire a variety of rewards to help with future Careers.<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on this event, please refer to the notice that will be posted when the event begins.<br>\r\n 2. If you have already used up all of your Daily Race Tickets and/or Daily Legend Race Tickets for the day before 10:00 p.m., Nov 5, 2026 (UTC), you will not be able to fill the Outing Gauge using Daily Races and/or Daily Legend Races that day.<br>\r\n 3. The event schedule and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "Let's Go! Uma Outing coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1156,
+      "page_url": "https://umapyoi.net/en/news/1156",
+      "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-04T23:39:46.365623488+00:00",
+          "content_hash": "3f42e675d75452393e85d87c711dd4487adf9e38e8af15fe3d0286b62cace178",
+          "raw": {
+            "announce_id": 1156,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30500001_L1793829600.png?c=20260917100133",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " A Transfer Request event is set to begin at 10:00 p.m., Nov 5, 2026 (UTC)!<br>\r\n Transfer Requests allow trainers to receive rewards by transferring Veteran Umamusume that meet the recipient trainer's desired conditions.<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 9, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Transfer Requests, please refer to the notice that will be posted when the event begins, or Transfer Requests under Umamusume in Help.<br>\r\n 2. The Transfer Request schedule and contents are subject to change without notice.",
+            "post_at": 1793829600,
+            "post_platform_flag": 62,
+            "title": "Transfer Requests coming soon!",
             "update_at": null
           }
         }
