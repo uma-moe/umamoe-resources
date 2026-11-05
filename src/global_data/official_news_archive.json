@@ -17657,6 +17657,31 @@
       ]
     },
     {
+      "announce_id": 100118,
+      "page_url": "https://umapyoi.net/en/news/100118",
+      "first_seen_at": "2026-11-05T06:43:18.479618291+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-05T06:43:18.479618291+00:00",
+          "content_hash": "1106ba153a2729559f7299e335b72d43c2a98a46f2932bb113a8ff194f18d207",
+          "raw": {
+            "announce_id": 100118,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " Thank you for your continued support of Umamusume: Pretty Derby.<br>\r\n<br>\r\n We would like to once again sincerely apologize for the inconvenience and concern caused by the cancellation of the 7th EVENT: THE STAGE in LOS ANGELES concerts.<br>\r\n<br>\r\n If you purchased concert tickets, you will receive an email from AXS confirming your intent to receive reimbursement for travel expenses or cancellation fees and purchase concert merchandise.<br>\r\n<br>\r\n If you would like to receive reimbursement or purchase concert merchandise, please read the email and submit the required information to the address below.<br>\r\n<br>\r\n<h2 class=\"heading\"> Cygames LA Concert Support</h2>\r\n ts7th_umamusume_la_support@contact.cygames.co.jp<br>\r\n<br>\r\n The above address is the official email address we will use to handle inquiries related to this matter. Please do not reply to the instructions sent by AXS.<br>\r\n<br>\r\n<h2 class=\"heading\"> Regarding Suspicious Emails</h2>\r\n Be wary of illegitimate emails pretending to be from Cygames or other companies involved in this matter. If you do receive such an email, notify us at the above address. Do not click on any links, open attachments, or submit personal information.<br>\r\n<br>\r\n<br>\r\n<br>\r\n Thank you for your patience and cooperation.",
+            "post_at": 1793854200,
+            "post_platform_flag": 62,
+            "title": "Emails sent regarding reimbursement for the 7th EVENT in LOS ANGELES concerts",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 200001,
       "page_url": "https://umapyoi.net/en/news/200001",
       "first_seen_at": "2026-08-07T11:06:23.321312100+00:00",

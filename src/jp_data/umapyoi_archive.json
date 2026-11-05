@@ -1,12 +1,12 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-04T14:37:33.388722898+00:00",
+  "fetched_at": "2026-11-05T06:43:03.351436230+00:00",
   "analysis": {
-    "news_posts": 2706,
-    "classified_news_posts": 2326,
-    "news_posts_with_images": 1786,
-    "news_posts_with_banner_candidates": 1781,
+    "news_posts": 2708,
+    "classified_news_posts": 2327,
+    "news_posts_with_images": 1787,
+    "news_posts_with_banner_candidates": 1782,
     "event_type_counts": {
       "campaign": 709,
       "career_event": 154,
@@ -15,7 +15,7 @@
       "factor_research": 117,
       "gacha": 856,
       "league_of_heroes": 128,
-      "legend_race": 214,
+      "legend_race": 215,
       "login_bonus": 125,
       "maintenance": 48,
       "masters_challenge": 64,
@@ -31,11 +31,38 @@
     "discovered_gacha_banner_images": 951,
     "unique_discovered_gacha_ids": 567,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-11-04T07:16:00+00:00",
+    "latest_news_at": "2026-11-05T04:50:00+00:00",
     "api_gacha_banners": 229,
     "support_cards": 566
   },
   "news": [
+    {
+      "post_id": 3542,
+      "page_url": "https://umapyoi.net/news/3542?lang=jp",
+      "title": "Notice Regarding the Sending of an Email Regarding Refunds, etc., for the “7th EVENT in LOS ANGELES”",
+      "title_jp": "『7th EVENT in LOS ANGELES』返金等に関するご案内メール送信のお知らせ",
+      "posted_at": "2026-11-05T04:50:00+00:00",
+      "label": "Media",
+      "event_types": [],
+      "images": [],
+      "raw": {
+        "announce_id": 3542,
+        "announce_label": 3,
+        "article_image": null,
+        "id": 3,
+        "image": "",
+        "label_color": "#FF911C",
+        "label_name_en": "Media",
+        "message": "いつも「ウマ娘 プリティーダービー」を応援いただきありがとうございます。<br><br>『ウマ娘 プリティーダービー 7th EVENT WORLD TOUR \"THE STAGE\" in LOS ANGELES』の公演中止により、皆様に多大なるご迷惑とご心配をおかけしておりますことを、あらためて深くお詫び申し上げます。<br><br>本公演のチケットをご購入、またはJTBオフィシャルツアーにお申し込みいただいたお客様を対象に、AXSまたはJTBから、旅費・キャンセル費等の返金および公演グッズ購入のご希望を確認するメールを随時お送りいたします。<br>返金または公演グッズの購入をご希望のお客様は、メールの内容をご確認のうえ、記載の必要事項をCygames専用窓口までお送りくださいますようお願いいたします。<br><br>■Cygames専用窓口<br>ts7th_umamusume_la_support@contact.cygames.co.jp<br><br>上記は、株式会社Cygamesが本件の対応に使用する正式なメールアドレスです。<br>AXSまたはJTBから届いたご案内メールへの返信ではなく、上記のCygames専用窓口宛てにご連絡ください。<br><br>■本件を装った不審なメールにご注意ください<br>本件に関して、Cygamesや関係事業者を装った不審なメールにご注意ください。<br>不審なメールを受信された場合は、記載されたリンクへのアクセスや添付ファイルの開封、個人情報の送信を控え、上記のCygames専用窓口までお問い合わせください。<br><br>お客様にはお手数をおかけいたしますが、ご理解とご協力を賜りますようお願い申し上げます。",
+        "message_english": "Thank you for your continued support of “Umamusume Pretty Derby.”<br><br> We would like to once again express our deepest apologies for the significant inconvenience and concern caused by the cancellation of the “Umamusume Pretty Derby 7th EVENT WORLD TOUR ‘THE STAGE’ in LOS ANGELES” performance.<br><br> AXS or JTB will be sending emails to customers who purchased tickets for this performance or signed up for the official JTB tour to confirm refunds for travel expenses, cancellation fees, etc., as well as your preference regarding the purchase of event merchandise.<br> If you wish to receive a refund or purchase event merchandise, please review the contents of the email and send the required information to the Cygames Dedicated Support Desk.<br><br> ■Cygames Dedicated Contact<br> ts7th_umamusume_la_support@contact.cygames.co.jp<br><br> The above is the official email address used by Cygames, Inc. to handle this matter.<br> Please do not reply to the notification emails sent by AXS or JTB; instead, contact the Cygames Dedicated Support Desk listed above.<br><br> ■Please be wary of suspicious emails posing as official communications regarding this matter<br> Please be wary of suspicious emails regarding this matter that purport to be from Cygames or affiliated companies.<br> If you receive a suspicious email, please refrain from clicking on any links, opening any attachments, or submitting personal information, and contact the dedicated Cygames contact point listed above.<br><br> We apologize for any inconvenience this may cause and appreciate your understanding and cooperation.",
+        "post_at": 1793854200,
+        "post_platform_flag": 24,
+        "row_number": 1,
+        "title": "『7th EVENT in LOS ANGELES』返金等に関するご案内メール送信のお知らせ",
+        "title_english": "Notice Regarding the Sending of an Email Regarding Refunds, etc., for the “7th EVENT in LOS ANGELES”",
+        "update_at": null
+      }
+    },
     {
       "post_id": 3538,
       "page_url": "https://umapyoi.net/news/3538?lang=jp",
@@ -1103,6 +1130,61 @@
         "row_number": 18,
         "title": "データ更新のお知らせ【10/26 11:30公開】",
         "title_english": "Notice Regarding Data Update [Published October 26 at 11:30 a.m.]",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3520,
+      "page_url": "https://umapyoi.net/news/3520?lang=jp",
+      "title": "Legend Race—Starting Soon!",
+      "title_jp": "レジェンドレース開催決定！",
+      "posted_at": "2026-11-05T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "legend_race"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_022.png?c=20261021150130",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_022.png?c=20261021150130",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_023.png?c=20261021150130",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_023.png?c=20261021150130",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3520/Thumbnail/banner_EV_20261105_021.png?c=20261021150130",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "raw": {
+        "announce_id": 3520,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3520/Thumbnail/banner_EV_20261105_021.png?c=20261021150130",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/6 12:00から、レジェンドレースの開催が決定しました！<br>レジェンドレースは、LEGENDウマ娘に挑戦し、豪華報酬を獲得できるイベントです。<br>出走するだけで報酬が獲得できます。条件に適したウマ娘を育成し、LEGENDウマ娘に挑戦してみましょう！<br><h2 class=\"heading\">開催期間</h2>11/6 12:00 ～ 11/9 4:59<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_022.png?c=20261021150130\"></figure>11/9 5:00 ～ 11/12 4:59<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_023.png?c=20261021150130\"></figure><h2 class=\"heading\">対象レース</h2>ジャパンカップ 東京 芝 2400m（中距離） 左 秋 晴 良 昼<br><h2 class=\"heading\">注意事項</h2>1. レジェンドレースの詳細は、レース開催後に掲載されるお知らせやヘルプ内の[レース]＞[レジェンドレース]をご確認ください。<br>2. LEGENDウマ娘と同じ殿堂入りウマ娘は、出走できません。<br>3. レジェンドレースの開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "The Legend Race is set to begin on November 6 at 12:00 PM!<br> The Legend Race is an event where you can challenge LEGEND Umamusume and earn luxurious rewards.<br> You can earn rewards just by entering the race. Train an Umamusume that meets the requirements and take on the LEGEND Umamusume!<br><h2 class=\"heading\"> Event Period</h2> November 6 at 12:00 PM – November 9 at 4:59 AM<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_022.png?c=20261021150130\"></figure> November 9 at 5:00 AM – November 12 at 4:59 AM<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3520/Header/banner_EV_20261105_023.png?c=20261021150130\"></figure><h2 class=\"heading\"> Eligible Races</h2> Japan Cup, Tokyo, Turf, 2400m (Middle Distance), Left-handed, Fall, Sunny, Good, Daytime<br><h2 class=\"heading\"> Important Notes</h2> 1. For details on Legend Races, please check the announcements posted after the race or the [Races] &gt; [Legend Race] section in the Help menu.<br> 2. Umamusume who have been inducted into the Hall of Fame in LEGENDUmamusume are not eligible to run.<br> 3. The duration and details of the Legend Race are subject to change without notice.",
+        "post_at": 1793847600,
+        "post_platform_flag": 62,
+        "row_number": 2,
+        "title": "レジェンドレース開催決定！",
+        "title_english": "Legend Race—Starting Soon!",
         "update_at": null
       }
     },
