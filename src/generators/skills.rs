@@ -13,6 +13,7 @@ struct DbSkill {
     name: Option<String>,
     description: Option<String>,
     base_cost: Option<i64>,
+    disp_order: Option<i64>,
     conditions: String,
     icon: String,
 }
@@ -47,6 +48,9 @@ pub fn generate(connection: &Connection) -> Result<Value> {
         }
         if let Some(base_cost) = skill.base_cost {
             entry.insert("base_cost".to_string(), Value::from(base_cost));
+        }
+        if let Some(disp_order) = skill.disp_order {
+            entry.insert("disp_order".to_string(), Value::from(disp_order));
         }
         if unique_skill_ids.contains(&skill.skill_id)
             || inherited_skill_ids.contains(&skill.skill_id)
@@ -91,7 +95,8 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
             sd.icon_id,
             name.text,
             description.text,
-            need.need_skill_point
+            need.need_skill_point,
+            sd.disp_order
         FROM skill_data sd
         LEFT JOIN text_data name
             ON name.category = ? AND name."index" = sd.id
@@ -117,6 +122,7 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
                     name: row.get(4)?,
                     description: row.get(5)?,
                     base_cost: row.get(6)?,
+                    disp_order: row.get(7)?,
                 },
             ))
         },
@@ -171,6 +177,7 @@ fn load_db_skills(connection: &Connection) -> Result<BTreeMap<i64, DbSkill>> {
                 name: Some(name),
                 description,
                 base_cost,
+                disp_order: None,
                 conditions: String::new(),
                 icon: "utx_ico_skill_10011.webp".to_string(),
             });
