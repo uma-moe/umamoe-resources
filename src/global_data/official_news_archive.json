@@ -14466,6 +14466,31 @@
       ]
     },
     {
+      "announce_id": 1138,
+      "page_url": "https://umapyoi.net/en/news/1138",
+      "first_seen_at": "2026-11-05T19:55:48.130554212+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-05T19:55:48.130554212+00:00",
+          "content_hash": "f22234cbdb187908f28e40b5c40eda48feb2f4b4bd5a80354b50bf58538d57c0",
+          "raw": {
+            "announce_id": 1138,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": "&nbsp;An update was released at 8:00 a.m., Nov 5, 2026 (UTC).<br>\n<br>\n&nbsp;The details of the update are as follows:<br>\n&nbsp;<br>\n<h3 class=\"subheading\">&nbsp;Update Details</h3>\n&nbsp;&nbsp;• New Happy Birthday scenes will now appear on the Home screen on each Umamusume's birthday.<br>\n&nbsp;&nbsp;(Even if you do not view an Umamusume's Happy Birthday scene on their birthday, each character's scene will be automatically added to their Birthday tab under Menu > Archive > Conversation Gallery the next time you log in after their birthday.)<br>",
+            "post_at": 1793867400,
+            "post_platform_flag": 62,
+            "title": "Update Announcement [8:00 a.m., Nov 5 (UTC)]",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1145,
       "page_url": "https://umapyoi.net/en/news/1145",
       "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
