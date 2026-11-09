@@ -13,6 +13,7 @@ data-encoding = "2"
 dotenvy = "0.15"
 flate2 = "1"
 hex = "0.4"
+hmac = "0.12"
 lz4_flex = "0.11"
 md5 = "0.7"
 redis = { version = "0.32", default-features = false, features = ["tokio-comp"] }
