@@ -77,6 +77,11 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route("/resources/", get(get_manifest))
         .route("/resources/healthz", get(healthz))
         .route("/resources/manifest.json", get(get_manifest))
+        .route("/resources/assets.json", get(get_assets_pointer))
+        .route(
+            "/resources/assets/:version/assets.json",
+            get(get_versioned_assets_manifest),
+        )
         .route("/resources/current/:file_name", get(get_current_resource))
         .route(
             "/resources/:version/:file_name",
@@ -222,6 +227,77 @@ async fn get_manifest(
     headers.insert(VARY, HeaderValue::from_static(protected_vary_header(false)));
     headers.insert(CONTENT_LENGTH, header_value(manifest_bytes.len())?);
     Ok((headers, manifest_bytes).into_response())
+}
+
+/// Points clients at the current artwork manifest. The pointer is mutable, so it keeps the short
+/// manifest TTL while every versioned manifest below it is immutable.
+async fn get_assets_pointer(
+    State(state): State<AppState>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    serve_json_file(&state.data_dir.join("assets.json"), false, request).await
+}
+
+/// One content version of the artwork manifest, addressed by the hash of its contents.
+async fn get_versioned_assets_manifest(
+    State(state): State<AppState>,
+    Path(version): Path<String>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    if version.is_empty()
+        || version.len() > 80
+        || !version.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.')
+        })
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid asset version",
+        ));
+    }
+    let path = state
+        .data_dir
+        .join(crate::assets::ASSETS_PREFIX)
+        .join(&version)
+        .join("assets.json");
+    serve_json_file(&path, true, request).await
+}
+
+/// Reads a JSON file off the data directory and answers with an ETag, so clients re-download a
+/// manifest only when its bytes change.
+async fn serve_json_file(
+    path: &FsPath,
+    immutable: bool,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    let bytes = fs::read(path).await.map_err(|error| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            format!("failed to read {}: {}", path.display(), error),
+        )
+    })?;
+
+    let mut headers = HeaderMap::new();
+    let etag = format!("\"sha256-{:x}\"", Sha256::digest(&bytes));
+    headers.insert(ETAG, header_value(&etag)?);
+    if request
+        .get(IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        == Some(&etag)
+    {
+        return Ok((StatusCode::NOT_MODIFIED, headers).into_response());
+    }
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(resource_cache_control(false, immutable)),
+    );
+    headers.insert(VARY, HeaderValue::from_static(protected_vary_header(false)));
+    headers.insert(CONTENT_LENGTH, header_value(bytes.len())?);
+    Ok((headers, bytes).into_response())
 }
 
 /// Serves the exact database each export was generated from, for the simulator and the
