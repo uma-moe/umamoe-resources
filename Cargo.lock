@@ -2174,6 +2174,7 @@ dependencies = [
  "dotenvy",
  "flate2",
  "hex",
+ "hmac",
  "lz4_flex",
  "md5",
  "redis",

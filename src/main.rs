@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tracing::{info, warn};
 
+mod assets;
 mod auth_common;
 mod browser_proof;
 mod cache;
@@ -44,6 +45,23 @@ enum Command {
         out: PathBuf,
         #[arg(long)]
         write_json: bool,
+    },
+    /// Publish the extracted game artwork: a content-addressed manifest, and optionally an upload
+    /// of every object to an S3-compatible bucket.
+    AssetsPublish {
+        /// Directory holding the extracted artwork, laid out the way the frontend requests it.
+        #[arg(long)]
+        dir: PathBuf,
+        #[arg(long, default_value = "generated-data")]
+        out: PathBuf,
+        /// Base URL the frontend puts in front of every object key, such as https://assets.uma.moe
+        #[arg(long, env = "ASSETS_PUBLIC_BASE", default_value = "")]
+        base: String,
+        /// Write the manifest without uploading anything.
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long, default_value_t = 16)]
+        concurrency: usize,
     },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
@@ -192,6 +210,30 @@ async fn main() -> Result<()> {
                 version = manifest.version,
                 artifacts = manifest.artifacts.len(),
                 "generated resources"
+            );
+        }
+        Command::AssetsPublish {
+            dir,
+            out,
+            base,
+            dry_run,
+            concurrency,
+        } => {
+            let summary = assets::publish(assets::PublishOptions {
+                source_dir: dir,
+                data_dir: out,
+                base,
+                upload: !dry_run,
+                concurrency,
+            })
+            .await?;
+            info!(
+                version = summary.version,
+                files = summary.count,
+                bytes = summary.bytes,
+                uploaded = summary.uploaded,
+                skipped = summary.skipped,
+                "published assets"
             );
         }
         Command::Refresh {
