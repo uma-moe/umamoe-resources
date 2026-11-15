@@ -498,7 +498,7 @@ Asset bucket secrets. The R2 token only accepts the deploy host's IP, which beta
 
 Set all three or none. Without them a deploy writes an empty `assets.env` and the container cannot publish images; deleting them removes the key from the host on the next deploy.
 
-`GAME_ASSET_KEY` (the game's asset bundle key as hex, UmaViewer's `ABKeyText`) goes into the same file. Production needs it to build game art.
+The repository variable `GAME_ASSET_KEY` (the game's asset bundle key as hex, UmaViewer's `ABKeyText`) goes into the same file. UmaViewer publishes it, so it is a variable rather than a secret, shared by beta and production. Production needs it to build game art.
 
 Manual remote `env` files should contain the normal application env values only:
 
