@@ -1,0 +1,121 @@
+"""Turns decrypted Unity asset bundles into the images the site serves.
+
+The resources service decrypts each bundle and sends a job list as JSON on stdin:
+{"jobs": [{"bundle": "<path>", "outputs": [{"object": "<name>", "path": "<path>",
+"format": "webp" | "png", "size": [width, height], "art_size": [width, height] | null}]}]}
+`art_size` is the art's real shape when it is centred on a larger served canvas.
+It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
+`--inspect` lists the textures and sprites in the bundles named on the command line instead.
+"""
+
+import json
+import os
+import sys
+from typing import Any, TextIO
+
+import UnityPy
+from PIL import Image
+
+WEBP_QUALITY = 90
+
+
+def read_images(bundle_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    environment = UnityPy.load(bundle_path)
+    sprites: dict[str, Any] = {}
+    textures: dict[str, Any] = {}
+    for obj in environment.objects:
+        if obj.type.name == "Sprite":
+            data = obj.read()
+            sprites[data.m_Name] = data
+        elif obj.type.name == "Texture2D":
+            data = obj.read()
+            textures[data.m_Name] = data
+
+    return sprites, textures
+
+
+def pick_image(sprites: dict[str, Any], textures: dict[str, Any], name: str) -> Image.Image:
+    # Atlases hold many named sprites; single-image bundles hold one texture named like the file.
+    if name in sprites:
+        return sprites[name].image
+    if name in textures:
+        return textures[name].image
+    if len(textures) == 1:
+        return next(iter(textures.values())).image
+
+    available = sorted([*sprites, *textures])
+    raise ValueError(f"no sprite or texture named {name!r}; bundle has {available[:20]}")
+
+
+def fit_image(image: Image.Image, size: list[int], art_size: list[int] | None) -> Image.Image:
+    # The game squeezes textures to powers of two; resizing restores the served shape.
+    if art_size is None:
+        if list(image.size) == size:
+            return image
+        return image.resize((size[0], size[1]), Image.LANCZOS)
+
+    art = image.convert("RGBA").resize((art_size[0], art_size[1]), Image.LANCZOS)
+    canvas = Image.new("RGBA", (size[0], size[1]), (0, 0, 0, 0))
+    canvas.alpha_composite(art, ((size[0] - art_size[0]) // 2, (size[1] - art_size[1]) // 2))
+    return canvas
+
+
+def save_image(image: Image.Image, output: dict[str, Any]) -> None:
+    image = fit_image(image, output["size"], output.get("art_size"))
+
+    if output["format"] == "png":
+        image.save(output["path"], "PNG", optimize=True)
+        return
+
+    image.save(output["path"], "WEBP", quality=WEBP_QUALITY, method=6)
+
+
+def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
+    try:
+        sprites, textures = read_images(job["bundle"])
+        written = []
+        for output in job["outputs"]:
+            save_image(pick_image(sprites, textures, output["object"]), output)
+            written.append(output["path"])
+        return {"bundle": job["bundle"], "written": written, "error": None}
+    except Exception as error:
+        return {"bundle": job["bundle"], "written": [], "error": f"{type(error).__name__}: {error}"}
+
+
+def inspect_bundle(bundle_path: str) -> dict[str, Any]:
+    sprites, textures = read_images(bundle_path)
+    return {
+        "bundle": bundle_path,
+        "sprites": {name: list(sprite.image.size) for name, sprite in sorted(sprites.items())},
+        "textures": {
+            name: {"size": [texture.m_Width, texture.m_Height], "format": str(texture.m_TextureFormat)}
+            for name, texture in sorted(textures.items())
+        },
+    }
+
+
+def take_stdout() -> TextIO:
+    """Keeps stdout for the JSON result; anything else written there, from Python or native
+    decoders, goes to stderr instead."""
+    sys.stdout.flush()
+    result = os.fdopen(os.dup(1), "w")
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return result
+
+
+def main() -> int:
+    result = take_stdout()
+    if len(sys.argv) > 1 and sys.argv[1] == "--inspect":
+        payload: Any = [inspect_bundle(path) for path in sys.argv[2:]]
+    else:
+        request = json.load(sys.stdin)
+        payload = {"results": [convert_bundle(job) for job in request["jobs"]]}
+
+    json.dump(payload, result)
+    result.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
