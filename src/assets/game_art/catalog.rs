@@ -1,6 +1,6 @@
 use super::types::{
-    ArtFamily, ArtOutput, CardOutfit, Catalog, PlannedOutput, ART_FAMILIES, PORTRAIT_OUTPUTS,
-    PORTRAIT_SOURCE,
+    ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, Fit, PlannedOutput,
+    ART_FAMILIES, ATLAS_FAMILIES, PORTRAIT_OUTPUTS, PORTRAIT_SOURCE,
 };
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 impl Catalog {
-    /// The fixed families plus a portrait for every card in this master.
+    /// The fixed families and atlases plus a portrait for every card in this master.
     pub(super) fn load(master: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(master, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("failed to open {}", master.display()))?;
@@ -23,12 +23,22 @@ impl Catalog {
             let dress = outfit.dress.to_string();
             let file = fillPattern(PORTRAIT_SOURCE, &[("chara", &chara), ("dress", &dress)]);
             let captures = [("chara", chara.as_str()), ("card", card.as_str())];
-            portraits
-                .entry(file)
-                .or_default()
-                .extend(plannedOutputs(PORTRAIT_OUTPUTS, &captures));
+            let outputs = plannedOutputs(PORTRAIT_OUTPUTS, &captures, objectName(&file));
+            portraits.entry(file).or_default().extend(outputs);
         }
-        Self { portraits }
+
+        let atlases = ATLAS_FAMILIES
+            .iter()
+            .map(|family| {
+                let plan = AtlasPlan {
+                    texture: family.texture,
+                    outputs: family.sprites.iter().flat_map(spriteOutputs).collect(),
+                };
+                (family.atlas, plan)
+            })
+            .collect();
+
+        Self { portraits, atlases }
     }
 
     /// The bucket keys a game file is served at, or `None` when the site does not use it.
@@ -37,6 +47,12 @@ impl Catalog {
             .iter()
             .find_map(|family| familyOutputs(family, name))
             .or_else(|| self.portraits.get(name).cloned())
+            .or_else(|| self.atlases.get(name).map(|plan| plan.outputs.clone()))
+    }
+
+    /// The bundle a game file needs loaded beside it, such as an atlas's texture.
+    pub(super) fn dependency(&self, name: &str) -> Option<&'static str> {
+        self.atlases.get(name).map(|plan| plan.texture)
     }
 }
 
@@ -46,6 +62,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .iter()
         .map(|family| family.source)
         .chain([PORTRAIT_SOURCE])
+        .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
         .collect();
     categories.sort_unstable();
@@ -54,7 +71,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
 }
 
 /// The game file's name without its folders, which is also its texture's name.
-pub(super) fn objectName(name: &str) -> &str {
+fn objectName(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)
 }
 
@@ -83,18 +100,55 @@ fn cardOutfits(connection: &Connection) -> Result<Vec<CardOutfit>> {
 
 fn familyOutputs(family: &ArtFamily, name: &str) -> Option<Vec<PlannedOutput>> {
     let captures = matchPattern(family.source, name)?;
-    Some(plannedOutputs(family.outputs, &captures))
+    Some(plannedOutputs(family.outputs, &captures, objectName(name)))
 }
 
-fn plannedOutputs(outputs: &[ArtOutput], captures: &[(&str, &str)]) -> Vec<PlannedOutput> {
+fn plannedOutputs(
+    outputs: &[ArtOutput],
+    captures: &[(&str, &str)],
+    object: &str,
+) -> Vec<PlannedOutput> {
     outputs
         .iter()
         .map(|output| PlannedOutput {
             key: fillPattern(output.path, captures),
-            size: output.size,
-            art_size: output.art_size,
+            object: object.to_string(),
+            fit: output.fit,
         })
         .collect()
+}
+
+/// Sprites are cut at the size they are drawn, which is already the size the site serves.
+fn spriteOutputs(sprites: &AtlasSprites) -> Vec<PlannedOutput> {
+    let sprite_output = |object: &str, key: String| PlannedOutput {
+        key,
+        object: object.to_string(),
+        fit: Fit::Native,
+    };
+
+    match sprites {
+        AtlasSprites::Named { sprite, paths } => paths
+            .iter()
+            .map(|path| sprite_output(sprite, path.to_string()))
+            .collect(),
+        AtlasSprites::Numbered {
+            sprite,
+            numbers,
+            width,
+            paths,
+        } => {
+            let mut outputs = Vec::new();
+            for number in numbers.clone() {
+                let digits = format!("{number:0width$}");
+                let captures = [("n", digits.as_str())];
+                let object = fillPattern(sprite, &captures);
+                for path in *paths {
+                    outputs.push(sprite_output(&object, fillPattern(path, &captures)));
+                }
+            }
+            outputs
+        }
+    }
 }
 
 /// Matches `name` against a pattern whose `{placeholder}` segments stand for digits.
@@ -220,8 +274,87 @@ mod tests {
 
         let icon = catalog.outputs("chara/chr1001/chr_icon_1001").unwrap();
 
-        assert_eq!(icon[0].size, (256, 256));
-        assert_eq!(icon[0].art_size, Some((232, 256)));
+        assert_eq!(
+            icon[0].fit,
+            Fit::Centre {
+                size: (256, 256),
+                art: (232, 256)
+            }
+        );
+    }
+
+    #[test]
+    fn atlasSpritesAreServedUnderTheSiteNames() {
+        let catalog = Catalog::fromOutfits(&[]);
+
+        let common = catalog.outputs("atlas/common/common").unwrap();
+        let ranks = catalog.outputs("atlas/statusrank/statusrank").unwrap();
+
+        let speed = common
+            .iter()
+            .find(|output| output.key == "assets/images/icon/stats/speed.webp")
+            .unwrap();
+        assert_eq!(speed.object, "utx_ico_obtain_00");
+        assert_eq!(speed.fit, Fit::Native);
+        assert_eq!(ranks.len(), 98 * 2);
+        assert!(ranks
+            .iter()
+            .any(|output| output.object == "utx_ico_statusrank_97"
+                && output.key == "game-assets/textures/uma_ranks/utx_ico_statusrank_97.webp"));
+    }
+
+    #[test]
+    fn atlasesNeedTheirTextureAndTexturesAloneAreNotBuilt() {
+        let catalog = Catalog::fromOutfits(&[]);
+
+        assert_eq!(
+            catalog.dependency("atlas/common/common"),
+            Some("atlas/common/common_tex")
+        );
+        assert_eq!(catalog.dependency("item/item_icon_00041"), None);
+        assert_eq!(keys(&catalog, "atlas/common/common_tex"), None);
+    }
+
+    #[test]
+    fn noTwoOutputsShareABucketKey() {
+        let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
+        let mut seen = std::collections::HashSet::new();
+
+        let duplicates: Vec<String> = catalog
+            .atlases
+            .values()
+            .flat_map(|plan| plan.outputs.iter())
+            .chain(catalog.portraits.values().flatten())
+            .filter(|output| !seen.insert(output.key.clone()))
+            .map(|output| output.key.clone())
+            .collect();
+
+        assert!(duplicates.is_empty(), "{duplicates:?}");
+    }
+
+    #[test]
+    fn chibiSpritesKeepTheirSize() {
+        let catalog = Catalog::fromOutfits(&[]);
+
+        let chibi = catalog
+            .outputs("chara/chr1001/petit/petit_chr_1001_100101_0020")
+            .unwrap();
+        let valentine = keys(
+            &catalog,
+            "outgame/campaign/valentine/chara/petit_chr_1001_100101_0100",
+        );
+
+        assert_eq!(
+            chibi[0].key,
+            "game-assets/petit/petit_chr_1001_100101_0020.webp"
+        );
+        assert_eq!(chibi[0].fit, Fit::Native);
+        assert_eq!(
+            valentine,
+            Some(vec![
+                "game-assets/petit/petit_chr_1001_100101_0100.webp".to_string()
+            ])
+        );
     }
 
     #[test]
@@ -258,6 +391,7 @@ mod tests {
         assert_eq!(
             catalogCategories(),
             vec![
+                "atlas",
                 "chara",
                 "item",
                 "outgame",

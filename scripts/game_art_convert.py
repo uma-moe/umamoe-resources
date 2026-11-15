@@ -1,9 +1,12 @@
 """Turns decrypted Unity asset bundles into the images the site serves.
 
 The resources service decrypts each bundle and sends a job list as JSON on stdin:
-{"jobs": [{"bundle": "<path>", "outputs": [{"object": "<name>", "path": "<path>",
-"format": "webp" | "png", "size": [width, height], "art_size": [width, height] | null}]}]}
-`art_size` is the art's real shape when it is centred on a larger served canvas.
+{"jobs": [{"bundle": "<path>", "dependencies": ["<path>"], "outputs": [{"object": "<name>",
+"path": "<path>", "format": "webp" | "png", "size": [width, height] | null,
+"art_size": [width, height] | null}]}]}
+`dependencies` are loaded with the bundle, such as the texture an atlas's sprites draw from.
+`size` null keeps the picture's own size. `art_size` is the art's real shape when it is centred
+on a larger served canvas.
 It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
 """
@@ -19,8 +22,8 @@ from PIL import Image
 WEBP_QUALITY = 90
 
 
-def read_images(bundle_path: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    environment = UnityPy.load(bundle_path)
+def read_images(*bundle_paths: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    environment = UnityPy.load(*bundle_paths)
     sprites: dict[str, Any] = {}
     textures: dict[str, Any] = {}
     for obj in environment.objects:
@@ -40,14 +43,20 @@ def pick_image(sprites: dict[str, Any], textures: dict[str, Any], name: str) -> 
         return sprites[name].image
     if name in textures:
         return textures[name].image
-    if len(textures) == 1:
+    # An atlas's one texture holds all its sprites, so only a bundle without sprites falls back.
+    if not sprites and len(textures) == 1:
         return next(iter(textures.values())).image
 
     available = sorted([*sprites, *textures])
     raise ValueError(f"no sprite or texture named {name!r}; bundle has {available[:20]}")
 
 
-def fit_image(image: Image.Image, size: list[int], art_size: list[int] | None) -> Image.Image:
+def fit_image(
+    image: Image.Image, size: list[int] | None, art_size: list[int] | None
+) -> Image.Image:
+    if size is None:
+        return image
+
     # The game squeezes textures to powers of two; resizing restores the served shape.
     if art_size is None:
         if list(image.size) == size:
@@ -61,7 +70,7 @@ def fit_image(image: Image.Image, size: list[int], art_size: list[int] | None) -
 
 
 def save_image(image: Image.Image, output: dict[str, Any]) -> None:
-    image = fit_image(image, output["size"], output.get("art_size"))
+    image = fit_image(image, output.get("size"), output.get("art_size"))
 
     if output["format"] == "png":
         image.save(output["path"], "PNG", optimize=True)
@@ -72,7 +81,7 @@ def save_image(image: Image.Image, output: dict[str, Any]) -> None:
 
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
     try:
-        sprites, textures = read_images(job["bundle"])
+        sprites, textures = read_images(job["bundle"], *job.get("dependencies", []))
         written = []
         for output in job["outputs"]:
             save_image(pick_image(sprites, textures, output["object"]), output)

@@ -3,22 +3,24 @@
 mod build;
 mod catalog;
 mod plan;
+mod state;
 #[path = "../../types/game_art.rs"]
 mod types;
 
-use super::{purgeOverwritten, Bucket};
+use super::{contentType, purgeOverwritten, Bucket};
 use crate::game_cdn::{self, CdnSource, ManifestEntry, GLOBAL_CDN};
 use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use plan::{planJobs, publishedRecord};
-use std::collections::BTreeMap;
+use state::{loadState, migrateLegacyState, saveState, shardName};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 use types::{
-    ArtDestination, ArtJob, ArtState, Catalog, CONVERT_BATCH_SIZE, STATE_KEY, UPLOAD_CONCURRENCY,
+    ArtDestination, ArtJob, ArtState, Catalog, StateOrigin, CONVERT_BATCH_SIZE, UPLOAD_CONCURRENCY,
 };
 pub use types::{GameArtOptions, GameArtSummary};
 
@@ -62,7 +64,11 @@ pub async fn publishGameArt(
     dry_run: bool,
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
-    let mut state = loadState(&client, bucket).await?;
+    let (mut state, origin) = loadState(&client, bucket).await?;
+    if origin == StateOrigin::Legacy && !dry_run {
+        migrateLegacyState(&client, bucket, &state).await?;
+    }
+
     let catalog = Catalog::load(master)?;
     let sources = listSources(&client, resource_version).await?;
     let jobs = planJobs(&sources, &catalog, &state);
@@ -86,7 +92,7 @@ pub async fn publishGameArt(
 
     if summary.isComplete() {
         state.resource_version = Some(resource_version.to_string());
-        saveState(&client, bucket, &state).await?;
+        saveState(&client, bucket, &state, &BTreeSet::new()).await?;
     }
     info!(
         resource_version,
@@ -194,7 +200,8 @@ async fn runJobs(
         summary.uploaded += files.len();
         let replaced = deliver(client, &destination, files).await?;
         if let (ArtDestination::Bucket(bucket), Some(state)) = (&destination, state.as_deref()) {
-            saveState(client, bucket, state).await?;
+            let changed = batch.iter().map(|job| shardName(&job.entry.name)).collect();
+            saveState(client, bucket, state, &changed).await?;
             purgeOverwritten(&replaced, &options.purge_origins).await?;
         }
     }
@@ -234,7 +241,9 @@ async fn deliver(
                     uploads.spawn(async move {
                         let existed = bucket.objectEtag(&client, &key).await?.is_some();
                         let body = tokio::fs::read(&file).await?;
-                        bucket.putObject(&client, &key, body, "image/webp").await?;
+                        bucket
+                            .putObject(&client, &key, body, contentType(&key))
+                            .await?;
                         anyhow::Ok(existed.then_some(key))
                     });
                 }
@@ -246,20 +255,6 @@ async fn deliver(
         }
     }
     Ok(replaced)
-}
-
-async fn loadState(client: &reqwest::Client, bucket: &Bucket) -> Result<ArtState> {
-    let Some(bytes) = bucket.getObject(client, STATE_KEY).await? else {
-        return Ok(ArtState::default());
-    };
-    serde_json::from_slice(&bytes).context("the game art record in the bucket is not valid JSON")
-}
-
-async fn saveState(client: &reqwest::Client, bucket: &Bucket, state: &ArtState) -> Result<()> {
-    let body = serde_json::to_vec(state)?;
-    bucket
-        .putObject(client, STATE_KEY, body, "application/json")
-        .await
 }
 
 fn outputFolder(job: &ArtJob) -> String {

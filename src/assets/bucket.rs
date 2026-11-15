@@ -78,6 +78,24 @@ impl Bucket {
         Ok(Some(response.bytes().await?.to_vec()))
     }
 
+    /// Removes the object at `key`; a key that holds nothing is not an error.
+    pub(super) async fn deleteObject(&self, client: &reqwest::Client, key: &str) -> Result<()> {
+        let request = self.signedRequest("DELETE", key, &[])?;
+        let response = client
+            .delete(&request.url)
+            .headers(request.headers)
+            .send()
+            .await
+            .with_context(|| format!("DELETE {key} failed"))?;
+
+        let status = response.status();
+        if !status.is_success() && status.as_u16() != 404 {
+            let detail = response.text().await.unwrap_or_default();
+            bail!("DELETE {key} returned HTTP {status}: {detail}");
+        }
+        Ok(())
+    }
+
     pub(super) async fn putObject(
         &self,
         client: &reqwest::Client,
