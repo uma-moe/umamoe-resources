@@ -418,7 +418,7 @@ Production builds the site's game images itself. Whenever the game version chang
 - A file that does not convert is recorded and skipped until the game changes it; a file that fails to download is retried on the next check.
 - Decrypted bundles and converted images live in a temporary folder that is removed after each run and at startup.
 - Sources merge in precedence order. Global is the only source today; JP joins after it once there is a JP version check, filling in files Global does not have yet, and Global replaces them as soon as it lists them.
-- Only production publishes (`GAME_ART_PUBLISH=true`), so one server writes the bucket. It needs `GAME_ASSET_KEY` (the game's asset bundle key, hex) besides the bucket settings.
+- One server publishes (`GAME_ART_PUBLISH=true`), so two never race on the bucket's record. The repository variable `GAME_ART_PUBLISHER` (`beta` or `production`, default `production`) picks that server; after changing it, deploy both so the old publisher stops. The publisher needs `GAME_ASSET_KEY` (the game's asset bundle key, hex) besides the bucket settings.
 
 Check conversions without the bucket, using the Docker image (it has the converter):
 
