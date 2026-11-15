@@ -1,16 +1,18 @@
 use super::catalog::{
-    converterRevision, courseScenes, isTrackPrefab, isTrackTexture, isUnusedDependency,
+    converterRevision, courseScenes, isTrackPrefab, isTrackTexture, isUnusedDependency, objectName,
     runtimeTextureFolder,
 };
+use super::race_motions::raceMotion;
 use super::types::{
-    ArtJob, ArtState, Catalog, Dependencies, ModelScene, PlannedOutput, PublishedArt,
+    ArtJob, ArtModel, ArtState, Catalog, Dependencies, Fit, MotionModel, PlannedOutput,
+    PublishedArt, SceneryModel, SlotTexture, UmaOutfit, MOTION_SKELETON,
 };
 use crate::game_cdn::{CdnSource, ManifestEntry};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Picks every catalogued file, and every racecourse to combine into one model, from the first
-/// source that lists it, so a Global file replaces the JP one as soon as Global has it, and keeps
-/// those whose published copy is missing or stale.
+/// Picks every catalogued file, every racecourse to combine into one model and every outfit to
+/// build a uma of from the first source that lists it, so a Global file replaces the JP one as
+/// soon as Global has it, and keeps those whose published copy is missing or stale.
 pub(super) fn planJobs(
     sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
     catalog: &Catalog,
@@ -26,9 +28,9 @@ pub(super) fn planJobs(
             if !claimed.insert(entry.name.as_str()) {
                 continue;
             }
-            if let Some(job) = fileJob(source, entry, &listing, catalog) {
-                jobs.push(job);
-            }
+            let job = fileJob(source, entry, &listing, catalog)
+                .or_else(|| motionJob(source, entry, &listing));
+            jobs.extend(job);
         }
 
         for (course, scene) in courseScenes(files.iter().map(|entry| entry.name.as_str())) {
@@ -36,6 +38,17 @@ pub(super) fn planJobs(
                 continue;
             }
             if let Some(job) = courseJob(source, course, &scene, &listing, catalog) {
+                jobs.push(job);
+            }
+        }
+
+        // An outfit whose files this source lacks is left to the next source.
+        for uma in &catalog.umas {
+            if claimed.contains(uma.record.as_str()) {
+                continue;
+            }
+            if let Some(job) = umaJob(source, uma, &listing) {
+                claimed.insert(uma.record.as_str());
                 jobs.push(job);
             }
         }
@@ -116,6 +129,25 @@ impl<'a> Listing<'a> {
 
         Some(found.into_values().cloned().collect())
     }
+
+    /// Every bundle a model of these prefabs is built from beside the first, which is the job's
+    /// own: the other prefabs and everything each one needs. `None` when one is not listed.
+    fn sceneDependencies(&self, prefabs: &[String]) -> Option<BTreeMap<String, ManifestEntry>> {
+        let first = prefabs.first()?;
+        let mut needed = BTreeMap::new();
+
+        for prefab in prefabs {
+            let prefab_entry = *self.by_name.get(prefab.as_str())?;
+            if prefab != first {
+                needed.insert(prefab.clone(), prefab_entry.clone());
+            }
+            // A model is not built from part of what it draws.
+            for dependency in self.listedDependencies(prefab_entry)? {
+                needed.insert(dependency.name.clone(), dependency);
+            }
+        }
+        Some(needed)
+    }
 }
 
 /// The job building one catalogued file, or `None` when the site does not use it or the file
@@ -135,7 +167,7 @@ fn fileJob(
         Dependencies::Listed => listing.listedDependencies(entry)?,
     };
 
-    let model = isTrackPrefab(&entry.name).then(|| ModelScene {
+    let model = isTrackPrefab(&entry.name).then(|| SceneryModel {
         prefabs: vec![entry.name.clone()],
         runtime_textures: listing.runtimeTextures(&entry.name),
     });
@@ -155,7 +187,7 @@ fn fileJob(
         name: entry.name.clone(),
         entry: entry.clone(),
         dependencies,
-        model,
+        model: model.map(ArtModel::Scenery),
         outputs,
     })
 }
@@ -169,20 +201,12 @@ fn courseJob(
     listing: &Listing,
     catalog: &Catalog,
 ) -> Option<ArtJob> {
-    let track = scene.first()?;
-    let entry = *listing.by_name.get(track)?;
-    let mut needed: BTreeMap<String, ManifestEntry> = BTreeMap::new();
-    let mut runtime_textures: Vec<String> = Vec::new();
+    let prefabs: Vec<String> = scene.iter().map(|prefab| prefab.to_string()).collect();
+    let entry = *listing.by_name.get(prefabs.first()?.as_str())?;
+    let mut needed = listing.sceneDependencies(&prefabs)?;
 
+    let mut runtime_textures: Vec<String> = Vec::new();
     for prefab in scene {
-        let prefab_entry = *listing.by_name.get(prefab)?;
-        if prefab != track {
-            needed.insert(prefab.to_string(), prefab_entry.clone());
-        }
-        // A model is not built from part of what it draws.
-        for dependency in listing.listedDependencies(prefab_entry)? {
-            needed.insert(dependency.name.clone(), dependency);
-        }
         for texture in listing.runtimeTextures(prefab) {
             if !runtime_textures.contains(&texture) {
                 runtime_textures.push(texture);
@@ -200,11 +224,84 @@ fn courseJob(
         name: course.to_string(),
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
-        model: Some(ModelScene {
-            prefabs: scene.iter().map(|prefab| prefab.to_string()).collect(),
+        model: Some(ArtModel::Scenery(SceneryModel {
+            prefabs,
             runtime_textures,
-        }),
+        })),
         outputs: catalog.courseOutputs(course),
+    })
+}
+
+/// The job joining an outfit's body, head and tail into one uma, published under its body's
+/// folder. It is rebuilt when any of its prefabs, anything they draw or a tail texture changes.
+fn umaJob(source: &'static CdnSource, uma: &UmaOutfit, listing: &Listing) -> Option<ArtJob> {
+    let body = uma.prefabs.first()?;
+    let entry = *listing.by_name.get(body.as_str())?;
+    let mut needed = listing.sceneDependencies(&uma.prefabs)?;
+
+    // Characters added to a tail later can lack some of its textures; the tail then keeps the
+    // material's own.
+    let mut tail_textures: Vec<SlotTexture> = Vec::new();
+    for texture in &uma.tail_textures {
+        if let Some(texture_entry) = listing.by_name.get(texture.name.as_str()) {
+            needed.insert(texture.name.clone(), (*texture_entry).clone());
+            tail_textures.push(texture.clone());
+        }
+    }
+
+    Some(ArtJob {
+        source,
+        name: uma.record.clone(),
+        entry: entry.clone(),
+        dependencies: needed.into_values().collect(),
+        model: Some(ArtModel::Uma(UmaOutfit {
+            tail_textures,
+            ..uma.clone()
+        })),
+        outputs: vec![PlannedOutput {
+            key: uma.key.clone(),
+            object: objectName(body).to_string(),
+            fit: Fit::Native,
+        }],
+    })
+}
+
+/// The job putting one race clip on the skeleton every uma shares, named after what it shows.
+/// It is rebuilt when the clip or the skeleton's prefabs change.
+fn motionJob(
+    source: &'static CdnSource,
+    entry: &ManifestEntry,
+    listing: &Listing,
+) -> Option<ArtJob> {
+    let motion = raceMotion(&entry.name)?;
+    let skeleton: Vec<String> = MOTION_SKELETON
+        .iter()
+        .map(|prefab| prefab.to_string())
+        .collect();
+    let dependencies = skeleton
+        .iter()
+        .map(|prefab| {
+            listing
+                .by_name
+                .get(prefab.as_str())
+                .map(|found| (*found).clone())
+        })
+        .collect::<Option<Vec<_>>>()?;
+
+    Some(ArtJob {
+        source,
+        name: entry.name.clone(),
+        entry: entry.clone(),
+        dependencies,
+        model: Some(ArtModel::Motion(MotionModel {
+            title: motion.title,
+            skeleton,
+        })),
+        outputs: vec![PlannedOutput {
+            key: motion.key,
+            object: objectName(&entry.name).to_string(),
+            fit: Fit::Native,
+        }],
     })
 }
 
@@ -227,7 +324,9 @@ fn outputKeys(outputs: &[PlannedOutput]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::game_art::types::{CardOutfit, CONVERTER_REVISION, COURSE_SKY};
+    use crate::assets::game_art::types::{
+        CardOutfit, UmaTraits, CONVERTER_REVISION, COURSE_SKY, UMA_CONVERTER_REVISION,
+    };
     use crate::game_cdn::GLOBAL_CDN;
 
     static JAPAN_CDN: CdnSource = CdnSource {
@@ -419,6 +518,17 @@ mod tests {
         needing
     }
 
+    fn scenery(job: &ArtJob) -> &SceneryModel {
+        match &job.model {
+            Some(ArtModel::Scenery(scene)) => scene,
+            _ => panic!("{} should be a scenery model", job.name),
+        }
+    }
+
+    fn names(entries: &[ManifestEntry]) -> Vec<&str> {
+        entries.iter().map(|entry| entry.name.as_str()).collect()
+    }
+
     #[test]
     fn trackPrefabsNeedEverythingTheyDrawButNotShadersOrAnimations() {
         let sources = vec![(
@@ -464,7 +574,7 @@ mod tests {
             .iter()
             .map(|dependency| dependency.name.as_str())
             .collect();
-        let scene = prefab.model.as_ref().unwrap();
+        let scene = scenery(prefab);
         assert_eq!(scene.prefabs, vec![PREFAB]);
         assert_eq!(scene.runtime_textures, vec![summer]);
         assert_eq!(downloaded, vec![summer]);
@@ -508,7 +618,7 @@ mod tests {
         let jobs = planJobs(&sources, &catalog, &ArtState::default());
 
         let course = jobs.iter().find(|job| job.name == COURSE).unwrap();
-        let scene = course.model.as_ref().unwrap();
+        let scene = scenery(course);
         let downloaded: Vec<&str> = course
             .dependencies
             .iter()
@@ -564,6 +674,155 @@ mod tests {
     #[test]
     fn aTrackPrefabWaitsForEverythingItNeeds() {
         let sources = vec![(&GLOBAL_CDN, vec![entryNeeding(PREFAB, 1, &[MODEL])])];
+
+        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+
+        assert!(jobs.is_empty());
+    }
+
+    const BODY: &str = "3d/chara/body/bdy1001_00/pfb_bdy1001_00";
+    const HEAD: &str = "3d/chara/head/chr1001_00/pfb_chr1001_00";
+    const TAIL: &str = "3d/chara/tail/tail0001_00/pfb_tail0001_00";
+    const BODY_MATERIAL: &str = "sourceresources/3d/chara/body/bdy1001_00/materials/mtl_bdy1001_00";
+    const HEAD_MATERIAL: &str =
+        "sourceresources/3d/chara/head/chr1001_00/materials/mtl_chr1001_00_face";
+    const TAIL_DIFFUSE: &str = "3d/chara/tail/tail0001_00/textures/tex_tail0001_00_1001_diff";
+    const TAIL_TOON: &str = "3d/chara/tail/tail0001_00/textures/tex_tail0001_00_1001_shad_c";
+    const RUN_CLIP: &str = "3d/motion/racemain/body/type01/anm_rac_type01_run03_base";
+
+    fn specialWeek() -> UmaOutfit {
+        let texture = |slot, name: &str| SlotTexture {
+            slot,
+            name: name.to_string(),
+        };
+        UmaOutfit {
+            record: "3d/chara/body/bdy1001_00".to_string(),
+            prefabs: [BODY, HEAD, TAIL].map(str::to_string).to_vec(),
+            tail_textures: vec![
+                texture("_MainTex", TAIL_DIFFUSE),
+                texture("_ToonMap", TAIL_TOON),
+            ],
+            title: "Special Week: Special Dreamer".to_string(),
+            key: "game-assets/umas/special-week/special-dreamer.glb".to_string(),
+            traits: UmaTraits {
+                chara: 1001,
+                dress: 100101,
+                run_motions: "bright".to_string(),
+                finish_motions: "bright".to_string(),
+                running_form: "standard",
+            },
+        }
+    }
+
+    fn umaCatalog() -> Catalog {
+        let mut catalog = catalog();
+        catalog.umas = vec![specialWeek()];
+        catalog
+    }
+
+    fn umaFiles(body_checksum: u64) -> Vec<ManifestEntry> {
+        vec![
+            entryNeeding(BODY, body_checksum, &[BODY_MATERIAL, "shader"]),
+            entry(BODY_MATERIAL, 2),
+            entryNeeding(
+                HEAD,
+                3,
+                &[HEAD_MATERIAL, "3d/motion/racemain/body/type01/x"],
+            ),
+            entry(HEAD_MATERIAL, 4),
+            entry(TAIL, 5),
+            entry(TAIL_DIFFUSE, 6),
+        ]
+    }
+
+    #[test]
+    fn aUmaIsBuiltFromItsPrefabsWhatTheyDrawAndItsListedTailTextures() {
+        let sources = vec![(&GLOBAL_CDN, umaFiles(1))];
+
+        let jobs = planJobs(&sources, &umaCatalog(), &ArtState::default());
+
+        let uma = &jobs[0];
+        let Some(ArtModel::Uma(outfit)) = &uma.model else {
+            panic!("the job should build a uma");
+        };
+        let kept_textures: Vec<&str> = outfit
+            .tail_textures
+            .iter()
+            .map(|texture| texture.name.as_str())
+            .collect();
+        assert_eq!(planned(&jobs), vec![("3d/chara/body/bdy1001_00", "global")]);
+        assert_eq!(uma.entry.name, BODY);
+        assert_eq!(
+            names(&uma.dependencies),
+            vec![HEAD, TAIL, TAIL_DIFFUSE, BODY_MATERIAL, HEAD_MATERIAL]
+        );
+        assert_eq!(kept_textures, vec![TAIL_DIFFUSE]);
+        assert_eq!(
+            uma.outputs[0].key,
+            "game-assets/umas/special-week/special-dreamer.glb"
+        );
+    }
+
+    #[test]
+    fn aUmaIsRebuiltWhenItsBodyChanges() {
+        let mut state = ArtState::default();
+        let first_run = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        state.files.insert(
+            first_run[0].name.clone(),
+            publishedRecord(&first_run[0], None),
+        );
+
+        let unchanged = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        let new_body = planJobs(&[(&GLOBAL_CDN, umaFiles(10))], &umaCatalog(), &state);
+
+        assert_eq!(
+            state.files[&first_run[0].name].converter,
+            UMA_CONVERTER_REVISION
+        );
+        assert!(unchanged.is_empty());
+        assert_eq!(
+            planned(&new_body),
+            vec![("3d/chara/body/bdy1001_00", "global")]
+        );
+    }
+
+    #[test]
+    fn aUmaWaitsForItsHead() {
+        let files: Vec<ManifestEntry> = umaFiles(1)
+            .into_iter()
+            .filter(|entry| entry.name != HEAD)
+            .collect();
+
+        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
+
+        assert!(jobs.is_empty());
+    }
+
+    #[test]
+    fn raceClipsAreBuiltOnTheSharedSkeleton() {
+        let sources = vec![(
+            &GLOBAL_CDN,
+            vec![entry(RUN_CLIP, 1), entry(BODY, 2), entry(TAIL, 3)],
+        )];
+
+        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+
+        let Some(ArtModel::Motion(motion)) = &jobs[0].model else {
+            panic!("the job should build a motion");
+        };
+        assert_eq!(planned(&jobs), vec![(RUN_CLIP, "global")]);
+        assert_eq!(names(&jobs[0].dependencies), vec![BODY, TAIL]);
+        assert_eq!(motion.skeleton, vec![BODY, TAIL]);
+        assert_eq!(motion.title, "Bright: Fast run, standard form");
+        assert_eq!(
+            jobs[0].outputs[0].key,
+            "game-assets/uma-motions/race/bright/run-fast-standard.glb"
+        );
+    }
+
+    #[test]
+    fn aRaceClipWaitsForTheSkeleton() {
+        let sources = vec![(&GLOBAL_CDN, vec![entry(RUN_CLIP, 1), entry(BODY, 2)])];
 
         let jobs = planJobs(&sources, &catalog(), &ArtState::default());
 

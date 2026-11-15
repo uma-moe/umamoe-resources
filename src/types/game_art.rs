@@ -10,6 +10,9 @@ pub(super) const CONVERTER_REVISION: u32 = 1;
 /// Revision 2 embeds the textures in the model.
 pub(super) const MODEL_CONVERTER_REVISION: u32 = 2;
 
+/// Raise when uma or race motion output changes, so every one is rebuilt once.
+pub(super) const UMA_CONVERTER_REVISION: u32 = 1;
+
 /// The publisher's record in the bucket, outside every path the site routes there: an
 /// `index.json` linking the shards, and one JSON file of records per top-level game folder.
 pub(super) const STATE_FOLDER: &str = "_state/game-art";
@@ -48,6 +51,39 @@ pub(super) const COURSE_MODEL_FOLDER: &str = "game-assets/racetracks";
 
 /// The master.mdb `text_data` category of racecourse names, indexed by course number.
 pub(super) const COURSE_NAME_CATEGORY: u32 = 35;
+
+/// Outfit bodies, one folder each: `3d/chara/body/bdy1001_00`, which names the uma's record.
+pub(super) const UMA_BODY_FOLDER: &str = "3d/chara/body/";
+
+/// Where each outfit's uma is served: `game-assets/umas/special-week/special-dreamer.glb`.
+pub(super) const UMA_MODEL_FOLDER: &str = "game-assets/umas";
+
+/// The `text_data` categories of character names by character and outfit names by outfit.
+pub(super) const CHARA_NAME_CATEGORY: u32 = 6;
+pub(super) const DRESS_NAME_CATEGORY: u32 = 14;
+
+/// Race clips that move the whole body, one folder per motion set.
+pub(super) const RACE_MOTION_SOURCE: &str = "3d/motion/racemain/body/";
+
+/// Where race motions are served: `game-assets/uma-motions/race/bright/run-fast-standard.glb`.
+pub(super) const RACE_MOTION_FOLDER: &str = "game-assets/uma-motions/race";
+
+/// The skeleton a race motion is exported on. Every body and every tail share one rest skeleton,
+/// so Special Week's racewear and the common tail stand for all of them.
+pub(super) const MOTION_SKELETON: &[&str] = &[
+    "3d/chara/body/bdy1001_00/pfb_bdy1001_00",
+    "3d/chara/tail/tail0001_00/pfb_tail0001_00",
+];
+
+/// The textures the game loads into a tail's material for its character
+/// (`ModelLoader.GetTailTextures`), as `tex_tail0001_00_{suffix}` in the tail's `textures`
+/// folder. Each goes in the slot the game's own body and head materials hold that kind in.
+pub(super) const TAIL_TEXTURES: &[(&str, &str)] = &[
+    ("_MainTex", "{chara}_diff"),
+    ("_ToonMap", "{chara}_shad_c"),
+    ("_TripleMaskMap", "0000_base"),
+    ("_OptionMaskMap", "0000_ctrl"),
+];
 
 /// Game files of one kind and where the site serves each. A `{name}` segment matches digits, and
 /// a name used twice must match the same digits both times.
@@ -417,6 +453,72 @@ pub(super) struct Catalog {
     pub(super) atlases: HashMap<&'static str, AtlasPlan>,
     /// Racecourse names by course number, `Tokyo` for 10006.
     pub(super) course_names: HashMap<u32, String>,
+    /// Every outfit with a body of its own; those whose files are listed become umas.
+    pub(super) umas: Vec<UmaOutfit>,
+}
+
+/// An outfit with a body of its own, as master.mdb describes it with its character.
+#[derive(Clone, Debug)]
+pub(super) struct OutfitRow {
+    pub(super) dress: u32,
+    pub(super) chara: u32,
+    pub(super) body_sub: i64,
+    pub(super) head_sub: i64,
+    /// The outfit's own tail model and variant; model -1 when it wears its character's.
+    pub(super) dress_tail: (i64, i64),
+    /// The character's tail model, -1 for none.
+    pub(super) chara_tail: i64,
+    /// `RaceRunningType`: 1 standard, 2 pitch, 3 stride.
+    pub(super) running_type: i64,
+    /// `RacePersonalityType` of its runs and gate starts, and of its finish reactions.
+    pub(super) run_personality: i64,
+    pub(super) finish_personality: i64,
+    pub(super) chara_name: Option<String>,
+    pub(super) dress_name: Option<String>,
+}
+
+/// An outfit with its own body, and the uma built from it.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct UmaOutfit {
+    /// The record it is published under: its body's folder, which no other outfit wears.
+    pub(super) record: String,
+    /// Body, head and tail prefabs, merged in this order; staff have no tail.
+    pub(super) prefabs: Vec<String>,
+    /// The tail textures of this character. A uma job keeps those the file list has.
+    pub(super) tail_textures: Vec<SlotTexture>,
+    /// What Blender names the armature: `Special Week: Special Dreamer`.
+    pub(super) title: String,
+    pub(super) key: String,
+    pub(super) traits: UmaTraits,
+}
+
+/// What a uma's model records about it, shown in Blender as the armature's custom properties.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct UmaTraits {
+    pub(super) chara: u32,
+    pub(super) dress: u32,
+    /// The motion set folder of its runs and gate starts, `bright`.
+    pub(super) run_motions: String,
+    /// The motion set folder of its finish reactions, which the game picks separately.
+    pub(super) finish_motions: String,
+    /// `standard`, `pitch` or `stride`: which run files of the set it uses.
+    pub(super) running_form: &'static str,
+}
+
+/// A texture the game puts in a material slot at runtime.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct SlotTexture {
+    pub(super) slot: &'static str,
+    pub(super) name: String,
+}
+
+/// A race clip and where it is served, named after what it shows.
+#[derive(Debug, PartialEq)]
+pub(super) struct RaceMotion {
+    pub(super) key: String,
+    /// What Blender names the action: `Bright: Fast run, standard form`.
+    pub(super) title: String,
 }
 
 /// One part of a racecourse's scene, from a prefab such as `pfb_env_race10006_7001_010`.
@@ -535,17 +637,32 @@ pub(super) struct ArtJob {
     /// Bundles loaded with it, such as an atlas's texture.
     pub(super) dependencies: Vec<ManifestEntry>,
     /// What a model draws; `None` for pictures.
-    pub(super) model: Option<ModelScene>,
+    pub(super) model: Option<ArtModel>,
     pub(super) outputs: Vec<PlannedOutput>,
 }
 
+/// What a `.glb` output holds.
+pub(super) enum ArtModel {
+    Scenery(SceneryModel),
+    /// An outfit's body, head and tail joined on one skeleton in its rest pose, a T-pose.
+    Uma(UmaOutfit),
+    /// The job's race clip on the skeleton every uma shares, without meshes.
+    Motion(MotionModel),
+}
+
 /// Track prefabs drawn side by side in one model, each in its own coordinates.
-pub(super) struct ModelScene {
+pub(super) struct SceneryModel {
     pub(super) prefabs: Vec<String>,
     /// Textures the game puts on the prefabs' materials at runtime, one set per season and
     /// weather. They are published on their own and are among the job's `dependencies`, so the
     /// model can embed the first set.
     pub(super) runtime_textures: Vec<String>,
+}
+
+pub(super) struct MotionModel {
+    pub(super) title: String,
+    /// `MOTION_SKELETON`, among the job's `dependencies`.
+    pub(super) skeleton: Vec<String>,
 }
 
 /// One file built from a game file; its key's extension says whether it is a picture or a
@@ -596,9 +713,23 @@ pub(super) struct ConvertJob<'a> {
 }
 
 #[derive(Serialize)]
-pub(super) struct ConvertModel<'a> {
-    pub(super) prefabs: Vec<ScenePrefab<'a>>,
-    pub(super) runtime_textures: Vec<RuntimeTexture<'a>>,
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub(super) enum ConvertModel<'a> {
+    Scenery {
+        prefabs: Vec<ScenePrefab<'a>>,
+        runtime_textures: Vec<RuntimeTexture<'a>>,
+    },
+    Uma {
+        title: &'a str,
+        prefabs: Vec<ScenePrefab<'a>>,
+        tail_textures: Vec<SlotBundle<'a>>,
+        traits: &'a UmaTraits,
+    },
+    /// The clip is the job's own bundle.
+    Motion {
+        title: &'a str,
+        skeleton: Vec<ScenePrefab<'a>>,
+    },
 }
 
 #[derive(Serialize)]
@@ -606,6 +737,13 @@ pub(super) struct ScenePrefab<'a> {
     /// The prefab's root object, named like its file.
     pub(super) object: &'a str,
     /// The downloaded bundle: the job's own or one of its `dependencies`.
+    pub(super) bundle: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct SlotBundle<'a> {
+    pub(super) slot: &'a str,
+    /// The downloaded texture bundle, one of the job's `dependencies`.
     pub(super) bundle: String,
 }
 
