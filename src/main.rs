@@ -174,8 +174,8 @@ struct ServeArgs {
     /// How often the server checks CONFIRMED_BANNER_DATES_URL for edits.
     #[arg(long, env = "CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 60)]
     confirmed_banner_dates_refresh_interval_seconds: u64,
-    /// Build and upload new game images whenever the game version changes. Production only, so
-    /// one server writes the bucket.
+    /// Build and upload new game images whenever the game version changes. Set on one server only:
+    /// the bucket keeps a single record of what was published.
     #[arg(long, env = "GAME_ART_PUBLISH")]
     publish_game_art: bool,
     /// Also write plain .json files beside the .json.gz artifacts during startup generation.

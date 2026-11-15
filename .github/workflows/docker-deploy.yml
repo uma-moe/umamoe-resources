@@ -230,6 +230,7 @@ jobs:
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
         run: |
           set -euo pipefail
 
@@ -266,6 +267,12 @@ jobs:
             exit 1
           else
             env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # One server writes game art, so two never race on the bucket's record of it.
+          if [ "$PUBLISHES_GAME_ART" = "true" ]; then
+            env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://uma.moe,https://beta.uma.moe"
           fi
 
           printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -451,6 +458,7 @@ jobs:
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
         run: |
           set -euo pipefail
 
@@ -487,6 +495,12 @@ jobs:
             exit 1
           else
             env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # One server writes game art, so two never race on the bucket's record of it.
+          if [ "$PUBLISHES_GAME_ART" = "true" ]; then
+            env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://uma.moe,https://beta.uma.moe"
           fi
 
           printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -566,8 +580,6 @@ jobs:
             -p "192.168.100.2:${host_port}:${internal_app_port}" \
             -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
-            -e GAME_ART_PUBLISH=true \
-            -e ASSETS_PURGE_ORIGINS=https://uma.moe,https://beta.uma.moe \
             "$image_tag"
 
           for _ in $(seq 1 60); do
