@@ -256,11 +256,15 @@ jobs:
           else
             # A token's value is not its S3 secret: R2 shows a 32-character key ID and a 64-character secret.
             if [[ ! "$R2_ASSETS_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
-              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID." >&2
+              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_ASSETS_ACCESS_KEY_ID} characters." >&2
               exit 1
             fi
             if [[ ! "$R2_ASSETS_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
-              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key." >&2
+              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_ASSETS_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ENDPOINT" =~ ^https://[0-9A-Fa-f]{32}\.([a-z]+\.)?r2\.cloudflarestorage\.com/?$ ]]; then
+              echo "R2_ENDPOINT must be https://<account id>.r2.cloudflarestorage.com, without the bucket name." >&2
               exit 1
             fi
             env_contents="$(printf '%s=%s\n' \
@@ -493,11 +497,15 @@ jobs:
           else
             # A token's value is not its S3 secret: R2 shows a 32-character key ID and a 64-character secret.
             if [[ ! "$R2_ASSETS_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
-              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID." >&2
+              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_ASSETS_ACCESS_KEY_ID} characters." >&2
               exit 1
             fi
             if [[ ! "$R2_ASSETS_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
-              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key." >&2
+              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_ASSETS_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ENDPOINT" =~ ^https://[0-9A-Fa-f]{32}\.([a-z]+\.)?r2\.cloudflarestorage\.com/?$ ]]; then
+              echo "R2_ENDPOINT must be https://<account id>.r2.cloudflarestorage.com, without the bucket name." >&2
               exit 1
             fi
             env_contents="$(printf '%s=%s\n' \
