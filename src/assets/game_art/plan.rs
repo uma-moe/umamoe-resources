@@ -1,6 +1,6 @@
 use super::types::{ArtJob, ArtState, Catalog, PlannedOutput, PublishedArt, CONVERTER_REVISION};
 use crate::game_cdn::{CdnSource, ManifestEntry};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Picks every catalogued file from the first source that lists it, so a Global file replaces
 /// the JP one as soon as Global has it, and keeps those whose published copy is missing or stale.
@@ -13,6 +13,11 @@ pub(super) fn planJobs(
     let mut jobs = Vec::new();
 
     for (source, files) in sources {
+        let by_name: HashMap<&str, &ManifestEntry> = files
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry))
+            .collect();
+
         for entry in files {
             if !claimed.insert(entry.name.as_str()) {
                 continue;
@@ -21,14 +26,26 @@ pub(super) fn planJobs(
                 continue;
             };
 
+            let dependencies = match catalog.dependency(&entry.name) {
+                None => Vec::new(),
+                Some(name) => match by_name.get(name) {
+                    Some(dependency) => vec![(*dependency).clone()],
+                    // An atlas cannot be cut without its texture.
+                    None => continue,
+                },
+            };
+
             let published = state.files.get(&entry.name);
-            if published.is_some_and(|record| isCurrent(record, source, entry, &outputs)) {
+            let is_current = published
+                .is_some_and(|record| isCurrent(record, source, entry, &dependencies, &outputs));
+            if is_current {
                 continue;
             }
 
             jobs.push(ArtJob {
                 source,
                 entry: entry.clone(),
+                dependencies,
                 outputs,
             });
         }
@@ -43,6 +60,7 @@ pub(super) fn publishedRecord(job: &ArtJob, error: Option<String>) -> PublishedA
         checksum: job.entry.checksum,
         converter: CONVERTER_REVISION,
         outputs: outputKeys(&job.outputs),
+        dependency_checksums: checksums(&job.dependencies),
         error,
     }
 }
@@ -51,12 +69,18 @@ fn isCurrent(
     record: &PublishedArt,
     source: &CdnSource,
     entry: &ManifestEntry,
+    dependencies: &[ManifestEntry],
     outputs: &[PlannedOutput],
 ) -> bool {
     record.region == source.region
         && record.checksum == entry.checksum
+        && record.dependency_checksums == checksums(dependencies)
         && record.converter == CONVERTER_REVISION
         && record.outputs == outputKeys(outputs)
+}
+
+fn checksums(entries: &[ManifestEntry]) -> Vec<u64> {
+    entries.iter().map(|entry| entry.checksum).collect()
 }
 
 fn outputKeys(outputs: &[PlannedOutput]) -> Vec<String> {
@@ -93,6 +117,7 @@ mod tests {
             checksum,
             converter: CONVERTER_REVISION,
             outputs: outputKeys(&outputs),
+            dependency_checksums: Vec::new(),
             error: None,
         }
     }
@@ -182,6 +207,37 @@ mod tests {
         let jobs = planJobs(&[(&GLOBAL_CDN, vec![entry(CARD, 1)])], &catalog(), &state);
 
         assert_eq!(planned(&jobs), vec![(CARD, "global")]);
+    }
+
+    const ATLAS: &str = "atlas/common/common";
+    const ATLAS_TEXTURE: &str = "atlas/common/common_tex";
+
+    #[test]
+    fn atlasesAreBuiltWithTheirTextureAndRebuiltWhenItChanges() {
+        let first = vec![(&GLOBAL_CDN, vec![entry(ATLAS, 1), entry(ATLAS_TEXTURE, 2)])];
+        let new_texture = vec![(&GLOBAL_CDN, vec![entry(ATLAS, 1), entry(ATLAS_TEXTURE, 3)])];
+        let mut state = ArtState::default();
+
+        let first_run = planJobs(&first, &catalog(), &state);
+        state
+            .files
+            .insert(ATLAS.to_string(), publishedRecord(&first_run[0], None));
+        let unchanged = planJobs(&first, &catalog(), &state);
+        let rebuilt = planJobs(&new_texture, &catalog(), &state);
+
+        assert_eq!(planned(&first_run), vec![(ATLAS, "global")]);
+        assert_eq!(first_run[0].dependencies[0].name, ATLAS_TEXTURE);
+        assert!(unchanged.is_empty());
+        assert_eq!(planned(&rebuilt), vec![(ATLAS, "global")]);
+    }
+
+    #[test]
+    fn anAtlasWithoutItsTextureWaits() {
+        let sources = vec![(&GLOBAL_CDN, vec![entry(ATLAS, 1)])];
+
+        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+
+        assert!(jobs.is_empty());
     }
 
     #[test]

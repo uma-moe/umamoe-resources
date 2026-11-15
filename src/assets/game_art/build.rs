@@ -1,6 +1,5 @@
-use super::catalog::objectName;
 use super::types::{
-    ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, CONVERTER_PYTHON,
+    ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, Fit, CONVERTER_PYTHON,
     CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
@@ -64,9 +63,9 @@ pub(super) async fn buildBatch(
 
     let mut outcomes: Vec<Option<JobOutcome>> = (0..jobs.len()).map(|_| None).collect();
     let mut conversions: Vec<(usize, ConvertJob)> = Vec::new();
-    for (index, (job, bundle)) in jobs.iter().zip(bundles).enumerate() {
-        match bundle {
-            Ok(path) => conversions.push((index, convertJob(job, &path, &dir, index))),
+    for (index, (job, files)) in jobs.iter().zip(bundles).enumerate() {
+        match files {
+            Ok(files) => conversions.push((index, convertJob(job, &files, &dir, index))),
             Err(error) => outcomes[index] = Some(JobOutcome::NotDownloaded(format!("{error:#}"))),
         }
     }
@@ -89,37 +88,68 @@ pub(super) async fn buildBatch(
     Ok(outcomes)
 }
 
+/// Each job's bundle followed by the bundles it needs beside it.
+fn jobBundles(job: &ArtJob) -> impl Iterator<Item = &ManifestEntry> {
+    std::iter::once(&job.entry).chain(&job.dependencies)
+}
+
+/// Downloads every bundle of every job; a job's files come back in `jobBundles` order.
 async fn downloadBundles(
     client: &reqwest::Client,
     dir: &Path,
     jobs: &[ArtJob],
     base_key: &Arc<Vec<u8>>,
-) -> Vec<Result<PathBuf>> {
-    let mut results: Vec<Option<Result<PathBuf>>> = (0..jobs.len()).map(|_| None).collect();
+) -> Vec<Result<Vec<PathBuf>>> {
+    let mut files: Vec<Vec<Option<Result<PathBuf>>>> = jobs
+        .iter()
+        .map(|job| jobBundles(job).map(|_| None).collect())
+        .collect();
+    // Collected first: an iterator of borrowing closures held across `await` is not `Send`.
+    let downloads: Vec<(usize, usize, &'static CdnSource, ManifestEntry)> = jobs
+        .iter()
+        .enumerate()
+        .flat_map(|(job_index, job)| {
+            jobBundles(job)
+                .enumerate()
+                .map(move |(position, entry)| (job_index, position, job.source, entry.clone()))
+        })
+        .collect();
+    let mut pending = downloads.into_iter();
     let mut tasks = JoinSet::new();
-    let mut next = 0;
 
-    while next < jobs.len() || !tasks.is_empty() {
-        while tasks.len() < DOWNLOAD_CONCURRENCY && next < jobs.len() {
-            let job = &jobs[next];
+    loop {
+        while tasks.len() < DOWNLOAD_CONCURRENCY {
+            let Some((job_index, position, source, entry)) = pending.next() else {
+                break;
+            };
             tasks.spawn(fetchBundle(
                 client.clone(),
-                job.source,
-                job.entry.clone(),
+                source,
+                entry,
                 base_key.clone(),
-                dir.join(format!("{next}.bundle")),
-                next,
+                dir.join(format!("bundle-{job_index}-{position}")),
+                (job_index, position),
             ));
-            next += 1;
         }
-        if let Some(Ok((index, result))) = tasks.join_next().await {
-            results[index] = Some(result);
+
+        let Some(joined) = tasks.join_next().await else {
+            break;
+        };
+        if let Ok(((job_index, position), result)) = joined {
+            files[job_index][position] = Some(result);
         }
     }
 
-    results
+    files
         .into_iter()
-        .map(|result| result.unwrap_or_else(|| bail!("the download task stopped unexpectedly")))
+        .map(|bundles| {
+            bundles
+                .into_iter()
+                .map(|bundle| {
+                    bundle.unwrap_or_else(|| bail!("the download task stopped unexpectedly"))
+                })
+                .collect()
+        })
         .collect()
 }
 
@@ -129,8 +159,8 @@ async fn fetchBundle(
     entry: ManifestEntry,
     base_key: Arc<Vec<u8>>,
     path: PathBuf,
-    index: usize,
-) -> (usize, Result<PathBuf>) {
+    slot: (usize, usize),
+) -> ((usize, usize), Result<PathBuf>) {
     let result = async {
         let mut bundle = game_cdn::downloadAssetBundle(&client, source, &entry).await?;
         game_cdn::decryptAssetBundle(&mut bundle, &base_key, entry.key);
@@ -140,7 +170,7 @@ async fn fetchBundle(
         Ok(path)
     }
     .await;
-    (index, result)
+    (slot, result)
 }
 
 fn outputFiles(job: &ArtJob, dir: &Path, index: usize) -> Vec<(String, PathBuf)> {
@@ -148,27 +178,46 @@ fn outputFiles(job: &ArtJob, dir: &Path, index: usize) -> Vec<(String, PathBuf)>
         .iter()
         .enumerate()
         .map(|(position, output)| {
-            let file = dir.join(format!("{index}-{position}.webp"));
+            let file = dir.join(format!("{index}-{position}.{}", imageFormat(&output.key)));
             (output.key.clone(), file)
         })
         .collect()
 }
 
-fn convertJob<'a>(job: &'a ArtJob, bundle: &Path, dir: &Path, index: usize) -> ConvertJob<'a> {
+/// The site keeps a few PNG paths; everything else is WebP.
+fn imageFormat(key: &str) -> &'static str {
+    if key.ends_with(".png") {
+        "png"
+    } else {
+        "webp"
+    }
+}
+
+fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) -> ConvertJob<'a> {
     let outputs = job
         .outputs
         .iter()
         .zip(outputFiles(job, dir, index))
-        .map(|(output, (_, file))| ConvertOutput {
-            object: objectName(&job.entry.name),
-            path: file.to_string_lossy().into_owned(),
-            format: "webp",
-            size: [output.size.0, output.size.1],
-            art_size: output.art_size.map(|(width, height)| [width, height]),
+        .map(|(output, (key, file))| {
+            let (size, art_size) = match output.fit {
+                Fit::Native => (None, None),
+                Fit::Resize(width, height) => (Some([width, height]), None),
+                Fit::Centre { size, art } => (Some([size.0, size.1]), Some([art.0, art.1])),
+            };
+            ConvertOutput {
+                object: &output.object,
+                path: file.to_string_lossy().into_owned(),
+                format: imageFormat(&key),
+                size,
+                art_size,
+            }
         })
         .collect();
+
+    let path = |file: &PathBuf| file.to_string_lossy().into_owned();
     ConvertJob {
-        bundle: bundle.to_string_lossy().into_owned(),
+        bundle: path(&files[0]),
+        dependencies: files[1..].iter().map(path).collect(),
         outputs,
     }
 }

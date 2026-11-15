@@ -1,12 +1,17 @@
 use crate::game_cdn::{CdnSource, ManifestEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::ops::RangeInclusive;
 
 /// Raise when conversion output changes, so every image is rebuilt once.
 pub(super) const CONVERTER_REVISION: u32 = 1;
 
-/// The publisher's record in the bucket, outside every path the site routes there.
-pub(super) const STATE_KEY: &str = "_state/game-art.json";
+/// The publisher's record in the bucket, outside every path the site routes there: an
+/// `index.json` naming the shards, and one JSON file of records per shard.
+pub(super) const STATE_FOLDER: &str = "_state/game-art";
+
+/// The single file earlier versions kept the record in; it is split into shards once.
+pub(super) const LEGACY_STATE_KEY: &str = "_state/game-art.json";
 
 pub(super) const CONVERTER_PYTHON: &str = "/opt/game-art/bin/python";
 
@@ -26,28 +31,41 @@ pub(super) struct ArtFamily {
     pub(super) outputs: &'static [ArtOutput],
 }
 
+/// How a picture is fitted to the size the site serves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Fit {
+    /// Kept as drawn, as atlas sprites already are.
+    Native,
+    /// Resized to this width and height; the game squeezes textures to powers of two.
+    Resize(u32, u32),
+    /// Resized to `art` and centred on a transparent canvas of `size`, for art narrower than it.
+    Centre { size: (u32, u32), art: (u32, u32) },
+}
+
 pub(super) struct ArtOutput {
     pub(super) path: &'static str,
-    /// Width and height the site serves. The game squeezes textures to powers of two.
-    pub(super) size: (u32, u32),
-    /// The art's real shape when it is narrower than the served canvas; it is centred there.
-    pub(super) art_size: Option<(u32, u32)>,
+    pub(super) fit: Fit,
 }
 
 impl ArtOutput {
-    const fn resized(path: &'static str, size: (u32, u32)) -> Self {
+    const fn native(path: &'static str) -> Self {
         Self {
             path,
-            size,
-            art_size: None,
+            fit: Fit::Native,
         }
     }
 
-    const fn centred(path: &'static str, size: (u32, u32), art_size: (u32, u32)) -> Self {
+    const fn resized(path: &'static str, size: (u32, u32)) -> Self {
         Self {
             path,
-            size,
-            art_size: Some(art_size),
+            fit: Fit::Resize(size.0, size.1),
+        }
+    }
+
+    const fn centred(path: &'static str, size: (u32, u32), art: (u32, u32)) -> Self {
+        Self {
+            path,
+            fit: Fit::Centre { size, art },
         }
     }
 }
@@ -96,6 +114,19 @@ pub(super) const ART_FAMILIES: &[ArtFamily] = &[
             (154, 154),
         )],
     },
+    // Chibi sprites keep their size: most are 256x256, scenes with props are wider.
+    ArtFamily {
+        source: "chara/chr{chara}/petit/petit_chr_{chara}_{dress}_{pose}",
+        outputs: &[ArtOutput::native(
+            "game-assets/petit/petit_chr_{chara}_{dress}_{pose}.webp",
+        )],
+    },
+    ArtFamily {
+        source: "outgame/campaign/valentine/chara/petit_chr_{chara}_{dress}_{pose}",
+        outputs: &[ArtOutput::native(
+            "game-assets/petit/petit_chr_{chara}_{dress}_{pose}.webp",
+        )],
+    },
     ArtFamily {
         source: "item/item_icon_{item}",
         outputs: &[ArtOutput::resized(
@@ -120,6 +151,233 @@ pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[
     ),
 ];
 
+/// Sprites cut from one of the game's atlases. The sprites name their pictures in a second
+/// bundle, so both are loaded together.
+pub(super) struct AtlasFamily {
+    pub(super) atlas: &'static str,
+    pub(super) texture: &'static str,
+    pub(super) sprites: &'static [AtlasSprites],
+}
+
+pub(super) enum AtlasSprites {
+    /// One sprite and the paths it is served at.
+    Named {
+        sprite: &'static str,
+        paths: &'static [&'static str],
+    },
+    /// A run of sprites whose `{n}`, zero-padded to `width` digits, also names their paths.
+    Numbered {
+        sprite: &'static str,
+        numbers: RangeInclusive<u32>,
+        width: usize,
+        paths: &'static [&'static str],
+    },
+}
+
+const fn named(sprite: &'static str, paths: &'static [&'static str]) -> AtlasSprites {
+    AtlasSprites::Named { sprite, paths }
+}
+
+const fn numbered(
+    sprite: &'static str,
+    numbers: RangeInclusive<u32>,
+    width: usize,
+    paths: &'static [&'static str],
+) -> AtlasSprites {
+    AtlasSprites::Numbered {
+        sprite,
+        numbers,
+        width,
+        paths,
+    }
+}
+
+pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
+    AtlasFamily {
+        atlas: "atlas/statusrank/statusrank",
+        texture: "atlas/statusrank/statusrank_tex",
+        sprites: &[numbered(
+            "utx_ico_statusrank_{n}",
+            0..=97,
+            2,
+            &[
+                "game-assets/textures/uma_ranks/utx_ico_statusrank_{n}.webp",
+                "assets/images/icon/statusrank/utx_ico_statusrank_{n}.webp",
+            ],
+        )],
+    },
+    AtlasFamily {
+        atlas: "atlas/circle/circle",
+        texture: "atlas/circle/circle_tex",
+        sprites: &[numbered(
+            "utx_ico_circle_rank_{n}",
+            1..=11,
+            2,
+            &["assets/images/icon/circle_rank/utx_ico_circle_rank_{n}.webp"],
+        )],
+    },
+    AtlasFamily {
+        atlas: "atlas/common/common",
+        texture: "atlas/common/common_tex",
+        sprites: &[
+            named(
+                "utx_ico_weather_00",
+                &[
+                    "game-assets/textures/utx_ico_weather_00.png",
+                    "game-assets/track_details/Sunny.webp",
+                ],
+            ),
+            named(
+                "utx_ico_weather_01",
+                &[
+                    "game-assets/textures/utx_ico_weather_01.png",
+                    "game-assets/track_details/Cloudy.webp",
+                ],
+            ),
+            named(
+                "utx_ico_weather_02",
+                &[
+                    "game-assets/textures/utx_ico_weather_02.png",
+                    "game-assets/track_details/Rainy.webp",
+                ],
+            ),
+            named(
+                "utx_ico_weather_03",
+                &[
+                    "game-assets/textures/utx_ico_weather_03.png",
+                    "game-assets/track_details/Snowy.webp",
+                ],
+            ),
+            numbered(
+                "utx_ico_timezone_{n}",
+                0..=2,
+                2,
+                &["game-assets/textures/utx_ico_timezone_{n}.png"],
+            ),
+            numbered(
+                "utx_ico_runstyle_{n}",
+                0..=3,
+                2,
+                &["game-assets/textures/utx_ico_runstyle_{n}.webp"],
+            ),
+            named("utx_txt_runstyle_00", &["game-assets/textures/front.webp"]),
+            named("utx_txt_runstyle_01", &["game-assets/textures/pace.webp"]),
+            named("utx_txt_runstyle_02", &["game-assets/textures/late.webp"]),
+            named("utx_txt_runstyle_03", &["game-assets/textures/end.webp"]),
+            named(
+                "utx_ico_obtain_00",
+                &[
+                    "assets/images/icon/stats/speed.webp",
+                    "game-assets/textures/speed.webp",
+                ],
+            ),
+            named(
+                "utx_ico_obtain_01",
+                &[
+                    "assets/images/icon/stats/stamina.webp",
+                    "game-assets/textures/stamina.webp",
+                ],
+            ),
+            named(
+                "utx_ico_obtain_02",
+                &[
+                    "assets/images/icon/stats/power.webp",
+                    "game-assets/textures/power.webp",
+                ],
+            ),
+            named(
+                "utx_ico_obtain_03",
+                &[
+                    "assets/images/icon/stats/guts.webp",
+                    "game-assets/textures/guts.webp",
+                ],
+            ),
+            named(
+                "utx_ico_obtain_04",
+                &[
+                    "assets/images/icon/stats/wit.webp",
+                    "game-assets/textures/wit.webp",
+                ],
+            ),
+            named(
+                "utx_ico_obtain_05",
+                &["assets/images/icon/stats/friend.webp"],
+            ),
+            named(
+                "utx_ico_obtain_06",
+                &["assets/images/icon/stats/group.webp"],
+            ),
+            named("utx_ico_rarity_00", &["game-assets/support-rarity/r.png"]),
+            named("utx_ico_rarity_01", &["game-assets/support-rarity/sr.png"]),
+            named("utx_ico_rarity_02", &["game-assets/support-rarity/ssr.png"]),
+            named(
+                "utx_txt_season_00",
+                &["game-assets/track_details/Spring.webp"],
+            ),
+            named(
+                "utx_txt_season_01",
+                &["game-assets/track_details/Summer.webp"],
+            ),
+            named(
+                "utx_txt_season_02",
+                &["game-assets/track_details/Fall.webp"],
+            ),
+            named(
+                "utx_txt_season_03",
+                &["game-assets/track_details/Winter.webp"],
+            ),
+        ],
+    },
+    AtlasFamily {
+        atlas: "atlas/race/race",
+        texture: "atlas/race/race_tex",
+        sprites: &[
+            named(
+                "utx_txt_raceresult_condition_1",
+                &["game-assets/track_details/Firm.webp"],
+            ),
+            named(
+                "utx_txt_raceresult_condition_2",
+                &["game-assets/track_details/Good.webp"],
+            ),
+            named(
+                "utx_txt_raceresult_condition_3",
+                &["game-assets/track_details/Soft.webp"],
+            ),
+            named(
+                "utx_txt_raceresult_condition_4",
+                &["game-assets/track_details/Heavy.webp"],
+            ),
+        ],
+    },
+    AtlasFamily {
+        atlas: "atlas/racecommon/racecommon",
+        texture: "atlas/racecommon/racecommon_tex",
+        sprites: &[
+            named(
+                "utx_ico_motivation_s_00",
+                &["game-assets/textures/awful.webp"],
+            ),
+            named(
+                "utx_ico_motivation_s_01",
+                &["game-assets/textures/bad.webp"],
+            ),
+            named(
+                "utx_ico_motivation_s_02",
+                &["game-assets/textures/normal.webp"],
+            ),
+            named(
+                "utx_ico_motivation_s_03",
+                &["game-assets/textures/good.webp"],
+            ),
+            named(
+                "utx_ico_motivation_s_04",
+                &["game-assets/textures/great.webp"],
+            ),
+        ],
+    },
+];
+
 #[derive(Clone, Copy, Debug)]
 pub(super) struct CardOutfit {
     pub(super) chara: u32,
@@ -131,14 +389,42 @@ pub(super) struct CardOutfit {
 pub(super) struct Catalog {
     /// Portrait outputs by game file; the fixed families are matched by name instead.
     pub(super) portraits: HashMap<String, Vec<PlannedOutput>>,
+    pub(super) atlases: HashMap<&'static str, AtlasPlan>,
+}
+
+/// The sprites cut from one atlas and the texture bundle they draw from.
+pub(super) struct AtlasPlan {
+    pub(super) texture: &'static str,
+    pub(super) outputs: Vec<PlannedOutput>,
 }
 
 /// What the publisher has put in the bucket, by game file name.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Deserialize)]
 pub(super) struct ArtState {
     /// The resource version whose files were all handled.
     pub(super) resource_version: Option<String>,
     pub(super) files: BTreeMap<String, PublishedArt>,
+}
+
+/// `index.json` in the state folder: the shards and how many records each holds.
+#[derive(Default, Serialize, Deserialize)]
+pub(super) struct StateIndex {
+    pub(super) resource_version: Option<String>,
+    pub(super) shards: BTreeMap<String, usize>,
+}
+
+/// One shard file of records.
+#[derive(Default, Serialize, Deserialize)]
+pub(super) struct StateShard<Record> {
+    pub(super) files: BTreeMap<String, Record>,
+}
+
+/// Where the record was read from; the single legacy file is split on the first real run.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum StateOrigin {
+    Empty,
+    Shards,
+    Legacy,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -149,6 +435,9 @@ pub(super) struct PublishedArt {
     /// The bucket keys built from it, so a new card showing an existing outfit is built too.
     #[serde(default)]
     pub(super) outputs: Vec<String>,
+    /// Checksums of the bundles it draws from, such as an atlas's texture.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) dependency_checksums: Vec<u64>,
     /// Set when this exact file could not be converted; it is retried once the file or the
     /// converter changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,14 +448,17 @@ pub(super) struct PublishedArt {
 pub(super) struct ArtJob {
     pub(super) source: &'static CdnSource,
     pub(super) entry: ManifestEntry,
+    /// Bundles loaded with it, such as an atlas's texture.
+    pub(super) dependencies: Vec<ManifestEntry>,
     pub(super) outputs: Vec<PlannedOutput>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PlannedOutput {
     pub(super) key: String,
-    pub(super) size: (u32, u32),
-    pub(super) art_size: Option<(u32, u32)>,
+    /// The sprite or texture in the bundle that is drawn.
+    pub(super) object: String,
+    pub(super) fit: Fit,
 }
 
 /// Where built images go: the asset bucket, or a local folder to look at.
@@ -199,6 +491,7 @@ pub(super) struct ConvertRequest<'a> {
 #[derive(Serialize)]
 pub(super) struct ConvertJob<'a> {
     pub(super) bundle: String,
+    pub(super) dependencies: Vec<String>,
     pub(super) outputs: Vec<ConvertOutput<'a>>,
 }
 
@@ -207,7 +500,8 @@ pub(super) struct ConvertOutput<'a> {
     pub(super) object: &'a str,
     pub(super) path: String,
     pub(super) format: &'static str,
-    pub(super) size: [u32; 2],
+    /// Absent to keep the picture's own size.
+    pub(super) size: Option<[u32; 2]>,
     pub(super) art_size: Option<[u32; 2]>,
 }
 
