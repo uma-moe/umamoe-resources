@@ -493,8 +493,8 @@ Required GitHub secrets:
 Asset bucket secrets. The R2 token only accepts the deploy host's IP, which beta and production share:
 
 - `R2_ENDPOINT`: `https://<account id>.r2.cloudflarestorage.com`, without the bucket name
-- `R2_ASSETS_ACCESS_KEY_ID`
-- `R2_ASSETS_SECRET_ACCESS_KEY`
+- `R2_ASSETS_ACCESS_KEY_ID`: the token's 32-character Access Key ID
+- `R2_ASSETS_SECRET_ACCESS_KEY`: the token's 64-character Secret Access Key, not the token value
 
 Set all three or none. Without them a deploy writes an empty `assets.env` and the container cannot publish images; deleting them removes the key from the host on the next deploy.
 
