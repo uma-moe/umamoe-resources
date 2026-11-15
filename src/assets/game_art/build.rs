@@ -1,7 +1,8 @@
-use super::catalog::trackTextureKey;
+use super::catalog::{objectName, trackTextureKey};
 use super::types::{
-    ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, ConvertResult, Fit,
-    RuntimeTexture, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    ArtJob, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
+    ConvertResult, Fit, RuntimeTexture, ScenePrefab, CONVERTER_PYTHON, CONVERTER_SCRIPT,
+    DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -224,28 +225,43 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
     let path = |file: &PathBuf| file.to_string_lossy().into_owned();
     // `files` holds the job's bundle, then its dependencies in order.
     let downloaded = |name: &str| {
+        if name == job.entry.name {
+            return Some(path(&files[0]));
+        }
         let position = job
             .dependencies
             .iter()
             .position(|entry| entry.name == name)?;
         Some(path(&files[position + 1]))
     };
-    let runtime_textures = job
-        .runtime_textures
-        .iter()
-        .filter_map(|name| {
-            Some(RuntimeTexture {
-                name,
-                key: trackTextureKey(name),
-                bundle: downloaded(name)?,
+    let model = job.model.as_ref().map(|scene| ConvertModel {
+        prefabs: scene
+            .prefabs
+            .iter()
+            .filter_map(|name| {
+                Some(ScenePrefab {
+                    object: objectName(name),
+                    bundle: downloaded(name)?,
+                })
             })
-        })
-        .collect();
+            .collect(),
+        runtime_textures: scene
+            .runtime_textures
+            .iter()
+            .filter_map(|name| {
+                Some(RuntimeTexture {
+                    name,
+                    key: trackTextureKey(name),
+                    bundle: downloaded(name)?,
+                })
+            })
+            .collect(),
+    });
 
     ConvertJob {
         bundle: path(&files[0]),
         dependencies: files[1..].iter().map(path).collect(),
-        runtime_textures,
+        model,
         outputs,
     }
 }
@@ -327,4 +343,56 @@ async fn runConverter(request: &ConvertRequest<'_>) -> Result<ConvertResponse> {
         bail!("the converter exited with {}: {reason}", output.status);
     }
     serde_json::from_slice(&output.stdout).context("the converter printed invalid JSON")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::assets::game_art::types::{ModelScene, PlannedOutput};
+    use crate::game_cdn::GLOBAL_CDN;
+    use serde_json::json;
+
+    const TRACK: &str = "3d/env/race/race10006/race10006_0000/pfb_env_race10006_0000_002";
+    const TREES: &str = "3d/env/race/race10006/race10006_6000/pfb_env_race10006_6000_100";
+    const TURF_TEXTURE: &str =
+        "3d/env/race/race10006/race10006_0000/textures/tex_env_race10006_0000_112_turf00";
+
+    #[test]
+    fn aCourseModelTellsTheConverterWhereEachPrefabAndTextureWasDownloaded() {
+        let entry = |name: &str| ManifestEntry::new(name, 1, 1, 1);
+        let job = ArtJob {
+            source: &GLOBAL_CDN,
+            name: "3d/env/race/race10006".to_string(),
+            entry: entry(TRACK),
+            dependencies: vec![entry(TURF_TEXTURE), entry(TREES)],
+            model: Some(ModelScene {
+                prefabs: vec![TRACK.to_string(), TREES.to_string()],
+                runtime_textures: vec![TURF_TEXTURE.to_string()],
+            }),
+            outputs: vec![PlannedOutput {
+                key: "game-assets/racetracks/tokyo.glb".to_string(),
+                object: "race10006".to_string(),
+                fit: Fit::Native,
+            }],
+        };
+        let files = ["track", "turf", "trees"].map(PathBuf::from);
+
+        let request = serde_json::to_value(convertJob(&job, &files, Path::new("work"), 0)).unwrap();
+
+        assert_eq!(
+            request["model"],
+            json!({
+                "prefabs": [
+                    {"object": "pfb_env_race10006_0000_002", "bundle": "track"},
+                    {"object": "pfb_env_race10006_6000_100", "bundle": "trees"},
+                ],
+                "runtime_textures": [{
+                    "name": TURF_TEXTURE,
+                    "key": format!("game-assets/{TURF_TEXTURE}.webp"),
+                    "bundle": "turf",
+                }],
+            })
+        );
+        assert_eq!(request["outputs"][0]["format"], "glb");
+    }
 }

@@ -8,9 +8,11 @@ The resources service decrypts each bundle and sends a job list as JSON on stdin
 the meshes, materials and textures a track prefab draws.
 `size` null keeps the picture's own size. `art_size` is the art's real shape when it is centred
 on a larger served canvas.
-A `glb` output exports the prefab `object` with `game_art_model`, its textures embedded.
-`runtime_textures` ({"name", "key", "bundle"}) are the season and weather textures the game puts
-on the prefab's course materials; each `bundle` is one of the `dependencies`.
+A `glb` output exports the job's `model` with `game_art_model`, its textures embedded:
+{"prefabs": [{"object", "bundle"}], "runtime_textures": [{"name", "key", "bundle"}]}. The prefabs
+are drawn side by side, such as a racecourse's track, trees, stands and sky. The runtime textures
+are the season and weather textures the game puts on their course materials. Each `bundle` is the
+job's own or one of its `dependencies`.
 It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
 """
@@ -23,7 +25,7 @@ from typing import Any, TextIO
 import UnityPy
 from PIL import Image
 
-from game_art_model import export_prefab
+from game_art_model import export_model
 
 WEBP_QUALITY = 90
 
@@ -93,7 +95,8 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
         written = []
         for output in job["outputs"]:
             if output["format"] == "glb":
-                export_prefab(environment, job["bundle"], output, job.get("runtime_textures", []))
+                model = job["model"]
+                export_model(environment, model["prefabs"], model["runtime_textures"], output)
             else:
                 images = images or read_images(environment)
                 save_image(pick_image(*images, output["object"]), output)

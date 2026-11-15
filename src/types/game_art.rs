@@ -6,8 +6,8 @@ use std::ops::RangeInclusive;
 /// Raise when picture output changes, so every picture is rebuilt once.
 pub(super) const CONVERTER_REVISION: u32 = 1;
 
-/// Raise when model output changes, so every track model is rebuilt once. Revision 2 embeds
-/// the textures in the model.
+/// Raise when model output changes, so every track model and course model is rebuilt once.
+/// Revision 2 embeds the textures in the model.
 pub(super) const MODEL_CONVERTER_REVISION: u32 = 2;
 
 /// The publisher's record in the bucket, outside every path the site routes there: an
@@ -30,6 +30,24 @@ pub(super) const TRACK_FOLDER: &str = "3d/env/race/";
 
 /// The CDN category that lists race tracks and every bundle they draw from.
 pub(super) const TRACK_CATEGORY: &str = "_3d_cutt";
+
+/// Course parts the game places where they are modelled: the track, its turf, the trees and the
+/// stands. Rails, signs and flower beds are placed along the track at runtime, and 7013 only
+/// marks where 3D spectators stand.
+pub(super) const COURSE_PARTS: &[&str] = &["0000", "0001", "6000", "7001", "7002", "7003"];
+
+/// The weather a course model shows, in the game's variant digits: spring, sunny, day.
+pub(super) const COURSE_ENVIRONMENT: &str = "112";
+
+/// The sky of `COURSE_ENVIRONMENT`, which every course shares.
+pub(super) const COURSE_SKY: &str =
+    "3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112";
+
+/// Where each racecourse's combined model is served, named after the course.
+pub(super) const COURSE_MODEL_FOLDER: &str = "game-assets/racetracks";
+
+/// The master.mdb `text_data` category of racecourse names, indexed by course number.
+pub(super) const COURSE_NAME_CATEGORY: u32 = 35;
 
 /// Game files of one kind and where the site serves each. A `{name}` segment matches digits, and
 /// a name used twice must match the same digits both times.
@@ -397,6 +415,18 @@ pub(super) struct Catalog {
     /// Portrait outputs by game file; the fixed families are matched by name instead.
     pub(super) portraits: HashMap<String, Vec<PlannedOutput>>,
     pub(super) atlases: HashMap<&'static str, AtlasPlan>,
+    /// Racecourse names by course number, `Tokyo` for 10006.
+    pub(super) course_names: HashMap<u32, String>,
+}
+
+/// One part of a racecourse's scene, from a prefab such as `pfb_env_race10006_7001_010`.
+pub(super) struct CoursePart<'a> {
+    /// The course's folder, `3d/env/race/race10006`.
+    pub(super) course: &'a str,
+    /// The part's place in `COURSE_PARTS`, which is its place in the scene.
+    pub(super) order: usize,
+    /// Season, weather and time digits, `010` for sunny at any season and time.
+    pub(super) variant: &'a str,
 }
 
 /// The bundles a game file is loaded with.
@@ -467,7 +497,7 @@ pub(super) struct StateShard<Record> {
 pub(super) enum StateLayout {
     Current,
     /// Every shard is written again in the current layout on the first real run, and these
-    /// keys of the earlier one are removed.
+    /// keys of the earlier one are removed. Also when records belong to another shard now.
     Outdated {
         obsolete_keys: Vec<String>,
     },
@@ -497,14 +527,25 @@ pub(super) struct PublishedArt {
 /// A game file to build, the source it comes from and the bucket keys it is served at.
 pub(super) struct ArtJob {
     pub(super) source: &'static CdnSource,
+    /// The record it is published under: its game file, or for the model combining a
+    /// racecourse, the course's folder.
+    pub(super) name: String,
+    /// The bundle that is converted; a course model's track prefab.
     pub(super) entry: ManifestEntry,
     /// Bundles loaded with it, such as an atlas's texture.
     pub(super) dependencies: Vec<ManifestEntry>,
-    /// Textures the game puts on a track prefab's materials at runtime, one set per season and
-    /// weather. They are published on their own and are among the prefab's `dependencies`, so
-    /// its model can embed the first set.
-    pub(super) runtime_textures: Vec<String>,
+    /// What a model draws; `None` for pictures.
+    pub(super) model: Option<ModelScene>,
     pub(super) outputs: Vec<PlannedOutput>,
+}
+
+/// Track prefabs drawn side by side in one model, each in its own coordinates.
+pub(super) struct ModelScene {
+    pub(super) prefabs: Vec<String>,
+    /// Textures the game puts on the prefabs' materials at runtime, one set per season and
+    /// weather. They are published on their own and are among the job's `dependencies`, so the
+    /// model can embed the first set.
+    pub(super) runtime_textures: Vec<String>,
 }
 
 /// One file built from a game file; its key's extension says whether it is a picture or a
@@ -512,7 +553,7 @@ pub(super) struct ArtJob {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PlannedOutput {
     pub(super) key: String,
-    /// The sprite, texture or prefab in the bundle that is drawn.
+    /// The sprite or texture in the bundle that is drawn; a model's prefabs are in its job.
     pub(super) object: String,
     /// How a picture is fitted; a model keeps `Fit::Native`.
     pub(super) fit: Fit,
@@ -549,9 +590,23 @@ pub(super) struct ConvertRequest<'a> {
 pub(super) struct ConvertJob<'a> {
     pub(super) bundle: String,
     pub(super) dependencies: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub(super) runtime_textures: Vec<RuntimeTexture<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) model: Option<ConvertModel<'a>>,
     pub(super) outputs: Vec<ConvertOutput<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct ConvertModel<'a> {
+    pub(super) prefabs: Vec<ScenePrefab<'a>>,
+    pub(super) runtime_textures: Vec<RuntimeTexture<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct ScenePrefab<'a> {
+    /// The prefab's root object, named like its file.
+    pub(super) object: &'a str,
+    /// The downloaded bundle: the job's own or one of its `dependencies`.
+    pub(super) bundle: String,
 }
 
 #[derive(Serialize)]

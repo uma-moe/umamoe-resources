@@ -1,19 +1,23 @@
 use super::types::{
-    ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, Dependencies, Fit,
-    PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, MODEL_CONVERTER_REVISION,
+    ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
+    Fit, PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, COURSE_ENVIRONMENT,
+    COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, MODEL_CONVERTER_REVISION,
     PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY, TRACK_FOLDER,
 };
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 impl Catalog {
-    /// The fixed families and atlases plus a portrait for every card in this master.
+    /// The fixed families and atlases plus a portrait for every card and a name for every
+    /// racecourse in this master.
     pub(super) fn load(master: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(master, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("failed to open {}", master.display()))?;
-        Ok(Self::fromOutfits(&cardOutfits(&connection)?))
+        let mut catalog = Self::fromOutfits(&cardOutfits(&connection)?);
+        catalog.course_names = courseNames(&connection)?;
+        Ok(catalog)
     }
 
     pub(super) fn fromOutfits(outfits: &[CardOutfit]) -> Self {
@@ -39,7 +43,11 @@ impl Catalog {
             })
             .collect();
 
-        Self { portraits, atlases }
+        Self {
+            portraits,
+            atlases,
+            course_names: HashMap::new(),
+        }
     }
 
     /// The bucket keys a game file is served at, or `None` when the site does not use it.
@@ -51,6 +59,23 @@ impl Catalog {
             .or_else(|| self.atlases.get(name).map(|plan| plan.outputs.clone()))
             .or_else(|| trackOutputs(name))
             .or_else(|| trackTextureOutputs(name))
+    }
+
+    /// The model combining a racecourse, named after the course where master.mdb names it:
+    /// `game-assets/racetracks/tokyo.glb` for `3d/env/race/race10006`.
+    pub(super) fn courseOutputs(&self, course: &str) -> Vec<PlannedOutput> {
+        let folder = objectName(course);
+        let file = courseNumber(folder)
+            .and_then(|number| self.course_names.get(&number))
+            .map(|name| fileSlug(name))
+            .filter(|slug| !slug.is_empty())
+            .unwrap_or_else(|| folder.to_string());
+
+        vec![PlannedOutput {
+            key: format!("{COURSE_MODEL_FOLDER}/{file}.glb"),
+            object: folder.to_string(),
+            fit: Fit::Native,
+        }]
     }
 
     /// The bundles a game file is loaded with.
@@ -87,27 +112,29 @@ pub(super) fn isUnusedDependency(name: &str) -> bool {
 }
 
 pub(super) fn converterRevision(name: &str) -> u32 {
-    if isTrackPrefab(name) {
+    if isTrackPrefab(name) || isCourse(name) {
         MODEL_CONVERTER_REVISION
     } else {
         CONVERTER_REVISION
     }
 }
 
-/// The kind of track scenery a file below the track folder belongs to: a racecourse, a
-/// starting gate, the skydomes or the other props every course shares.
+/// The kind of track scenery a record below the track folder belongs to: a racecourse's
+/// combined model, a part of a racecourse, a starting gate, the skydomes or the other props every
+/// course shares.
 pub(super) fn trackGroup(name: &str) -> Option<&'static str> {
-    let mut segments = name.strip_prefix(TRACK_FOLDER)?.split('/');
-    let track = segments.next()?;
-    let part = segments.next()?;
-    let number: u32 = track.strip_prefix("race")?.parse().ok()?;
+    let rest = name.strip_prefix(TRACK_FOLDER)?;
+    let Some((track, below)) = rest.split_once('/') else {
+        return courseNumber(rest).map(|_| "racetracks");
+    };
+    trackNumber(track)?;
+    let part = below.split('/').next()?;
 
     if part.contains("_gate") {
         return Some("starting-gates");
     }
-    // Courses are numbered from race10001; the folders below hold what every course shares.
-    if number >= 10000 {
-        return Some("racetracks");
+    if courseNumber(track).is_some() {
+        return Some("racetrack-parts");
     }
     if part.ends_with("_9000") {
         return Some("skyboxes");
@@ -115,8 +142,101 @@ pub(super) fn trackGroup(name: &str) -> Option<&'static str> {
     Some("track-props")
 }
 
+/// The prefabs each racecourse's model draws, by the course's folder such as
+/// `3d/env/race/race10006`: every part in `COURSE_PARTS` in the variant that fits
+/// `COURSE_ENVIRONMENT` best, then the sky. A course whose track is not listed is left out.
+pub(super) fn courseScenes<'a>(
+    names: impl Iterator<Item = &'a str>,
+) -> BTreeMap<&'a str, Vec<&'a str>> {
+    let mut chosen: BTreeMap<(&str, usize), (&str, usize)> = BTreeMap::new();
+    let mut sky = None;
+    for name in names {
+        if name == COURSE_SKY {
+            sky = Some(name);
+            continue;
+        }
+        let Some(part) = coursePart(name) else {
+            continue;
+        };
+        let Some(fit) = environmentFit(part.variant) else {
+            continue;
+        };
+        let slot = (part.course, part.order);
+        if chosen.get(&slot).is_none_or(|(_, best)| fit > *best) {
+            chosen.insert(slot, (name, fit));
+        }
+    }
+
+    // Each course's parts come in scene order, so its track comes first if it is listed.
+    let mut scenes: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for ((course, order), (prefab, _)) in chosen {
+        if order == 0 {
+            scenes.insert(course, vec![prefab]);
+        } else if let Some(scene) = scenes.get_mut(course) {
+            scene.push(prefab);
+        }
+    }
+    for scene in scenes.values_mut() {
+        scene.extend(sky);
+    }
+    scenes
+}
+
+fn coursePart(name: &str) -> Option<CoursePart<'_>> {
+    let (track, _) = name.strip_prefix(TRACK_FOLDER)?.split_once('/')?;
+    courseNumber(track)?;
+    let (part, variant) = objectName(name)
+        .strip_prefix("pfb_env_")?
+        .strip_prefix(track)?
+        .strip_prefix('_')?
+        .split_once('_')?;
+    let order = COURSE_PARTS.iter().position(|known| *known == part)?;
+
+    Some(CoursePart {
+        course: &name[..TRACK_FOLDER.len() + track.len()],
+        order,
+        variant,
+    })
+}
+
+/// How many of a variant's digits match `COURSE_ENVIRONMENT`, or `None` when one contradicts
+/// it; a `0` digit fits any season, weather or time.
+fn environmentFit(variant: &str) -> Option<usize> {
+    if variant.len() != COURSE_ENVIRONMENT.len() {
+        return None;
+    }
+
+    let mut matched = 0;
+    for (digit, wanted) in variant.bytes().zip(COURSE_ENVIRONMENT.bytes()) {
+        if digit == wanted {
+            matched += 1;
+        } else if digit != b'0' {
+            return None;
+        }
+    }
+    Some(matched)
+}
+
+/// A track folder's number, `race00100` or `race10006`.
+fn trackNumber(track: &str) -> Option<u32> {
+    track.strip_prefix("race")?.parse().ok()
+}
+
+/// A racecourse's number from its folder, `race10006`. Courses are numbered from race10001; the
+/// folders below hold what every course shares.
+fn courseNumber(track: &str) -> Option<u32> {
+    trackNumber(track).filter(|number| *number >= 10000)
+}
+
+/// A racecourse's own record, `3d/env/race/race10006`, which its combined model is published
+/// under.
+fn isCourse(name: &str) -> bool {
+    name.strip_prefix(TRACK_FOLDER)
+        .is_some_and(|rest| !rest.contains('/') && courseNumber(rest).is_some())
+}
+
 /// Such as `3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002`.
-fn isTrackPrefab(name: &str) -> bool {
+pub(super) fn isTrackPrefab(name: &str) -> bool {
     name.strip_prefix(TRACK_FOLDER)
         .is_some_and(|rest| objectName(rest).starts_with("pfb_"))
 }
@@ -169,8 +289,8 @@ fn trackOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
     }])
 }
 
-/// The game file's name without its folders, which is also its texture's name.
-fn objectName(name: &str) -> &str {
+/// The game file's name without its folders, which is also its texture's or prefab's name.
+pub(super) fn objectName(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)
 }
 
@@ -195,6 +315,30 @@ fn cardOutfits(connection: &Connection) -> Result<Vec<CardOutfit>> {
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
         .context("failed to read card outfits from master.mdb")
+}
+
+fn courseNames(connection: &Connection) -> Result<HashMap<u32, String>> {
+    let mut statement =
+        connection.prepare("SELECT \"index\", text FROM text_data WHERE category = ?1")?;
+    let rows = statement.query_map([COURSE_NAME_CATEGORY], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect::<rusqlite::Result<HashMap<_, _>>>()
+        .context("failed to read course names from master.mdb")
+}
+
+/// `Longchamp` as `longchamp`; every run of characters other than ASCII letters and digits
+/// becomes one dash.
+fn fileSlug(name: &str) -> String {
+    let words: String = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect();
+    words.split_whitespace().collect::<Vec<_>>().join("-")
 }
 
 fn familyOutputs(family: &ArtFamily, name: &str) -> Option<Vec<PlannedOutput>> {
@@ -459,6 +603,7 @@ mod tests {
     #[test]
     fn trackFilesAreGroupedByTheSceneryTheyShow() {
         let groups = [
+            "3d/env/race/race10006",
             "3d/env/race/race10006/race10006_0000/pfb_env_race10006_0000_002",
             "3d/env/race/race10006/race10006_0000/textures/tex_env_race10006_0000_112_turf00",
             "3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112",
@@ -474,7 +619,8 @@ mod tests {
             groups,
             [
                 Some("racetracks"),
-                Some("racetracks"),
+                Some("racetrack-parts"),
+                Some("racetrack-parts"),
                 Some("skyboxes"),
                 Some("starting-gates"),
                 Some("starting-gates"),
@@ -492,11 +638,112 @@ mod tests {
             "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00";
 
         assert_eq!(converterRevision(prefab), MODEL_CONVERTER_REVISION);
+        assert_eq!(
+            converterRevision("3d/env/race/race10001"),
+            MODEL_CONVERTER_REVISION
+        );
         assert_eq!(converterRevision(texture), CONVERTER_REVISION);
         assert_eq!(
             converterRevision("supportcard/support30050/tex_support_card_30050"),
             CONVERTER_REVISION
         );
+    }
+
+    fn tokyoPrefab(part: &str) -> String {
+        let folder = &part[..2];
+        format!("3d/env/race/race10006/race10006_{folder}00/pfb_env_race10006_{part}")
+    }
+
+    #[test]
+    fn courseScenesTakeTheSpringDayVariantOfEachPartThenTheSky() {
+        let listed = [
+            "0000_002",
+            "0000_004",
+            "0001_002",
+            "1000_000",
+            "2000_000",
+            "6000_100",
+            "6000_114",
+            "6000_442",
+            "7001_010",
+            "7001_014",
+            "7001_030",
+            "7002_010",
+            "7003_010",
+            "7013_000",
+            "cutt000_002",
+            "prop002_000",
+        ]
+        .map(tokyoPrefab);
+        let names = listed.iter().map(String::as_str).chain([COURSE_SKY]);
+
+        let scenes = courseScenes(names);
+
+        let expected: Vec<String> = [
+            "0000_002", "0001_002", "6000_100", "7001_010", "7002_010", "7003_010",
+        ]
+        .map(tokyoPrefab)
+        .into_iter()
+        .chain([COURSE_SKY.to_string()])
+        .collect();
+        assert_eq!(
+            scenes.keys().copied().collect::<Vec<_>>(),
+            vec!["3d/env/race/race10006"]
+        );
+        assert_eq!(scenes["3d/env/race/race10006"], expected);
+    }
+
+    #[test]
+    fn aCourseWithoutItsTrackHasNoScene() {
+        let listed = ["6000_100", "7001_010"].map(tokyoPrefab);
+
+        let scenes = courseScenes(listed.iter().map(String::as_str).chain([COURSE_SKY]));
+
+        assert!(scenes.is_empty());
+    }
+
+    #[test]
+    fn courseModelsAreNamedAfterTheCourse() {
+        let mut catalog = Catalog::fromOutfits(&[]);
+        catalog.course_names.insert(10006, "Tokyo".to_string());
+        catalog.course_names.insert(10201, "Longchamp".to_string());
+        catalog
+            .course_names
+            .insert(10999, "Ooi (Night)".to_string());
+
+        let key = |course: &str| catalog.courseOutputs(course)[0].key.clone();
+
+        assert_eq!(
+            key("3d/env/race/race10006"),
+            "game-assets/racetracks/tokyo.glb"
+        );
+        assert_eq!(
+            key("3d/env/race/race10201"),
+            "game-assets/racetracks/longchamp.glb"
+        );
+        assert_eq!(
+            key("3d/env/race/race10999"),
+            "game-assets/racetracks/ooi-night.glb"
+        );
+        assert_eq!(
+            key("3d/env/race/race10001"),
+            "game-assets/racetracks/race10001.glb"
+        );
+    }
+
+    #[test]
+    fn courseNamesComeFromTheirTextCategory() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE text_data (category INTEGER, \"index\" INTEGER, text TEXT);
+                 INSERT INTO text_data VALUES (35, 10006, 'Tokyo'), (36, 10006, 'Not a course');",
+            )
+            .unwrap();
+
+        let names = courseNames(&connection).unwrap();
+
+        assert_eq!(names, HashMap::from([(10006, "Tokyo".to_string())]));
     }
 
     #[test]
