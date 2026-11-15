@@ -7,7 +7,8 @@ mod state;
 #[path = "../../types/game_art.rs"]
 mod types;
 
-use super::{contentType, purgeOverwritten, Bucket};
+use super::types::ObjectChange;
+use super::{publishFile, purgeOverwritten, Bucket};
 use crate::game_cdn::{self, CdnSource, ManifestEntry, GLOBAL_CDN};
 use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
@@ -172,7 +173,8 @@ async fn runJobs(
 
     for batch in jobs.chunks(CONVERT_BATCH_SIZE) {
         let outcomes = buildBatch(client, &work, batch, &base_key).await?;
-        let mut files = Vec::new();
+        // Models in one batch often link the same texture; it is uploaded once.
+        let mut files = BTreeMap::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
             let (error, texture_keys) = match outcome {
@@ -215,12 +217,13 @@ async fn runJobs(
     Ok(())
 }
 
-/// Copies or uploads the files. Returns the keys that replaced an object already in the bucket,
-/// such as one copied from the old web root, whose cached copies must be purged.
+/// Copies or uploads the files; a file the bucket already holds byte for byte is skipped. Returns
+/// the keys that replaced a different object, such as one copied from the old web root, whose
+/// cached copies must be purged.
 async fn deliver(
     client: &reqwest::Client,
     destination: &ArtDestination<'_>,
-    files: Vec<(String, PathBuf)>,
+    files: BTreeMap<String, PathBuf>,
 ) -> Result<Vec<String>> {
     let mut replaced = Vec::new();
     match destination {
@@ -242,21 +245,21 @@ async fn deliver(
                     let Some((key, file)) = pending.next() else {
                         break;
                     };
-                    let bucket = (*bucket).clone();
-                    let client = client.clone();
-                    uploads.spawn(async move {
-                        let existed = bucket.objectEtag(&client, &key).await?.is_some();
-                        let body = tokio::fs::read(&file).await?;
-                        bucket
-                            .putObject(&client, &key, body, contentType(&key))
-                            .await?;
-                        anyhow::Ok(existed.then_some(key))
-                    });
+                    uploads.spawn(publishFile(
+                        client.clone(),
+                        (*bucket).clone(),
+                        file,
+                        key,
+                        false,
+                    ));
                 }
                 let Some(upload) = uploads.join_next().await else {
                     break;
                 };
-                replaced.extend(upload??);
+                let published = upload??;
+                if published.change == ObjectChange::Overwritten {
+                    replaced.push(published.key);
+                }
             }
         }
     }

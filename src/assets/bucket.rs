@@ -1,9 +1,12 @@
-use super::types::{Bucket, SignedRequest, ASSET_BUCKET, ASSET_CACHE_CONTROL};
+use super::types::{Bucket, SignedRequest, ASSET_BUCKET, ASSET_CACHE_CONTROL, PUT_ATTEMPTS};
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, ETAG};
+use reqwest::StatusCode;
 use sha2::{Digest, Sha256};
+use std::time::Duration;
+use tracing::warn;
 
 impl Bucket {
     /// Reads the endpoint and write key for the asset bucket from the environment.
@@ -96,6 +99,8 @@ impl Bucket {
         Ok(())
     }
 
+    /// Writes the object, waiting 1, 2, 4 and 8 seconds before retrying a write the bucket
+    /// refused for load.
     pub(super) async fn putObject(
         &self,
         client: &reqwest::Client,
@@ -103,23 +108,31 @@ impl Bucket {
         body: Vec<u8>,
         content_type: &str,
     ) -> Result<()> {
-        let request = self.signedRequest("PUT", key, &body)?;
-        let response = client
-            .put(&request.url)
-            .headers(request.headers)
-            .header("content-type", content_type)
-            .header("cache-control", ASSET_CACHE_CONTROL)
-            .body(body)
-            .send()
-            .await
-            .with_context(|| format!("PUT {key} failed"))?;
+        for attempt in 1..=PUT_ATTEMPTS {
+            let request = self.signedRequest("PUT", key, &body)?;
+            let response = client
+                .put(&request.url)
+                .headers(request.headers)
+                .header("content-type", content_type)
+                .header("cache-control", ASSET_CACHE_CONTROL)
+                .body(body.clone())
+                .send()
+                .await
+                .with_context(|| format!("PUT {key} failed"))?;
 
-        let status = response.status();
-        if !status.is_success() {
+            let status = response.status();
+            if status.is_success() {
+                return Ok(());
+            }
+
             let detail = response.text().await.unwrap_or_default();
-            bail!("PUT {key} returned HTTP {status}: {detail}");
+            if !isRetryable(status) || attempt == PUT_ATTEMPTS {
+                bail!("PUT {key} returned HTTP {status}: {detail}");
+            }
+            warn!(key, %status, attempt, "the bucket refused a write, retrying");
+            tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
         }
-        Ok(())
+        unreachable!("the last attempt returns or fails")
     }
 
     /// Signs the minimum set S3 requires: `host`, `x-amz-content-sha256` and `x-amz-date`. Content
@@ -190,6 +203,12 @@ impl Bucket {
             headers: header_map,
         })
     }
+}
+
+/// R2 answers 429 to more than about one write per second to the same object, and 5xx when
+/// it is briefly overloaded.
+fn isRetryable(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
 
 fn hmacSha256(key: &[u8], data: &[u8]) -> Vec<u8> {

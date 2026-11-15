@@ -6,6 +6,8 @@ pub(super) const ASSET_CACHE_CONTROL: &str = "public, max-age=86400";
 /// The public R2 bucket that the site's image paths are routed to.
 pub(super) const ASSET_BUCKET: &str = "umamoe-assets";
 
+pub(super) const PUT_ATTEMPTS: u32 = 5;
+
 /// An S3-compatible bucket (Cloudflare R2 in production) and the key that may write to it.
 #[derive(Clone)]
 pub struct Bucket {
