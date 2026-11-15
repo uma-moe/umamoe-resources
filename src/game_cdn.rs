@@ -176,6 +176,7 @@ impl ManifestEntry {
             size,
             checksum,
             key,
+            dependencies: Vec::new(),
             hname: calcHname(checksum, size, name.as_bytes()),
         }
     }
@@ -202,12 +203,15 @@ fn parseContentManifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
     let mut entries = Vec::new();
     for row in &rows {
         let entry = if row.len() >= 7 {
-            ManifestEntry::new(
-                row[0].asStr()?,
-                row[4].asU64()?,
-                row[5].asU64()?,
-                row[6].asU64()?,
-            )
+            ManifestEntry {
+                dependencies: listedDependencies(&row[1]),
+                ..ManifestEntry::new(
+                    row[0].asStr()?,
+                    row[4].asU64()?,
+                    row[5].asU64()?,
+                    row[6].asU64()?,
+                )
+            }
         } else if row.len() >= 3 {
             ManifestEntry::new(row[0].asStr()?, row[1].asU64()?, row[2].asU64()?, 0)
         } else {
@@ -216,6 +220,18 @@ fn parseContentManifest(data: &[u8]) -> Result<Vec<ManifestEntry>> {
         entries.push(entry);
     }
     Ok(entries)
+}
+
+/// The dependency column: bundle names separated by `;`, empty for a bundle that needs none.
+fn listedDependencies(column: &BsvValue) -> Vec<String> {
+    let Ok(names) = column.asStr() else {
+        return Vec::new();
+    };
+    names
+        .split(';')
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn decompressLz4(data: &[u8]) -> Result<Vec<u8>> {
@@ -405,6 +421,40 @@ mod tests {
         assert_eq!(
             parsed,
             vec![("chara/a", 0x8123_4567_89AB_CDEF), ("chara/b", 7)]
+        );
+    }
+
+    #[test]
+    fn contentRowsCarryTheBundlesTheyDependOn() {
+        // One row of (name, dependencies, two unused numbers, size, checksum, key).
+        let mut data = vec![
+            BSV_MAGIC,
+            0x11,
+            0,
+            0,
+            vlq(1),
+            vlq(0),
+            vlq(0),
+            vlq(7),
+            0x40,
+            0x40,
+            0x11,
+            0x11,
+            0x11,
+            0x11,
+            0x13,
+        ];
+        data.extend(b"3d/env/race/pfb shader;3d/model ");
+        data.extend([vlq(0), vlq(0), vlq(5), vlq(9)]);
+        data.extend(7u64.to_be_bytes());
+
+        let entries = parseContentManifest(&data).unwrap();
+
+        assert_eq!(entries[0].name, "3d/env/race/pfb");
+        assert_eq!(entries[0].dependencies, vec!["shader", "3d/model"]);
+        assert_eq!(
+            (entries[0].size, entries[0].checksum, entries[0].key),
+            (5, 9, 7)
         );
     }
 

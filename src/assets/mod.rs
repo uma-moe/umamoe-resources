@@ -203,6 +203,7 @@ fn contentType(path: &str) -> &'static str {
         "gif" => "image/gif",
         "svg" => "image/svg+xml",
         "json" => "application/json",
+        "glb" => "model/gltf-binary",
         _ => "application/octet-stream",
     }
 }

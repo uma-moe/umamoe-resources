@@ -46,5 +46,7 @@ pub struct ManifestEntry {
     pub checksum: u64,
     /// Zero for files that are not encrypted.
     pub key: u64,
+    /// The bundles the game loads with this one, by name.
+    pub dependencies: Vec<String>,
     pub(super) hname: String,
 }

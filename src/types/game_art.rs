@@ -2,6 +2,7 @@ use crate::game_cdn::{CdnSource, ManifestEntry};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::ops::RangeInclusive;
+use std::path::PathBuf;
 
 /// Raise when conversion output changes, so every image is rebuilt once.
 pub(super) const CONVERTER_REVISION: u32 = 1;
@@ -23,6 +24,12 @@ pub(super) const CONVERT_BATCH_SIZE: usize = 32;
 pub(super) const DOWNLOAD_CONCURRENCY: usize = 8;
 
 pub(super) const UPLOAD_CONCURRENCY: usize = 16;
+
+/// Race track prefabs: every `pfb_` bundle below this folder becomes one model.
+pub(super) const TRACK_FOLDER: &str = "3d/env/race/";
+
+/// The CDN category that lists race tracks and every bundle they draw from.
+pub(super) const TRACK_CATEGORY: &str = "_3d_cutt";
 
 /// Game files of one kind and where the site serves each. A `{name}` segment matches digits, and
 /// a name used twice must match the same digits both times.
@@ -392,6 +399,17 @@ pub(super) struct Catalog {
     pub(super) atlases: HashMap<&'static str, AtlasPlan>,
 }
 
+/// The bundles a game file is loaded with.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Dependencies {
+    None,
+    /// The texture bundle an atlas's sprites draw from.
+    AtlasTexture(&'static str),
+    /// Every bundle the game's file list says it needs, directly or through another, as a
+    /// track prefab needs its meshes, materials and textures.
+    Listed,
+}
+
 /// The sprites cut from one atlas and the texture bundle they draw from.
 pub(super) struct AtlasPlan {
     pub(super) texture: &'static str,
@@ -438,6 +456,10 @@ pub(super) struct PublishedArt {
     /// Checksums of the bundles it draws from, such as an atlas's texture.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) dependency_checksums: Vec<u64>,
+    /// Textures a model links to, written beside it. They follow from its materials rather
+    /// than the catalog, so they are recorded but not planned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) textures: Vec<String>,
     /// Set when this exact file could not be converted; it is retried once the file or the
     /// converter changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -450,14 +472,20 @@ pub(super) struct ArtJob {
     pub(super) entry: ManifestEntry,
     /// Bundles loaded with it, such as an atlas's texture.
     pub(super) dependencies: Vec<ManifestEntry>,
+    /// Textures the game puts on a track prefab's materials at runtime, one set per season and
+    /// weather. They are published on their own, so a model links them without loading them.
+    pub(super) runtime_textures: Vec<String>,
     pub(super) outputs: Vec<PlannedOutput>,
 }
 
+/// One file built from a game file; its key's extension says whether it is a picture or a
+/// `.glb` model.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct PlannedOutput {
     pub(super) key: String,
-    /// The sprite or texture in the bundle that is drawn.
+    /// The sprite, texture or prefab in the bundle that is drawn.
     pub(super) object: String,
+    /// How a picture is fitted; a model keeps `Fit::Native`.
     pub(super) fit: Fit,
 }
 
@@ -492,12 +520,26 @@ pub(super) struct ConvertRequest<'a> {
 pub(super) struct ConvertJob<'a> {
     pub(super) bundle: String,
     pub(super) dependencies: Vec<String>,
+    /// The bucket folder for textures found in each bundle, in `bundle`, `dependencies` order.
+    /// Only a model writes textures.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) texture_folders: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(super) runtime_textures: Vec<RuntimeTexture<'a>>,
     pub(super) outputs: Vec<ConvertOutput<'a>>,
+}
+
+#[derive(Serialize)]
+pub(super) struct RuntimeTexture<'a> {
+    pub(super) name: &'a str,
+    pub(super) key: String,
 }
 
 #[derive(Serialize)]
 pub(super) struct ConvertOutput<'a> {
     pub(super) object: &'a str,
+    /// The bucket key, which a model's texture links are relative to.
+    pub(super) key: &'a str,
     pub(super) path: String,
     pub(super) format: &'static str,
     /// Absent to keep the picture's own size.
@@ -514,4 +556,13 @@ pub(super) struct ConvertResponse {
 pub(super) struct ConvertResult {
     pub(super) bundle: String,
     pub(super) error: Option<String>,
+    /// Textures a model wrote beside itself.
+    #[serde(default)]
+    pub(super) textures: Vec<WrittenTexture>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct WrittenTexture {
+    pub(super) key: String,
+    pub(super) path: PathBuf,
 }

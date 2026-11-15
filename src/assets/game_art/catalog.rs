@@ -1,6 +1,7 @@
 use super::types::{
-    ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, Fit, PlannedOutput,
-    ART_FAMILIES, ATLAS_FAMILIES, PORTRAIT_OUTPUTS, PORTRAIT_SOURCE,
+    ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, Dependencies, Fit,
+    PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY,
+    TRACK_FOLDER,
 };
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
@@ -48,15 +49,24 @@ impl Catalog {
             .find_map(|family| familyOutputs(family, name))
             .or_else(|| self.portraits.get(name).cloned())
             .or_else(|| self.atlases.get(name).map(|plan| plan.outputs.clone()))
+            .or_else(|| trackOutputs(name))
+            .or_else(|| trackTextureOutputs(name))
     }
 
-    /// The bundle a game file needs loaded beside it, such as an atlas's texture.
-    pub(super) fn dependency(&self, name: &str) -> Option<&'static str> {
-        self.atlases.get(name).map(|plan| plan.texture)
+    /// The bundles a game file is loaded with.
+    pub(super) fn dependencies(&self, name: &str) -> Dependencies {
+        if let Some(plan) = self.atlases.get(name) {
+            return Dependencies::AtlasTexture(plan.texture);
+        }
+        if isTrackPrefab(name) {
+            return Dependencies::Listed;
+        }
+        Dependencies::None
     }
 }
 
-/// The CDN categories the catalog reads from: the first segment of each game path.
+/// The CDN categories the catalog reads from: the first segment of each picture's game path,
+/// and the category that lists race tracks.
 pub(super) fn catalogCategories() -> Vec<&'static str> {
     let mut categories: Vec<&str> = ART_FAMILIES
         .iter()
@@ -64,10 +74,78 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .chain([PORTRAIT_SOURCE])
         .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
+        .chain([TRACK_CATEGORY])
         .collect();
     categories.sort_unstable();
     categories.dedup();
     categories
+}
+
+/// Shaders do not convert, and a still model has no use for the races' animations.
+pub(super) fn isUnusedDependency(name: &str) -> bool {
+    name == "shader" || name.starts_with("3d/motion/")
+}
+
+/// Where a model's textures from this bundle are written: the bundle's game folder, with the
+/// game's `sourceresources/` copy of the tree folded into the main one.
+pub(super) fn modelTextureFolder(bundle: &str) -> String {
+    let path = bundle.strip_prefix("sourceresources/").unwrap_or(bundle);
+    let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
+    format!("game-assets/{folder}")
+}
+
+/// Such as `3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002`.
+fn isTrackPrefab(name: &str) -> bool {
+    name.strip_prefix(TRACK_FOLDER)
+        .is_some_and(|rest| objectName(rest).starts_with("pfb_"))
+}
+
+/// The season and weather textures in a track part's `textures` folder, such as
+/// `3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_turf00`.
+pub(super) fn isTrackTexture(name: &str) -> bool {
+    name.strip_prefix(TRACK_FOLDER).is_some_and(|rest| {
+        rest.rsplit_once('/')
+            .is_some_and(|(folder, file)| folder.ends_with("/textures") && file.starts_with("tex_"))
+    })
+}
+
+pub(super) fn trackTextureKey(name: &str) -> String {
+    format!("game-assets/{name}.webp")
+}
+
+/// The folder holding the textures the game puts on a prefab's materials at runtime.
+pub(super) fn runtimeTextureFolder(prefab: &str) -> Option<String> {
+    if !isTrackPrefab(prefab) {
+        return None;
+    }
+    let (part, _) = prefab.rsplit_once('/')?;
+    Some(format!("{part}/textures"))
+}
+
+/// A track texture keeps its own size at its game path, where models link it.
+fn trackTextureOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
+    if !isTrackTexture(name) {
+        return None;
+    }
+
+    Some(vec![PlannedOutput {
+        key: trackTextureKey(name),
+        object: objectName(name).to_string(),
+        fit: Fit::Native,
+    }])
+}
+
+/// A track prefab becomes one model at its game path.
+fn trackOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
+    if !isTrackPrefab(name) {
+        return None;
+    }
+
+    Some(vec![PlannedOutput {
+        key: format!("game-assets/{name}.glb"),
+        object: objectName(name).to_string(),
+        fit: Fit::Native,
+    }])
 }
 
 /// The game file's name without its folders, which is also its texture's name.
@@ -308,11 +386,69 @@ mod tests {
         let catalog = Catalog::fromOutfits(&[]);
 
         assert_eq!(
-            catalog.dependency("atlas/common/common"),
-            Some("atlas/common/common_tex")
+            catalog.dependencies("atlas/common/common"),
+            Dependencies::AtlasTexture("atlas/common/common_tex")
         );
-        assert_eq!(catalog.dependency("item/item_icon_00041"), None);
+        assert_eq!(
+            catalog.dependencies("item/item_icon_00041"),
+            Dependencies::None
+        );
         assert_eq!(keys(&catalog, "atlas/common/common_tex"), None);
+    }
+
+    #[test]
+    fn trackPrefabsBecomeModelsAtTheirGamePath() {
+        let catalog = Catalog::fromOutfits(&[]);
+        let prefab = "3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002";
+        let gate = "3d/env/race/race00000/race00000_gate000/pfb_env_race00000_gate000_000";
+        let texture =
+            "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00";
+
+        let model = catalog.outputs(prefab).unwrap();
+
+        assert_eq!(model[0].key, format!("game-assets/{prefab}.glb"));
+        assert_eq!(model[0].object, "pfb_env_race10001_0000_002");
+        assert_eq!(catalog.dependencies(prefab), Dependencies::Listed);
+        assert_eq!(
+            keys(&catalog, gate),
+            Some(vec![format!("game-assets/{gate}.glb")])
+        );
+        assert_eq!(
+            keys(&catalog, texture),
+            Some(vec![format!("game-assets/{texture}.webp")])
+        );
+        assert!(catalogCategories().contains(&TRACK_CATEGORY));
+    }
+
+    #[test]
+    fn prefabsFindTheirSeasonTexturesInTheirPartFolder() {
+        let prefab = "3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002";
+        let model = "sourceresources/3d/env/race/race10001/race10001_6000/models/mdl_env_race10001_6000_000";
+
+        let folder = runtimeTextureFolder(prefab);
+
+        assert_eq!(
+            folder.as_deref(),
+            Some("3d/env/race/race10001/race10001_0000/textures")
+        );
+        assert_eq!(runtimeTextureFolder(model), None);
+        assert!(!isTrackTexture(model));
+    }
+
+    #[test]
+    fn modelTexturesKeepTheirGameFolder() {
+        assert_eq!(
+            modelTextureFolder(
+                "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00"
+            ),
+            "game-assets/3d/env/race/race10001/race10001_0000/textures"
+        );
+        assert_eq!(
+            modelTextureFolder(
+                "sourceresources/3d/env/set/set70002/main/materials/mtl_env_set70002_main000_000_monitor00"
+            ),
+            "game-assets/3d/env/set/set70002/main/materials"
+        );
     }
 
     #[test]
@@ -387,10 +523,11 @@ mod tests {
     }
 
     #[test]
-    fn categoriesComeFromTheGamePaths() {
+    fn categoriesComeFromTheGamePathsAndTheTrackCategory() {
         assert_eq!(
             catalogCategories(),
             vec![
+                "_3d_cutt",
                 "atlas",
                 "chara",
                 "item",

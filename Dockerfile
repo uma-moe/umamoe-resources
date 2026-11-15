@@ -24,6 +24,7 @@ RUN python3 -m venv /opt/game-art \
 WORKDIR /app
 COPY --from=builder /app/target/release/umamoe-resources /usr/local/bin/umamoe-resources
 COPY scripts/game_art_convert.py /app/scripts/game_art_convert.py
+COPY scripts/game_art_model.py /app/scripts/game_art_model.py
 
 USER appuser
 EXPOSE 3000 3204
