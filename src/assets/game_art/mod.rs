@@ -13,14 +13,14 @@ use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use plan::{planJobs, publishedRecord};
-use state::{loadState, migrateLegacyState, saveState, shardName};
+use state::{loadState, rewriteState, saveState, shardName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 use types::{
-    ArtDestination, ArtJob, ArtState, Catalog, StateOrigin, CONVERT_BATCH_SIZE, UPLOAD_CONCURRENCY,
+    ArtDestination, ArtJob, ArtState, Catalog, StateLayout, CONVERT_BATCH_SIZE, UPLOAD_CONCURRENCY,
 };
 pub use types::{GameArtOptions, GameArtSummary};
 
@@ -64,9 +64,11 @@ pub async fn publishGameArt(
     dry_run: bool,
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
-    let (mut state, origin) = loadState(&client, bucket).await?;
-    if origin == StateOrigin::Legacy && !dry_run {
-        migrateLegacyState(&client, bucket, &state).await?;
+    let (mut state, layout) = loadState(&client, bucket).await?;
+    if let StateLayout::Outdated { obsolete_keys } = &layout {
+        if !dry_run {
+            rewriteState(&client, bucket, &state, obsolete_keys).await?;
+        }
     }
 
     let catalog = Catalog::load(master)?;
@@ -201,7 +203,10 @@ async fn runJobs(
         summary.uploaded += files.len();
         let replaced = deliver(client, &destination, files).await?;
         if let (ArtDestination::Bucket(bucket), Some(state)) = (&destination, state.as_deref()) {
-            let changed = batch.iter().map(|job| shardName(&job.entry.name)).collect();
+            let changed = batch
+                .iter()
+                .map(|job| shardName(&job.entry.name).to_string())
+                .collect();
             saveState(client, bucket, state, &changed).await?;
             purgeOverwritten(&replaced, &options.purge_origins).await?;
         }

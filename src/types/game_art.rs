@@ -8,11 +8,8 @@ use std::path::PathBuf;
 pub(super) const CONVERTER_REVISION: u32 = 1;
 
 /// The publisher's record in the bucket, outside every path the site routes there: an
-/// `index.json` naming the shards, and one JSON file of records per shard.
+/// `index.json` linking the shards, and one JSON file of records per top-level game folder.
 pub(super) const STATE_FOLDER: &str = "_state/game-art";
-
-/// The single file earlier versions kept the record in; it is split into shards once.
-pub(super) const LEGACY_STATE_KEY: &str = "_state/game-art.json";
 
 pub(super) const CONVERTER_PYTHON: &str = "/opt/game-art/bin/python";
 
@@ -424,11 +421,36 @@ pub(super) struct ArtState {
     pub(super) files: BTreeMap<String, PublishedArt>,
 }
 
-/// `index.json` in the state folder: the shards and how many records each holds.
-#[derive(Default, Serialize, Deserialize)]
+/// `index.json` in the state folder, which links every shard like the resources manifest
+/// links its artifacts.
+#[derive(Serialize)]
 pub(super) struct StateIndex {
     pub(super) resource_version: Option<String>,
-    pub(super) shards: BTreeMap<String, usize>,
+    pub(super) generated_at: String,
+    pub(super) shards: Vec<ShardLink>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub(super) struct ShardLink {
+    pub(super) name: String,
+    /// From the bucket root, `/_state/game-art/chara.json`.
+    pub(super) path: String,
+    pub(super) files: usize,
+}
+
+/// `index.json` as read back, in the current layout or the earlier one.
+#[derive(Deserialize)]
+pub(super) struct StoredIndex {
+    pub(super) resource_version: Option<String>,
+    pub(super) shards: StoredShards,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(super) enum StoredShards {
+    Links(Vec<ShardLink>),
+    /// Earlier indexes counted records by shard name and sharded characters and tracks apart.
+    Counts(BTreeMap<String, usize>),
 }
 
 /// One shard file of records.
@@ -437,12 +459,15 @@ pub(super) struct StateShard<Record> {
     pub(super) files: BTreeMap<String, Record>,
 }
 
-/// Where the record was read from; the single legacy file is split on the first real run.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) enum StateOrigin {
-    Empty,
-    Shards,
-    Legacy,
+/// Whether the record in the bucket is in the current layout.
+#[derive(Debug, PartialEq)]
+pub(super) enum StateLayout {
+    Current,
+    /// Every shard is written again in the current layout on the first real run, and these
+    /// keys of the earlier one are removed.
+    Outdated {
+        obsolete_keys: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
