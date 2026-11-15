@@ -53,6 +53,31 @@ impl Bucket {
         Ok(Some(etag.trim_matches('"').to_ascii_lowercase()))
     }
 
+    /// The object's bytes, or `None` when the bucket holds nothing at `key`.
+    pub(super) async fn getObject(
+        &self,
+        client: &reqwest::Client,
+        key: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let request = self.signedRequest("GET", key, &[])?;
+        let response = client
+            .get(&request.url)
+            .headers(request.headers)
+            .send()
+            .await
+            .with_context(|| format!("GET {key} failed"))?;
+
+        let status = response.status();
+        if status.as_u16() == 404 {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            bail!("GET {key} returned HTTP {status}");
+        }
+
+        Ok(Some(response.bytes().await?.to_vec()))
+    }
+
     pub(super) async fn putObject(
         &self,
         client: &reqwest::Client,

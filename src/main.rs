@@ -10,6 +10,7 @@ mod assets;
 mod auth_common;
 mod browser_proof;
 mod cache;
+mod game_cdn;
 mod generators;
 mod global_news;
 mod global_social;
@@ -66,6 +67,21 @@ enum Command {
             value_delimiter = ','
         )]
         purge_origins: Vec<String>,
+    },
+    /// Build the site's game images from the game CDN and upload the new or changed ones.
+    GameArt {
+        /// Refreshed first; its cards decide which portraits are built.
+        #[arg(long, default_value = "master.mdb")]
+        master: PathBuf,
+        /// Report what would be built without downloading game files.
+        #[arg(long)]
+        dry_run: bool,
+        /// Build a few images per family into this folder instead of the bucket, to check them.
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+        /// Images per family with --out-dir.
+        #[arg(long, default_value_t = 3)]
+        sample: usize,
     },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
@@ -158,6 +174,10 @@ struct ServeArgs {
     /// How often the server checks CONFIRMED_BANNER_DATES_URL for edits.
     #[arg(long, env = "CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 60)]
     confirmed_banner_dates_refresh_interval_seconds: u64,
+    /// Build and upload new game images whenever the game version changes. Production only, so
+    /// one server writes the bucket.
+    #[arg(long, env = "GAME_ART_PUBLISH")]
+    publish_game_art: bool,
     /// Also write plain .json files beside the .json.gz artifacts during startup generation.
     #[arg(long)]
     write_json: bool,
@@ -180,6 +200,7 @@ impl Default for ServeArgs {
             confirmed_banner_dates_url: None,
             confirmed_banner_dates_path: None,
             confirmed_banner_dates_refresh_interval_seconds: 60,
+            publish_game_art: false,
             write_json: false,
             no_generate: false,
         }
@@ -233,6 +254,27 @@ async fn main() -> Result<()> {
             let summary = assets::publishAssets(&bucket, options).await?;
             if !dry_run {
                 assets::purgeOverwritten(&summary.overwritten, &purge_origins).await?;
+            }
+        }
+        Command::GameArt {
+            master,
+            dry_run,
+            out_dir,
+            sample,
+        } => {
+            let options = assets::GameArtOptions::fromEnv()?;
+            master_fetch::maybeUpdateMasterMdb(&master).await?;
+            let version = master_fetch::localResourceVersion(&master)
+                .context("master.mdb has no version marker")?;
+            match out_dir {
+                Some(folder) => {
+                    assets::buildGameArtSample(&options, &master, &version, &folder, sample)
+                        .await?;
+                }
+                None => {
+                    let bucket = assets::Bucket::fromEnv()?;
+                    assets::publishGameArt(&bucket, &options, &master, &version, dry_run).await?;
+                }
             }
         }
         Command::Refresh {
@@ -413,6 +455,9 @@ async fn serve(args: ServeArgs) -> Result<()> {
     }
 
     spawnRefreshLoop(args.clone());
+    if args.publish_game_art {
+        spawnGameArtLoop(args.refresh_interval_seconds, args.master.clone());
+    }
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
         (Some(url), Some(path)) => {
@@ -499,6 +544,46 @@ fn spawnRefreshLoop(args: ServeArgs) {
                 refreshFromGameVersion(&master, &data_dir, write_json, purge_on_refresh).await
             {
                 warn!(error = %error, "automatic master refresh failed");
+            }
+        }
+    });
+}
+
+#[allow(non_snake_case)]
+/// Publishes game art for the version of the local master.mdb, so the cards it reads always
+/// match the files it builds. The refresh loop moves that master to each new game version.
+fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf) {
+    let setup = assets::Bucket::fromEnv()
+        .and_then(|bucket| Ok((bucket, assets::GameArtOptions::fromEnv()?)));
+    let (bucket, options) = match setup {
+        Ok(setup) => setup,
+        Err(error) => {
+            warn!(error = %error, "game art publishing is on but not configured");
+            return;
+        }
+    };
+
+    info!(interval_seconds, "automatic game art publishing enabled");
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut published_version: Option<String> = None;
+
+        loop {
+            interval.tick().await;
+
+            let Some(version) = master_fetch::localResourceVersion(&master) else {
+                warn!(master = %master.display(), "game art waits for a master.mdb version marker");
+                continue;
+            };
+            if published_version.as_ref() == Some(&version) {
+                continue;
+            }
+
+            match assets::publishGameArt(&bucket, &options, &master, &version, false).await {
+                Ok(summary) if summary.isComplete() => published_version = Some(version),
+                Ok(_) => {}
+                Err(error) => warn!(error = %error, "game art publishing failed"),
             }
         }
     });

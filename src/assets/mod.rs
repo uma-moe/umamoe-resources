@@ -2,11 +2,13 @@
 #![allow(non_snake_case)]
 
 mod bucket;
+mod game_art;
 #[path = "../types/assets.rs"]
 mod types;
 
 use crate::cache;
 use anyhow::{bail, Context, Result};
+pub use game_art::{buildGameArtSample, publishGameArt, GameArtOptions};
 use std::path::{Path, PathBuf};
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};

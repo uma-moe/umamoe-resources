@@ -407,6 +407,27 @@ cargo run -- assets-publish --dir <web root>/game-assets --prefix game-assets --
 
 Files go to the `umamoe-assets` bucket at `ASSETS_S3_ENDPOINT`, signed with `ASSETS_S3_REGION` (default `auto`), `ASSETS_S3_ACCESS_KEY_ID` and `ASSETS_S3_SECRET_ACCESS_KEY`. Use an R2 token with Object Read & Write on that bucket only. In production the deploy writes these from GitHub secrets (see [Docker Deployment](#docker-deployment)).
 
+## Game Art
+
+Production builds the site's game images itself. Whenever the game version changes, it reads the game's file list, picks the files the site serves (character icons, card portraits, support cards, skill icons, race banners, rank text, item icons; see `ART_FAMILIES` in `src/types/game_art.rs`), and builds only those that are new or changed: download, decrypt, convert to WebP with `scripts/game_art_convert.py`, upload to the same URL paths, purge URLs that already had an image.
+
+- It publishes for the version of the local `master.mdb`, which the refresh loop keeps current. Card portraits come from that master: the game names each portrait by the outfit it shows, and `card_rarity_data.race_dress_id` says which outfit each card wears, so card 100102 can show outfit 100130.
+- The game squeezes textures to powers of two (a 3:4 support card is stored as 2048×2048), so every output is resized to the size the site serves. Character icons are narrower than their 256×256 canvas and are centred on it.
+- What was published is recorded in the bucket at `_state/game-art.json` (game file, source, checksum, converter revision, output paths), so a run with no changes downloads no game files, and a new card that wears an existing outfit still gets its portrait. The first run builds everything.
+- Raising `CONVERTER_REVISION` rebuilds every image once.
+- A file that does not convert is recorded and skipped until the game changes it; a file that fails to download is retried on the next check.
+- Decrypted bundles and converted images live in a temporary folder that is removed after each run and at startup.
+- Sources merge in precedence order. Global is the only source today; JP joins after it once there is a JP version check, filling in files Global does not have yet, and Global replaces them as soon as it lists them.
+- Only production publishes (`GAME_ART_PUBLISH=true`), so one server writes the bucket. It needs `GAME_ASSET_KEY` (the game's asset bundle key, hex) besides the bucket settings.
+
+Check conversions without the bucket, using the Docker image (it has the converter):
+
+```powershell
+docker run --rm --env-file .env -v ${PWD}/art-sample:/out -v ${PWD}/art-master:/work umamoe-resources game-art --master /work/master.mdb --out-dir /out --sample 3
+```
+
+`game-art --dry-run` lists what the next run would build; `game-art` runs it once.
+
 ## Local Docker
 
 For local containerized development, use [compose.yaml](compose.yaml). It builds the service image, starts Redis, mounts your local `master.mdb` and `generated-data`, and exposes the API on `127.0.0.1:3000`.
@@ -476,6 +497,8 @@ Asset bucket secrets. The R2 token only accepts the deploy host's IP, which beta
 - `R2_ASSETS_SECRET_ACCESS_KEY`
 
 Set all three or none. Without them a deploy writes an empty `assets.env` and the container cannot publish images; deleting them removes the key from the host on the next deploy.
+
+`GAME_ASSET_KEY` (the game's asset bundle key as hex, UmaViewer's `ABKeyText`) goes into the same file. Production needs it to build game art.
 
 Manual remote `env` files should contain the normal application env values only:
 
