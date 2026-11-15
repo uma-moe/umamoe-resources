@@ -37,14 +37,15 @@ pub(super) async fn loadState(
         StoredShards::Links(links) => (links.into_iter().map(|link| link.name).collect(), true),
         StoredShards::Counts(counts) => (counts.into_keys().collect(), false),
     };
-    let files = loadShards(client, bucket, stored_shards.clone()).await?;
+    let shards = loadShards(client, bucket, stored_shards.clone()).await?;
+    let has_moved_records = hasMovedRecords(&shards);
     let state = ArtState {
         resource_version: index.resource_version,
-        files,
+        files: shards.into_values().flatten().collect(),
     };
 
     let obsolete_keys = obsoleteShardKeys(&state, &stored_shards);
-    let layout = if linked && obsolete_keys.is_empty() {
+    let layout = if linked && obsolete_keys.is_empty() && !has_moved_records {
         StateLayout::Current
     } else {
         StateLayout::Outdated { obsolete_keys }
@@ -96,6 +97,13 @@ fn obsoleteShardKeys(state: &ArtState, stored_shards: &[String]) -> Vec<String> 
         .collect()
 }
 
+/// Whether a stored shard holds a record that belongs to another shard now.
+fn hasMovedRecords(shards: &BTreeMap<String, BTreeMap<String, PublishedArt>>) -> bool {
+    shards
+        .iter()
+        .any(|(shard, files)| files.keys().any(|name| shardName(name) != shard))
+}
+
 /// The records of every `changed` shard, and the index linking all shards.
 fn shardRecords<'a>(
     state: &'a ArtState,
@@ -133,13 +141,13 @@ fn shardRecords<'a>(
     (shards, index)
 }
 
-/// Reads the listed shards. A shard that has gone missing reads as empty, so its files are
-/// rebuilt instead of stopping every run.
+/// Reads the listed shards' records by shard. A shard that has gone missing reads as empty, so
+/// its files are rebuilt instead of stopping every run.
 async fn loadShards(
     client: &reqwest::Client,
     bucket: &Bucket,
     shards: Vec<String>,
-) -> Result<BTreeMap<String, PublishedArt>> {
+) -> Result<BTreeMap<String, BTreeMap<String, PublishedArt>>> {
     let mut files = BTreeMap::new();
     let mut pending = shards.into_iter();
     let mut tasks = JoinSet::new();
@@ -155,18 +163,19 @@ async fn loadShards(
                 let key = shardKey(&shard);
                 let Some(bytes) = bucket.getObject(&client, &key).await? else {
                     warn!(key, "a game art shard named in the index is missing");
-                    return anyhow::Ok(BTreeMap::new());
+                    return anyhow::Ok((shard, BTreeMap::new()));
                 };
-                let shard: StateShard<PublishedArt> = serde_json::from_slice(&bytes)
+                let records: StateShard<PublishedArt> = serde_json::from_slice(&bytes)
                     .with_context(|| format!("{key} is not valid JSON"))?;
-                anyhow::Ok(shard.files)
+                anyhow::Ok((shard, records.files))
             });
         }
 
         let Some(joined) = tasks.join_next().await else {
             break;
         };
-        files.extend(joined??);
+        let (shard, records) = joined??;
+        files.insert(shard, records);
     }
 
     Ok(files)
@@ -228,9 +237,10 @@ mod tests {
             shardName("supportcard/support10001/tex_support_card_10001"),
             "supportcard"
         );
+        assert_eq!(shardName("3d/env/race/race10001"), "racetracks");
         assert_eq!(
             shardName("3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002"),
-            "racetracks"
+            "racetrack-parts"
         );
         assert_eq!(
             shardName("3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112"),
@@ -279,6 +289,22 @@ mod tests {
         let obsolete_keys = obsoleteShardKeys(&state, &stored_shards);
 
         assert_eq!(obsolete_keys, vec!["_state/game-art/chara/chr1001.json"]);
+    }
+
+    #[test]
+    fn recordsKeptInAnotherShardHaveMoved() {
+        let part = "3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002";
+        let in_place = BTreeMap::from([(
+            "racetrack-parts".to_string(),
+            BTreeMap::from([(part.to_string(), record(1))]),
+        )]);
+        let in_earlier_shard = BTreeMap::from([(
+            "racetracks".to_string(),
+            BTreeMap::from([(part.to_string(), record(1))]),
+        )]);
+
+        assert!(!hasMovedRecords(&in_place));
+        assert!(hasMovedRecords(&in_earlier_shard));
     }
 
     #[test]

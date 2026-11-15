@@ -1,4 +1,4 @@
-"""Exports a Unity prefab, with the meshes and materials it draws, as a binary glTF (GLB).
+"""Exports Unity prefabs, with the meshes and materials they draw, as one binary glTF (GLB).
 
 Unity is left-handed and glTF right-handed, so X is mirrored: positions and normals negate X,
 rotations negate Y and Z, and triangles reverse their winding. Unity's UV origin is the
@@ -11,7 +11,8 @@ number and colour is kept in `extras.unity`, each slot naming its glTF texture. 
 materials (turf, dirt, base) are left empty in the game files and filled at runtime with one
 season and weather variant of their part's textures: the first variant is embedded in those
 slots, and every variant is listed in `extras.unity.variants` as links to the separately
-published textures, relative to the model's URL. Vertex colours, which those shaders read in
+published textures, relative to the model's URL. Several prefabs, such as a racecourse's track,
+trees, stands and sky, are placed side by side in their own coordinates. Vertex colours, which those shaders read in
 their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard viewers do not tint
 the model by them.
 """
@@ -43,8 +44,9 @@ REPEAT = 10497
 WRAP_MODES = {0: REPEAT, 1: 33071, 2: 33648, 3: 33648}
 IDENTITY_UV_TRANSFORM = {"scale": [1.0, 1.0], "offset": [0.0, 0.0]}
 
-# `tex_env_race10001_0000_112_turf00` and its `_sub` texture: variant 112, kind turf00.
-RUNTIME_TEXTURE_NAME = re.compile(r"_(\d{3})_([a-z]+\d+)(_sub)?$")
+# `tex_env_race10001_0000_112_turf00` and its `_sub` texture: part race10001_0000, variant 112,
+# kind turf00.
+RUNTIME_TEXTURE_NAME = re.compile(r"^tex_env_(race\d+_[a-z0-9]+)_(\d{3})_([a-z]+\d+)(_sub)?$")
 
 JSON_CHUNK = 0x4E4F534A
 BIN_CHUNK = 0x004E4942
@@ -382,15 +384,16 @@ class PrefabExporter:
         return index
 
     def runtime_variants(self, material_name: str) -> dict[str, dict[str, dict[str, str]]]:
-        """The part's textures the game puts in this material's `_MainTex` and `_SubTex`, by
-        variant: those whose kind (turf00, dirt00, base00) the material is named after."""
+        """The textures the game puts in this material's `_MainTex` and `_SubTex`, by variant:
+        those of the part and kind (turf00, dirt00, base00) the material is named after."""
         variants: dict[str, dict[str, dict[str, str]]] = {}
         for texture in self.runtime_textures:
-            match = RUNTIME_TEXTURE_NAME.search(posixpath.basename(texture["name"]))
+            match = RUNTIME_TEXTURE_NAME.match(posixpath.basename(texture["name"]))
             if match is None:
                 continue
-            variant, kind, sub = match.groups()
-            if f"_{kind}" not in material_name:
+            part, variant, kind, sub = match.groups()
+            is_named_after = f"env_{part}_" in material_name and f"_{kind}" in material_name
+            if not is_named_after:
                 continue
             slot = "_SubTex" if sub else "_MainTex"
             variants.setdefault(variant, {})[slot] = texture
@@ -467,21 +470,23 @@ def prefab_roots(environment: Any, bundle_path: str) -> list[Any]:
     return [transform for transform in transforms if transform.m_Father.m_PathID == 0]
 
 
-def export_prefab(
+def export_model(
     environment: Any,
-    bundle_path: str,
-    output: dict[str, Any],
+    prefabs: list[dict[str, str]],
     runtime_textures: list[dict[str, str]],
+    output: dict[str, Any],
 ) -> None:
-    """Writes `output["path"]`, a GLB with every texture it draws embedded."""
+    """Writes `output["path"]`, a GLB of the prefabs ({"object", "bundle"}) with every texture
+    they draw embedded."""
     exporter = PrefabExporter(environment, output["key"], runtime_textures)
-    roots = prefab_roots(environment, bundle_path)
-    if not roots:
-        raise ValueError("the bundle holds no prefab")
-
-    named = [root for root in roots if root.m_GameObject.read().m_Name == output["object"]]
     scene_nodes = exporter.gltf.document["scenes"][0]["nodes"]
-    for root in named or roots:
-        scene_nodes.append(exporter.node(root))
+    for prefab in prefabs:
+        roots = prefab_roots(environment, prefab["bundle"])
+        if not roots:
+            raise ValueError(f"{prefab['object']} holds no prefab")
+
+        named = [root for root in roots if root.m_GameObject.read().m_Name == prefab["object"]]
+        for root in named or roots:
+            scene_nodes.append(exporter.node(root))
 
     exporter.gltf.write(output["path"])

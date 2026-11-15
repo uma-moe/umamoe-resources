@@ -180,12 +180,12 @@ async fn runJobs(
             let error = match outcome {
                 JobOutcome::NotDownloaded(error) => {
                     summary.download_failures += 1;
-                    warn!(file = job.entry.name, error, "game art download failed");
+                    warn!(file = job.name, error, "game art download failed");
                     continue;
                 }
                 JobOutcome::Unconvertible(error) => {
                     summary.conversion_failures += 1;
-                    warn!(file = job.entry.name, error, "game art does not convert");
+                    warn!(file = job.name, error, "game art does not convert");
                     Some(error)
                 }
                 JobOutcome::Built { outputs } => {
@@ -196,7 +196,7 @@ async fn runJobs(
             };
             if let Some(state) = state.as_deref_mut() {
                 let record = publishedRecord(job, error);
-                if let Some(replaced) = state.files.insert(job.entry.name.clone(), record) {
+                if let Some(replaced) = state.files.insert(job.name.clone(), record) {
                     dropped_textures.extend(replaced.textures);
                 }
             }
@@ -207,7 +207,7 @@ async fn runJobs(
         if let (ArtDestination::Bucket(bucket), Some(state)) = (&destination, state.as_deref()) {
             let changed = batch
                 .iter()
-                .map(|job| shardName(&job.entry.name).to_string())
+                .map(|job| shardName(&job.name).to_string())
                 .collect();
             saveState(client, bucket, state, &changed).await?;
             removeUnlistedTextures(client, bucket, state, &dropped_textures).await?;
