@@ -58,13 +58,16 @@ pub(super) fn objectName(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)
 }
 
-/// Each playable card and the outfit its portrait shows, at the rarity it starts with.
+/// Each playable card and the outfit its portrait shows. Cards that start below 3★ wear the
+/// shared uniform until then, so the card's own outfit is the one at its top rarity.
 fn cardOutfits(connection: &Connection) -> Result<Vec<CardOutfit>> {
     let mut statement = connection.prepare(
         "SELECT card.chara_id, card.id, rarity.race_dress_id
          FROM card_data card
-         JOIN card_rarity_data rarity
-           ON rarity.card_id = card.id AND rarity.rarity = card.default_rarity
+         JOIN card_rarity_data rarity ON rarity.card_id = card.id
+         WHERE rarity.rarity = (
+           SELECT MAX(top.rarity) FROM card_rarity_data top WHERE top.card_id = card.id
+         )
          ORDER BY card.id",
     )?;
     let rows = statement.query_map([], |row| {
@@ -266,14 +269,16 @@ mod tests {
     }
 
     #[test]
-    fn cardOutfitsComeFromTheStartingRarity() {
+    fn cardOutfitsComeFromTheTopRarity() {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
                 "CREATE TABLE card_data (id INTEGER, chara_id INTEGER, default_rarity INTEGER);
                  CREATE TABLE card_rarity_data (card_id INTEGER, rarity INTEGER, race_dress_id INTEGER);
-                 INSERT INTO card_data VALUES (100102, 1001, 3), (9100101, 1001, 0);
-                 INSERT INTO card_rarity_data VALUES (100102, 3, 100130), (100102, 5, 100130);",
+                 INSERT INTO card_data VALUES (100102, 1001, 3), (100701, 1007, 2), (9100101, 1001, 0);
+                 INSERT INTO card_rarity_data VALUES
+                   (100102, 3, 100130), (100102, 5, 100130),
+                   (100701, 2, 101), (100701, 3, 100701), (100701, 5, 100701);",
             )
             .unwrap();
 
@@ -283,6 +288,6 @@ mod tests {
             .iter()
             .map(|outfit| (outfit.card, outfit.dress))
             .collect();
-        assert_eq!(pairs, vec![(100102, 100130)]);
+        assert_eq!(pairs, vec![(100102, 100130), (100701, 100701)]);
     }
 }
