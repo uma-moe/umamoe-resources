@@ -23,6 +23,8 @@ env:
   BETA_CONTAINER_NAME: umamoe-resources-beta
   PROD_ENV_FILE: /opt/umamoe-resources/env
   BETA_ENV_FILE: /opt/umamoe-resources-beta/env
+  PROD_ASSETS_ENV_FILE: /opt/umamoe-resources/assets.env
+  BETA_ASSETS_ENV_FILE: /opt/umamoe-resources-beta/assets.env
   PROD_CONFIG_DIR: /opt/umamoe-resources/config
   BETA_CONFIG_DIR: /opt/umamoe-resources-beta/config
   PROD_DATA_VOLUME: umamoe-resources-data
@@ -218,6 +220,47 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Write asset bucket credentials
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          ASSETS_ENV_FILE: ${{ env.BETA_ASSETS_ENV_FILE }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
+          R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          secret_names=(R2_ENDPOINT R2_ASSETS_ACCESS_KEY_ID R2_ASSETS_SECRET_ACCESS_KEY)
+          missing=()
+          for name in "${secret_names[@]}"; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              missing+=("$name")
+            elif [[ "$value" =~ [[:space:]] ]]; then
+              echo "$name must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+          done
+
+          # The file is rewritten on every deploy, so deleting the secrets also takes the key off the host.
+          if [ "${#missing[@]}" -eq "${#secret_names[@]}" ]; then
+            echo "::warning::R2 asset secrets are not set; the container starts without bucket access."
+            env_contents=""
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing R2 asset secrets: ${missing[*]}" >&2
+            exit 1
+          else
+            env_contents="$(printf '%s=%s\n' \
+              ASSETS_S3_ENDPOINT "$R2_ENDPOINT" \
+              ASSETS_S3_ACCESS_KEY_ID "$R2_ASSETS_ACCESS_KEY_ID" \
+              ASSETS_S3_SECRET_ACCESS_KEY "$R2_ASSETS_SECRET_ACCESS_KEY")"
+          fi
+
+          printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "umask 077 && cat > '$ASSETS_ENV_FILE.tmp' && mv '$ASSETS_ENV_FILE.tmp' '$ASSETS_ENV_FILE'"
+
       - name: Deploy beta container
         shell: bash
         env:
@@ -230,6 +273,7 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
+          ASSETS_ENV_FILE: ${{ env.BETA_ASSETS_ENV_FILE }}
           CONFIG_DIR: ${{ env.BETA_CONFIG_DIR }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
           HISTORY_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
@@ -246,7 +290,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" "$ASSETS_ENV_FILE" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -263,11 +307,14 @@ jobs:
           shared_service_alias="${12}"
           auth_internal_base_url="${13}"
           history_volume_name="${14}"
+          assets_env_file="${15}"
 
-          if [ ! -f "$env_file" ]; then
-            echo "Missing container env file: $env_file" >&2
-            exit 1
-          fi
+          for required_env_file in "$env_file" "$assets_env_file"; do
+            if [ ! -f "$required_env_file" ]; then
+              echo "Missing container env file: $required_env_file" >&2
+              exit 1
+            fi
+          done
 
           gzip -dc "$archive" | docker load
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
@@ -283,6 +330,7 @@ jobs:
             --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            --env-file "$assets_env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
@@ -383,6 +431,47 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Write asset bucket credentials
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          ASSETS_ENV_FILE: ${{ env.PROD_ASSETS_ENV_FILE }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
+          R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+
+          secret_names=(R2_ENDPOINT R2_ASSETS_ACCESS_KEY_ID R2_ASSETS_SECRET_ACCESS_KEY)
+          missing=()
+          for name in "${secret_names[@]}"; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              missing+=("$name")
+            elif [[ "$value" =~ [[:space:]] ]]; then
+              echo "$name must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+          done
+
+          # The file is rewritten on every deploy, so deleting the secrets also takes the key off the host.
+          if [ "${#missing[@]}" -eq "${#secret_names[@]}" ]; then
+            echo "::warning::R2 asset secrets are not set; the container starts without bucket access."
+            env_contents=""
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing R2 asset secrets: ${missing[*]}" >&2
+            exit 1
+          else
+            env_contents="$(printf '%s=%s\n' \
+              ASSETS_S3_ENDPOINT "$R2_ENDPOINT" \
+              ASSETS_S3_ACCESS_KEY_ID "$R2_ASSETS_ACCESS_KEY_ID" \
+              ASSETS_S3_SECRET_ACCESS_KEY "$R2_ASSETS_SECRET_ACCESS_KEY")"
+          fi
+
+          printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "umask 077 && cat > '$ASSETS_ENV_FILE.tmp' && mv '$ASSETS_ENV_FILE.tmp' '$ASSETS_ENV_FILE'"
+
       - name: Deploy production container
         shell: bash
         env:
@@ -395,6 +484,7 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.PROD_ENV_FILE }}
+          ASSETS_ENV_FILE: ${{ env.PROD_ASSETS_ENV_FILE }}
           CONFIG_DIR: ${{ env.PROD_CONFIG_DIR }}
           DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
           CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
@@ -410,7 +500,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$ASSETS_ENV_FILE" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -426,11 +516,14 @@ jobs:
           shared_network_name="${11}"
           shared_service_alias="${12}"
           auth_internal_base_url="${13}"
+          assets_env_file="${14}"
 
-          if [ ! -f "$env_file" ]; then
-            echo "Missing container env file: $env_file" >&2
-            exit 1
-          fi
+          for required_env_file in "$env_file" "$assets_env_file"; do
+            if [ ! -f "$required_env_file" ]; then
+              echo "Missing container env file: $required_env_file" >&2
+              exit 1
+            fi
+          done
 
           gzip -dc "$archive" | docker load
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
@@ -444,6 +537,7 @@ jobs:
             --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            --env-file "$assets_env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
