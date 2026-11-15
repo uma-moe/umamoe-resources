@@ -392,6 +392,21 @@ You can purge them manually from the latest manifest:
 cargo run -- purge --data-dir generated-data
 ```
 
+## Publish Images
+
+`assets-publish` uploads a folder of images to the asset bucket (Cloudflare R2 in production). The site routes its image paths to that bucket, so the key prefix is the URL path the files are served under:
+
+```powershell
+cargo run -- assets-publish --dir <web root>/game-assets --prefix game-assets --dry-run
+```
+
+- A file is uploaded only when the bucket has no object at its key or holds different bytes, so a second run over the same folder uploads nothing.
+- Nothing is ever deleted from the bucket.
+- `--dry-run` compares against the bucket and reports what would change.
+- Replaced files are purged from Cloudflare on every `--purge-origin` (or `ASSETS_PURGE_ORIGINS`, comma separated). New files need no purge.
+
+Files go to the `umamoe-assets` bucket at `ASSETS_S3_ENDPOINT`, signed with `ASSETS_S3_REGION` (default `auto`), `ASSETS_S3_ACCESS_KEY_ID` and `ASSETS_S3_SECRET_ACCESS_KEY`. Use an R2 token with Object Read & Write on that bucket only. In production the deploy writes these from GitHub secrets (see [Docker Deployment](#docker-deployment)).
+
 ## Local Docker
 
 For local containerized development, use [compose.yaml](compose.yaml). It builds the service image, starts Redis, mounts your local `master.mdb` and `generated-data`, and exposes the API on `127.0.0.1:3000`.
@@ -424,6 +439,7 @@ What the workflow in [.github/workflows/docker-deploy.yml](.github/workflows/doc
 - Copies the image archive to the remote host
 - Recreates the target container with `docker run`
 - Leaves your manual runtime env files alone
+- Writes the asset bucket credentials to `assets.env` (mode 600) next to each manual `env` file
 
 Manual runtime env files on the remote host:
 
@@ -452,6 +468,14 @@ Required GitHub secrets:
 - `DEPLOY_PORT` optional, defaults to `22`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_KNOWN_HOSTS`
+
+Asset bucket secrets. The R2 token only accepts the deploy host's IP, which beta and production share:
+
+- `R2_ENDPOINT`: `https://<account id>.r2.cloudflarestorage.com`, without the bucket name
+- `R2_ASSETS_ACCESS_KEY_ID`
+- `R2_ASSETS_SECRET_ACCESS_KEY`
+
+Set all three or none. Without them a deploy writes an empty `assets.env` and the container cannot publish images; deleting them removes the key from the host on the next deploy.
 
 Manual remote `env` files should contain the normal application env values only:
 

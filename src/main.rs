@@ -46,22 +46,26 @@ enum Command {
         #[arg(long)]
         write_json: bool,
     },
-    /// Publish the extracted game artwork: a content-addressed manifest, and optionally an upload
-    /// of every object to an S3-compatible bucket.
+    /// Upload a folder of images to the asset bucket, skipping files whose bytes are already there.
     AssetsPublish {
-        /// Directory holding the extracted artwork, laid out the way the frontend requests it.
+        /// Folder whose files are uploaded, keeping their paths below it.
         #[arg(long)]
         dir: PathBuf,
-        #[arg(long, default_value = "generated-data")]
-        out: PathBuf,
-        /// Base URL the frontend puts in front of every object key, such as https://assets.uma.moe
-        #[arg(long, env = "ASSETS_PUBLIC_BASE", default_value = "")]
-        base: String,
-        /// Write the manifest without uploading anything.
+        /// Key prefix in the bucket, which is also the URL path, such as game-assets.
+        #[arg(long)]
+        prefix: String,
+        /// Compare against the bucket and report what would change, without uploading.
         #[arg(long)]
         dry_run: bool,
         #[arg(long, default_value_t = 16)]
         concurrency: usize,
+        /// Site origin whose copies of replaced files are purged, such as https://uma.moe.
+        #[arg(
+            long = "purge-origin",
+            env = "ASSETS_PURGE_ORIGINS",
+            value_delimiter = ','
+        )]
+        purge_origins: Vec<String>,
     },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
@@ -214,27 +218,22 @@ async fn main() -> Result<()> {
         }
         Command::AssetsPublish {
             dir,
-            out,
-            base,
+            prefix,
             dry_run,
             concurrency,
+            purge_origins,
         } => {
-            let summary = assets::publish(assets::PublishOptions {
+            let bucket = assets::Bucket::fromEnv()?;
+            let options = assets::PublishOptions {
                 source_dir: dir,
-                data_dir: out,
-                base,
-                upload: !dry_run,
+                key_prefix: prefix,
+                dry_run,
                 concurrency,
-            })
-            .await?;
-            info!(
-                version = summary.version,
-                files = summary.count,
-                bytes = summary.bytes,
-                uploaded = summary.uploaded,
-                skipped = summary.skipped,
-                "published assets"
-            );
+            };
+            let summary = assets::publishAssets(&bucket, options).await?;
+            if !dry_run {
+                assets::purgeOverwritten(&summary.overwritten, &purge_origins).await?;
+            }
         }
         Command::Refresh {
             database_url: _,
