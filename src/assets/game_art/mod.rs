@@ -2,6 +2,7 @@
 
 mod build;
 mod catalog;
+mod cleanup;
 mod plan;
 mod race_motions;
 mod state;
@@ -15,9 +16,12 @@ use crate::game_cdn::{self, CdnSource, ManifestEntry, GLOBAL_CDN};
 use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
-use plan::{planJobs, publishedRecord};
+use cleanup::{
+    deleteKeys, isSuspiciousOrphanCount, plannedDeletions, recordKeys, removeRecords, unlistedKeys,
+};
+use plan::{orphanedRecords, planJobs, publishedRecord};
 use state::{loadState, rewriteState, saveState, shardName};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -57,8 +61,9 @@ impl GameArtSummary {
 }
 
 /// Builds and uploads every catalogued image that is new or changed for this resource version,
-/// whose cards are read from `master`. Plans again even for a version already handled, so a
-/// catalog change in a deploy takes effect without waiting for a game update.
+/// whose cards are read from `master`, then deletes what it published that no record lists any
+/// more. Plans again even for a version already handled, so a catalog change in a deploy takes
+/// effect without waiting for a game update.
 pub async fn publishGameArt(
     bucket: &Bucket,
     options: &GameArtOptions,
@@ -77,11 +82,16 @@ pub async fn publishGameArt(
     let catalog = Catalog::load(master)?;
     let sources = listSources(&client, resource_version).await?;
     let jobs = planJobs(&sources, &catalog, &state);
+    let orphans = removableOrphans(orphanedRecords(&sources, &catalog, &state), &state);
     let mut summary = GameArtSummary::default();
     for (folder, count) in countByFolder(&jobs) {
         info!(folder, count, dry_run, "game art to build");
     }
     if dry_run {
+        for key in plannedDeletions(&state, &jobs, &orphans) {
+            info!(key, "game art to delete");
+        }
+        info!(orphans = orphans.len(), "game art records to remove");
         return Ok(summary);
     }
 
@@ -94,6 +104,7 @@ pub async fn publishGameArt(
         &mut summary,
     )
     .await?;
+    removeOrphans(&client, bucket, options, &mut state, &orphans, &mut summary).await?;
 
     if summary.isComplete() {
         state.resource_version = Some(resource_version.to_string());
@@ -185,7 +196,7 @@ async fn runJobs(
     for batch in jobs.chunks(CONVERT_BATCH_SIZE) {
         let outcomes = buildBatch(client, &work, batch, &base_key).await?;
         let mut files = BTreeMap::new();
-        let mut dropped_textures = BTreeSet::new();
+        let mut stale_keys = BTreeSet::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
             let error = match outcome {
@@ -208,21 +219,26 @@ async fn runJobs(
             if let Some(state) = state.as_deref_mut() {
                 let record = publishedRecord(job, error);
                 if let Some(replaced) = state.files.insert(job.name.clone(), record) {
-                    dropped_textures.extend(replaced.textures);
+                    stale_keys.extend(recordKeys(&replaced).cloned());
                 }
             }
         }
 
         summary.uploaded += files.len();
-        let replaced = deliver(client, &destination, files).await?;
+        let mut changed_urls = deliver(client, &destination, files).await?;
         if let (ArtDestination::Bucket(bucket), Some(state)) = (&destination, state.as_deref()) {
+            // Deleted before the state is saved, so a failed run deletes them again next time.
+            let deleted = unlistedKeys(state, stale_keys);
+            deleteKeys(client, bucket, &deleted).await?;
+            summary.deleted += deleted.len();
+
             let changed = batch
                 .iter()
                 .map(|job| shardName(&job.name).to_string())
                 .collect();
             saveState(client, bucket, state, &changed).await?;
-            removeUnlistedTextures(client, bucket, state, &dropped_textures).await?;
-            purgeOverwritten(&replaced, &options.purge_origins).await?;
+            changed_urls.extend(deleted);
+            purgeOverwritten(&changed_urls, &options.purge_origins).await?;
         }
     }
 
@@ -278,27 +294,49 @@ async fn deliver(
     Ok(replaced)
 }
 
-/// Deletes textures earlier converters wrote beside a model once no record lists them, unless
-/// they are another file's output.
-async fn removeUnlistedTextures(
+/// The orphans to remove, or none when there are so many that the file list is more likely
+/// incomplete.
+fn removableOrphans(orphans: Vec<String>, state: &ArtState) -> Vec<String> {
+    if isSuspiciousOrphanCount(orphans.len(), state.files.len()) {
+        warn!(
+            orphans = orphans.len(),
+            records = state.files.len(),
+            "too many game art records look orphaned; none are removed"
+        );
+        return Vec::new();
+    }
+    orphans
+}
+
+/// Drops the records of files the catalog no longer builds and deletes what only they listed.
+async fn removeOrphans(
     client: &reqwest::Client,
     bucket: &Bucket,
-    state: &ArtState,
-    dropped: &BTreeSet<String>,
+    options: &GameArtOptions,
+    state: &mut ArtState,
+    orphans: &[String],
+    summary: &mut GameArtSummary,
 ) -> Result<()> {
-    if dropped.is_empty() {
+    if orphans.is_empty() {
         return Ok(());
     }
 
-    let listed: HashSet<&str> = state
-        .files
-        .values()
-        .flat_map(|record| record.textures.iter().chain(&record.outputs))
-        .map(String::as_str)
+    let stale_keys = removeRecords(state, orphans);
+    let deleted = unlistedKeys(state, stale_keys);
+    deleteKeys(client, bucket, &deleted).await?;
+    summary.deleted += deleted.len();
+
+    let changed = orphans
+        .iter()
+        .map(|name| shardName(name).to_string())
         .collect();
-    for key in dropped.iter().filter(|key| !listed.contains(key.as_str())) {
-        bucket.deleteObject(client, key).await?;
-    }
+    saveState(client, bucket, state, &changed).await?;
+    purgeOverwritten(&deleted, &options.purge_origins).await?;
+    info!(
+        records = orphans.len(),
+        deleted = deleted.len(),
+        "removed game art the catalog no longer builds"
+    );
     Ok(())
 }
 
