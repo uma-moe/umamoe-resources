@@ -2,10 +2,12 @@
 //! file and an index linking them.
 
 use super::catalog::trackGroup;
+use super::race_motions::raceMotion;
 use super::types::{
     ArtState, PublishedArt, ShardLink, StateIndex, StateLayout, StateShard, StoredIndex,
     StoredShards, STATE_FOLDER, UPLOAD_CONCURRENCY,
 };
+use super::umas::isUmaRecord;
 use crate::assets::Bucket;
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -14,11 +16,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// Track scenery by its kind, `racetracks` or `skyboxes`; every other file by its top folder,
-/// `chara` for `chara/chr1001/chr_icon_1001`.
+/// Track scenery by its kind, `racetracks` or `skyboxes`, umas and race motions apart; every
+/// other file by its top folder, `chara` for `chara/chr1001/chr_icon_1001`.
 pub(super) fn shardName(name: &str) -> &str {
     if let Some(group) = trackGroup(name) {
         return group;
+    }
+    if isUmaRecord(name) {
+        return "umas";
+    }
+    if raceMotion(name).is_some() {
+        return "uma-motions";
     }
     name.split_once('/').map_or(name, |(top, _)| top)
 }
@@ -247,6 +255,15 @@ mod tests {
             "skyboxes"
         );
         assert_eq!(shardName("shader"), "shader");
+    }
+
+    #[test]
+    fn umasAndRaceMotionsHaveShardsOfTheirOwn() {
+        let uma = shardName("3d/chara/body/bdy1001_00");
+        let motion = shardName("3d/motion/racemain/body/type01/anm_rac_type01_run03_base");
+
+        assert_eq!(uma, "umas");
+        assert_eq!(motion, "uma-motions");
     }
 
     #[test]

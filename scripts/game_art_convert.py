@@ -8,11 +8,16 @@ The resources service decrypts each bundle and sends a job list as JSON on stdin
 the meshes, materials and textures a track prefab draws.
 `size` null keeps the picture's own size. `art_size` is the art's real shape when it is centred
 on a larger served canvas.
-A `glb` output exports the job's `model` with `game_art_model`, its textures embedded:
-{"prefabs": [{"object", "bundle"}], "runtime_textures": [{"name", "key", "bundle"}]}. The prefabs
-are drawn side by side, such as a racecourse's track, trees, stands and sky. The runtime textures
-are the season and weather textures the game puts on their course materials. Each `bundle` is the
-job's own or one of its `dependencies`.
+A `glb` output exports the job's `model`, its textures embedded, by its `kind`:
+- "scenery", with `game_art_model`: {"prefabs": [{"object", "bundle"}], "runtime_textures":
+  [{"name", "key", "bundle"}]}. The prefabs are drawn side by side, such as a racecourse's track,
+  trees, stands and sky. The runtime textures are the season and weather textures the game puts
+  on their course materials.
+- "uma", with `game_art_uma`: {"title", "prefabs", "tail_textures": [{"slot", "bundle"}],
+  "traits"}, an outfit's body, head and tail joined in a T-pose.
+- "motion", with `game_art_uma`: {"title", "skeleton": prefabs}, the job's own bundle, a race
+  clip, on the skeleton every uma shares.
+Each `bundle` is the job's own or one of its `dependencies`.
 It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
 """
@@ -26,6 +31,7 @@ import UnityPy
 from PIL import Image
 
 from game_art_model import export_model
+from game_art_uma import export_motion, export_uma
 
 WEBP_QUALITY = 90
 
@@ -86,6 +92,19 @@ def save_image(image: Image.Image, output: dict[str, Any]) -> None:
     image.save(output["path"], "WEBP", quality=WEBP_QUALITY, method=6)
 
 
+def export_glb(environment: Any, job: dict[str, Any], output: dict[str, Any]) -> None:
+    model = job["model"]
+    kind = model["kind"]
+    if kind == "scenery":
+        export_model(environment, model["prefabs"], model["runtime_textures"], output)
+    elif kind == "uma":
+        export_uma(environment, model, output)
+    elif kind == "motion":
+        export_motion(environment, job["bundle"], model, output)
+    else:
+        raise ValueError(f"unknown model kind {kind!r}")
+
+
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
     try:
         bundle_paths = [job["bundle"], *job.get("dependencies", [])]
@@ -95,8 +114,7 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
         written = []
         for output in job["outputs"]:
             if output["format"] == "glb":
-                model = job["model"]
-                export_model(environment, model["prefabs"], model["runtime_textures"], output)
+                export_glb(environment, job, output)
             else:
                 images = images or read_images(environment)
                 save_image(pick_image(*images, output["object"]), output)

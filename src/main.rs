@@ -82,6 +82,9 @@ enum Command {
         /// Images per family with --out-dir.
         #[arg(long, default_value_t = 3)]
         sample: usize,
+        /// With --out-dir, only files served below this key prefix, such as game-assets/umas/.
+        #[arg(long)]
+        only: Option<String>,
     },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
@@ -261,6 +264,7 @@ async fn main() -> Result<()> {
             dry_run,
             out_dir,
             sample,
+            only,
         } => {
             let options = assets::GameArtOptions::fromEnv()?;
             master_fetch::maybeUpdateMasterMdb(&master).await?;
@@ -268,8 +272,15 @@ async fn main() -> Result<()> {
                 .context("master.mdb has no version marker")?;
             match out_dir {
                 Some(folder) => {
-                    assets::buildGameArtSample(&options, &master, &version, &folder, sample)
-                        .await?;
+                    assets::buildGameArtSample(
+                        &options,
+                        &master,
+                        &version,
+                        &folder,
+                        sample,
+                        only.as_deref(),
+                    )
+                    .await?;
                 }
                 None => {
                     let bucket = assets::Bucket::fromEnv()?;

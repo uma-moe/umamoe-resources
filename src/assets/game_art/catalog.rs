@@ -1,22 +1,25 @@
+use super::race_motions::raceMotion;
 use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
     Fit, PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, COURSE_ENVIRONMENT,
     COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, MODEL_CONVERTER_REVISION,
-    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY, TRACK_FOLDER,
+    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
 };
+use super::umas::{isUmaRecord, outfitRows, umaOutfits};
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;
 
 impl Catalog {
-    /// The fixed families and atlases plus a portrait for every card and a name for every
-    /// racecourse in this master.
+    /// The fixed families and atlases plus a portrait for every card, a name for every
+    /// racecourse and a uma for every outfit in this master.
     pub(super) fn load(master: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(master, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("failed to open {}", master.display()))?;
         let mut catalog = Self::fromOutfits(&cardOutfits(&connection)?);
         catalog.course_names = courseNames(&connection)?;
+        catalog.umas = umaOutfits(&outfitRows(&connection)?);
         Ok(catalog)
     }
 
@@ -47,6 +50,7 @@ impl Catalog {
             portraits,
             atlases,
             course_names: HashMap::new(),
+            umas: Vec::new(),
         }
     }
 
@@ -112,11 +116,13 @@ pub(super) fn isUnusedDependency(name: &str) -> bool {
 }
 
 pub(super) fn converterRevision(name: &str) -> u32 {
-    if isTrackPrefab(name) || isCourse(name) {
-        MODEL_CONVERTER_REVISION
-    } else {
-        CONVERTER_REVISION
+    if isUmaRecord(name) || raceMotion(name).is_some() {
+        return UMA_CONVERTER_REVISION;
     }
+    if isTrackPrefab(name) || isCourse(name) {
+        return MODEL_CONVERTER_REVISION;
+    }
+    CONVERTER_REVISION
 }
 
 /// The kind of track scenery a record below the track folder belongs to: a racecourse's
@@ -325,11 +331,12 @@ fn courseNames(connection: &Connection) -> Result<HashMap<u32, String>> {
         .context("failed to read course names from master.mdb")
 }
 
-/// `Longchamp` as `longchamp`; every run of characters other than ASCII letters and digits
-/// becomes one dash.
-fn fileSlug(name: &str) -> String {
+/// `Longchamp` as `longchamp` and `Mejiro Palmer's` as `mejiro-palmers`: apostrophes are dropped
+/// and every other run of characters but ASCII letters and digits becomes one dash.
+pub(super) fn fileSlug(name: &str) -> String {
     let words: String = name
         .chars()
+        .filter(|character| !matches!(character, '\'' | '\u{2019}'))
         .map(|character| {
             if character.is_ascii_alphanumeric() {
                 character.to_ascii_lowercase()
@@ -647,6 +654,17 @@ mod tests {
             converterRevision("supportcard/support30050/tex_support_card_30050"),
             CONVERTER_REVISION
         );
+    }
+
+    #[test]
+    fn umasAndRaceMotionsFollowTheUmaRevision() {
+        let uma = "3d/chara/body/bdy1001_00";
+        let motion = "3d/motion/racemain/body/type01/anm_rac_type01_run03_base";
+        let body_prefab = "3d/chara/body/bdy1001_00/pfb_bdy1001_00";
+
+        assert_eq!(converterRevision(uma), UMA_CONVERTER_REVISION);
+        assert_eq!(converterRevision(motion), UMA_CONVERTER_REVISION);
+        assert_eq!(converterRevision(body_prefab), CONVERTER_REVISION);
     }
 
     fn tokyoPrefab(part: &str) -> String {

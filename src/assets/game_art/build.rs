@@ -1,8 +1,8 @@
 use super::catalog::{objectName, trackTextureKey};
 use super::types::{
-    ArtJob, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
-    ConvertResult, Fit, RuntimeTexture, ScenePrefab, CONVERTER_PYTHON, CONVERTER_SCRIPT,
-    DOWNLOAD_CONCURRENCY,
+    ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
+    ConvertResult, Fit, RuntimeTexture, ScenePrefab, SlotBundle, CONVERTER_PYTHON,
+    CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -234,9 +234,8 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
             .position(|entry| entry.name == name)?;
         Some(path(&files[position + 1]))
     };
-    let model = job.model.as_ref().map(|scene| ConvertModel {
-        prefabs: scene
-            .prefabs
+    let prefabs = |names: &'a [String]| -> Vec<ScenePrefab<'a>> {
+        names
             .iter()
             .filter_map(|name| {
                 Some(ScenePrefab {
@@ -244,18 +243,42 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
                     bundle: downloaded(name)?,
                 })
             })
-            .collect(),
-        runtime_textures: scene
-            .runtime_textures
-            .iter()
-            .filter_map(|name| {
-                Some(RuntimeTexture {
-                    name,
-                    key: trackTextureKey(name),
-                    bundle: downloaded(name)?,
+            .collect()
+    };
+    let model = job.model.as_ref().map(|model| match model {
+        ArtModel::Scenery(scene) => ConvertModel::Scenery {
+            prefabs: prefabs(&scene.prefabs),
+            runtime_textures: scene
+                .runtime_textures
+                .iter()
+                .filter_map(|name| {
+                    Some(RuntimeTexture {
+                        name,
+                        key: trackTextureKey(name),
+                        bundle: downloaded(name)?,
+                    })
                 })
-            })
-            .collect(),
+                .collect(),
+        },
+        ArtModel::Uma(uma) => ConvertModel::Uma {
+            title: &uma.title,
+            prefabs: prefabs(&uma.prefabs),
+            tail_textures: uma
+                .tail_textures
+                .iter()
+                .filter_map(|texture| {
+                    Some(SlotBundle {
+                        slot: texture.slot,
+                        bundle: downloaded(&texture.name)?,
+                    })
+                })
+                .collect(),
+            traits: &uma.traits,
+        },
+        ArtModel::Motion(motion) => ConvertModel::Motion {
+            title: &motion.title,
+            skeleton: prefabs(&motion.skeleton),
+        },
     });
 
     ConvertJob {
@@ -348,7 +371,9 @@ async fn runConverter(request: &ConvertRequest<'_>) -> Result<ConvertResponse> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::game_art::types::{ModelScene, PlannedOutput};
+    use crate::assets::game_art::types::{
+        PlannedOutput, SceneryModel, SlotTexture, UmaOutfit, UmaTraits,
+    };
     use crate::game_cdn::GLOBAL_CDN;
     use serde_json::json;
 
@@ -365,10 +390,10 @@ mod tests {
             name: "3d/env/race/race10006".to_string(),
             entry: entry(TRACK),
             dependencies: vec![entry(TURF_TEXTURE), entry(TREES)],
-            model: Some(ModelScene {
+            model: Some(ArtModel::Scenery(SceneryModel {
                 prefabs: vec![TRACK.to_string(), TREES.to_string()],
                 runtime_textures: vec![TURF_TEXTURE.to_string()],
-            }),
+            })),
             outputs: vec![PlannedOutput {
                 key: "game-assets/racetracks/tokyo.glb".to_string(),
                 object: "race10006".to_string(),
@@ -382,6 +407,7 @@ mod tests {
         assert_eq!(
             request["model"],
             json!({
+                "kind": "scenery",
                 "prefabs": [
                     {"object": "pfb_env_race10006_0000_002", "bundle": "track"},
                     {"object": "pfb_env_race10006_6000_100", "bundle": "trees"},
@@ -394,5 +420,65 @@ mod tests {
             })
         );
         assert_eq!(request["outputs"][0]["format"], "glb");
+    }
+
+    #[test]
+    fn aUmaTellsTheConverterItsPrefabsTailTexturesAndTraits() {
+        let body = "3d/chara/body/bdy1001_00/pfb_bdy1001_00";
+        let head = "3d/chara/head/chr1001_00/pfb_chr1001_00";
+        let diffuse = "3d/chara/tail/tail0001_00/textures/tex_tail0001_00_1001_diff";
+        let entry = |name: &str| ManifestEntry::new(name, 1, 1, 1);
+        let uma = UmaOutfit {
+            record: "3d/chara/body/bdy1001_00".to_string(),
+            prefabs: vec![body.to_string(), head.to_string()],
+            tail_textures: vec![SlotTexture {
+                slot: "_MainTex",
+                name: diffuse.to_string(),
+            }],
+            title: "Special Week: Special Dreamer".to_string(),
+            key: "game-assets/umas/special-week/special-dreamer.glb".to_string(),
+            traits: UmaTraits {
+                chara: 1001,
+                dress: 100101,
+                run_motions: "bright".to_string(),
+                finish_motions: "bright".to_string(),
+                running_form: "standard",
+            },
+        };
+        let job = ArtJob {
+            source: &GLOBAL_CDN,
+            name: uma.record.clone(),
+            entry: entry(body),
+            dependencies: vec![entry(diffuse), entry(head)],
+            outputs: vec![PlannedOutput {
+                key: uma.key.clone(),
+                object: "pfb_bdy1001_00".to_string(),
+                fit: Fit::Native,
+            }],
+            model: Some(ArtModel::Uma(uma)),
+        };
+        let files = ["body", "diffuse", "head"].map(PathBuf::from);
+
+        let request = serde_json::to_value(convertJob(&job, &files, Path::new("work"), 0)).unwrap();
+
+        assert_eq!(
+            request["model"],
+            json!({
+                "kind": "uma",
+                "title": "Special Week: Special Dreamer",
+                "prefabs": [
+                    {"object": "pfb_bdy1001_00", "bundle": "body"},
+                    {"object": "pfb_chr1001_00", "bundle": "head"},
+                ],
+                "tail_textures": [{"slot": "_MainTex", "bundle": "diffuse"}],
+                "traits": {
+                    "chara": 1001,
+                    "dress": 100101,
+                    "runMotions": "bright",
+                    "finishMotions": "bright",
+                    "runningForm": "standard",
+                },
+            })
+        );
     }
 }

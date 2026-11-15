@@ -3,9 +3,11 @@
 mod build;
 mod catalog;
 mod plan;
+mod race_motions;
 mod state;
 #[path = "../../types/game_art.rs"]
 mod types;
+mod umas;
 
 use super::types::ObjectChange;
 use super::{publishFile, purgeOverwritten, Bucket};
@@ -107,13 +109,15 @@ pub async fn publishGameArt(
 }
 
 /// Builds up to `per_family` images of each family into `folder`, without the bucket, so
-/// conversions can be checked by eye.
+/// conversions can be checked by eye. `only` keeps the files served below a key prefix, such as
+/// `game-assets/umas/special-week/`.
 pub async fn buildGameArtSample(
     options: &GameArtOptions,
     master: &Path,
     resource_version: &str,
     folder: &Path,
     per_family: usize,
+    only: Option<&str>,
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
     let catalog = Catalog::load(master)?;
@@ -122,6 +126,13 @@ pub async fn buildGameArtSample(
     let mut taken: BTreeMap<String, usize> = BTreeMap::new();
     let jobs: Vec<ArtJob> = planJobs(&sources, &catalog, &ArtState::default())
         .into_iter()
+        .filter(|job| {
+            only.is_none_or(|prefix| {
+                job.outputs
+                    .iter()
+                    .any(|output| output.key.starts_with(prefix))
+            })
+        })
         .filter(|job| {
             let count = taken.entry(outputFolder(job)).or_default();
             *count += 1;
