@@ -4,23 +4,26 @@ Unity is left-handed and glTF right-handed, so X is mirrored: positions and norm
 rotations negate Y and Z, and triangles reverse their winding. Unity's UV origin is the
 bottom-left corner and glTF's the top-left, so V is flipped.
 
-Textures are written beside the model as WebP and linked by relative URI (EXT_texture_webp).
-The game's shaders have no glTF equivalent, so a material's `_MainTex` becomes its base colour
-texture, and every Unity texture slot (baked light in `_LightTex`, for one), number and colour
-is kept in `extras.unity`. Course materials (turf, dirt, base) are left empty in the game files
-and filled at runtime with one season and weather variant of their part's textures; those are
-published on their own, the first variant is linked as the base colour, and every variant is
-listed in `extras.unity.variants`. Vertex colours, which those shaders read in their own way, are kept
-as `_UNITY_COLOR` rather than `COLOR_0`, so standard viewers do not tint the model by them.
+Every texture is embedded as WebP (EXT_texture_webp), so the one file opens on its own, in
+Blender for one. The game's shaders have no glTF equivalent, so a material's `_MainTex` becomes
+its base colour texture, and every Unity texture slot (baked light in `_LightTex`, for one),
+number and colour is kept in `extras.unity`, each slot naming its glTF texture. Course
+materials (turf, dirt, base) are left empty in the game files and filled at runtime with one
+season and weather variant of their part's textures: the first variant is embedded in those
+slots, and every variant is listed in `extras.unity.variants` as links to the separately
+published textures, relative to the model's URL. Vertex colours, which those shaders read in
+their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard viewers do not tint
+the model by them.
 """
 
+import io
 import json
 import math
 import posixpath
 import re
 import struct
 from array import array
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import quote
 
 from UnityPy.helpers.MeshHelper import MeshHandler
@@ -79,22 +82,25 @@ class Gltf:
         items.append(item)
         return len(items) - 1
 
-    def accessor(self, values: array, kind: str, count: int, target: int, **fields: Any) -> int:
+    def buffer_view(self, data: bytes, **fields: Any) -> int:
         self.binary += b"\0" * (-len(self.binary) % 4)
-        data = values.tobytes()
-        view = self.add(
-            "bufferViews",
-            {"buffer": 0, "byteOffset": len(self.binary), "byteLength": len(data), "target": target},
-        )
+        view = {"buffer": 0, "byteOffset": len(self.binary), "byteLength": len(data), **fields}
         self.binary += data
+        return self.add("bufferViews", view)
+
+    def accessor(self, values: array, kind: str, count: int, target: int, **fields: Any) -> int:
         accessor = {
-            "bufferView": view,
+            "bufferView": self.buffer_view(values.tobytes(), target=target),
             "componentType": COMPONENT_TYPES[values.typecode],
             "count": count,
             "type": kind,
             **fields,
         }
         return self.add("accessors", accessor)
+
+    def image(self, data: bytes, name: str) -> int:
+        image = {"name": name, "bufferView": self.buffer_view(data), "mimeType": "image/webp"}
+        return self.add("images", image)
 
     def write(self, path: str) -> None:
         # glTF does not allow empty arrays, so unused kinds are left out.
@@ -158,25 +164,20 @@ def node_transform(transform: Any) -> dict[str, list[float]]:
 class PrefabExporter:
     def __init__(
         self,
+        environment: Any,
         glb_key: str,
-        texture_folder: Callable[[Any], str],
-        texture_file: Callable[[int], str],
         runtime_textures: list[dict[str, str]],
     ) -> None:
         self.gltf = Gltf()
+        self.environment = environment
         self.glb_folder = posixpath.dirname(glb_key)
-        self.texture_folder = texture_folder
-        self.texture_file = texture_file
         self.runtime_textures = runtime_textures
         self.attributes: dict[tuple[str, int], dict[str, int] | None] = {}
         self.meshes: dict[tuple[Any, ...], int | None] = {}
         self.materials: dict[tuple[str, int], int] = {}
-        self.texture_uris: dict[tuple[str, int], str] = {}
-        self.images: dict[str, int] = {}
-        self.gltf_textures: dict[tuple[str, tuple[int, int]], int] = {}
+        self.images: dict[tuple[str, int], int] = {}
+        self.gltf_textures: dict[tuple[int, tuple[int, int]], int] = {}
         self.samplers: dict[tuple[int, int], int] = {}
-        # Textures written beside the model, as {"key", "path"}.
-        self.written: list[dict[str, str]] = []
 
     def node(self, transform: Any) -> int:
         game_object = transform.m_GameObject.read()
@@ -270,8 +271,12 @@ class PrefabExporter:
         if len(normals) >= count:
             values = array("f")
             for normal in normals[:count]:
-                length = math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) or 1.0
-                values.extend((-normal[0] / length, normal[1] / length, normal[2] / length))
+                length = math.sqrt(normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2)
+                # glTF requires unit normals; a few game vertices have none, so they face up.
+                if length == 0:
+                    values.extend((0.0, 1.0, 0.0))
+                else:
+                    values.extend((-normal[0] / length, normal[1] / length, normal[2] / length))
             attributes["NORMAL"] = self.gltf.accessor(values, "VEC3", count, ARRAY_BUFFER)
 
         for semantic, uvs in (("TEXCOORD_0", handler.m_UV0), ("TEXCOORD_1", handler.m_UV1)):
@@ -328,17 +333,21 @@ class PrefabExporter:
                 continue
             texture = texture_reader.read()
             transform = uv_transform(texture_slot.m_Scale, texture_slot.m_Offset)
-            uri = self.texture_uri(texture_reader, texture)
-            slots[slot] = {"uri": uri, **transform}
+            index = self.gltf_texture(self.image(texture_reader, texture), texture_wrap(texture))
+            slots[slot] = {"index": index, **transform}
             if slot == "_MainTex":
-                index = self.gltf_texture(uri, texture_wrap(texture))
                 base_color_texture = self.texture_info(index, transform)
 
         variants = self.runtime_variants(material.m_Name) if "_MainTex" in empty_slots else {}
         default_variant = next(iter(variants), None)
-        if default_variant is not None and "_MainTex" in variants[default_variant]:
-            index = self.gltf_texture(variants[default_variant]["_MainTex"], (REPEAT, REPEAT))
-            base_color_texture = self.texture_info(index, IDENTITY_UV_TRANSFORM)
+        if default_variant is not None:
+            for slot, runtime_texture in variants[default_variant].items():
+                texture_reader = bundle_texture(self.environment, runtime_texture["bundle"])
+                image = self.image(texture_reader, texture_reader.read())
+                index = self.gltf_texture(image, (REPEAT, REPEAT))
+                slots[slot] = {"index": index, **IDENTITY_UV_TRANSFORM}
+                if slot == "_MainTex":
+                    base_color_texture = self.texture_info(index, IDENTITY_UV_TRANSFORM)
 
         pbr: dict[str, Any] = {"metallicFactor": 0.0, "roughnessFactor": 1.0}
         if "_Color" in colors:
@@ -361,7 +370,10 @@ class PrefabExporter:
             "renderQueue": material.m_CustomRenderQueue,
         }
         if variants:
-            unity["variants"] = variants
+            unity["variants"] = {
+                variant: {slot: self.link(texture["key"]) for slot, texture in textures.items()}
+                for variant, textures in variants.items()
+            }
             unity["defaultVariant"] = default_variant
         entry["extras"] = {"unity": unity}
 
@@ -369,10 +381,10 @@ class PrefabExporter:
         self.materials[key] = index
         return index
 
-    def runtime_variants(self, material_name: str) -> dict[str, dict[str, str]]:
+    def runtime_variants(self, material_name: str) -> dict[str, dict[str, dict[str, str]]]:
         """The part's textures the game puts in this material's `_MainTex` and `_SubTex`, by
         variant: those whose kind (turf00, dirt00, base00) the material is named after."""
-        variants: dict[str, dict[str, str]] = {}
+        variants: dict[str, dict[str, dict[str, str]]] = {}
         for texture in self.runtime_textures:
             match = RUNTIME_TEXTURE_NAME.search(posixpath.basename(texture["name"]))
             if match is None:
@@ -381,31 +393,27 @@ class PrefabExporter:
             if f"_{kind}" not in material_name:
                 continue
             slot = "_SubTex" if sub else "_MainTex"
-            variants.setdefault(variant, {})[slot] = self.link(texture["key"])
+            variants.setdefault(variant, {})[slot] = texture
         return dict(sorted(variants.items()))
 
     def link(self, bucket_key: str) -> str:
         return quote(posixpath.relpath(bucket_key, self.glb_folder))
 
-    def texture_uri(self, reader: Any, texture: Any) -> str:
-        """Writes the texture beside the model once and returns its link from the model."""
+    def image(self, reader: Any, texture: Any) -> int:
+        """Embeds the texture as WebP once and returns its image."""
         key = object_key(reader)
-        if key not in self.texture_uris:
-            bucket_key = f"{self.texture_folder(reader)}/{texture.m_Name}.webp"
-            path = self.texture_file(len(self.written))
-            texture.image.save(path, "WEBP", quality=WEBP_QUALITY, method=WEBP_METHOD)
-            self.written.append({"key": bucket_key, "path": path})
-            self.texture_uris[key] = self.link(bucket_key)
-        return self.texture_uris[key]
+        if key not in self.images:
+            encoded = io.BytesIO()
+            texture.image.save(encoded, "WEBP", quality=WEBP_QUALITY, method=WEBP_METHOD)
+            self.images[key] = self.gltf.image(encoded.getvalue(), texture.m_Name)
+        return self.images[key]
 
-    def gltf_texture(self, uri: str, wrap: tuple[int, int]) -> int:
-        key = (uri, wrap)
+    def gltf_texture(self, image: int, wrap: tuple[int, int]) -> int:
+        key = (image, wrap)
         if key not in self.gltf_textures:
-            if uri not in self.images:
-                self.images[uri] = self.gltf.add("images", {"uri": uri})
             texture = {
                 "sampler": self.sampler(wrap),
-                "extensions": {"EXT_texture_webp": {"source": self.images[uri]}},
+                "extensions": {"EXT_texture_webp": {"source": image}},
             }
             self.gltf_textures[key] = self.gltf.add("textures", texture)
             self.gltf.extensions.add("EXT_texture_webp")
@@ -435,34 +443,38 @@ def texture_wrap(texture: Any) -> tuple[int, int]:
     return WRAP_MODES.get(settings.m_WrapU, REPEAT), WRAP_MODES.get(settings.m_WrapV, REPEAT)
 
 
+def bundle_objects(environment: Any, bundle_path: str, kind: str) -> list[Any]:
+    """The readers of one loaded bundle's objects of a kind, not those of the other bundles."""
+    bundle = environment.files[bundle_path]
+    return [
+        reader
+        for serialized in bundle.files.values()
+        for reader in getattr(serialized, "objects", {}).values()
+        if reader.type.name == kind
+    ]
+
+
+def bundle_texture(environment: Any, bundle_path: str) -> Any:
+    textures = bundle_objects(environment, bundle_path, "Texture2D")
+    if not textures:
+        raise ValueError(f"{bundle_path} holds no texture")
+    return textures[0]
+
+
 def prefab_roots(environment: Any, bundle_path: str) -> list[Any]:
     """The top transforms of the prefab bundle itself, not of the bundles it draws from."""
-    bundle = environment.files[bundle_path]
-    roots = []
-    for serialized in bundle.files.values():
-        for reader in getattr(serialized, "objects", {}).values():
-            if reader.type.name != "Transform":
-                continue
-            transform = reader.read()
-            if transform.m_Father.m_PathID == 0:
-                roots.append(transform)
-    return roots
+    transforms = (reader.read() for reader in bundle_objects(environment, bundle_path, "Transform"))
+    return [transform for transform in transforms if transform.m_Father.m_PathID == 0]
 
 
 def export_prefab(
     environment: Any,
     bundle_path: str,
     output: dict[str, Any],
-    texture_folders: dict[str, str],
     runtime_textures: list[dict[str, str]],
-) -> list[dict[str, str]]:
-    """Writes `output["path"]` and the textures it links to; returns the textures it wrote."""
-    exporter = PrefabExporter(
-        output["key"],
-        texture_folder=lambda reader: texture_folders[reader.assets_file.parent.name],
-        texture_file=lambda number: f"{output['path']}.{number}.webp",
-        runtime_textures=runtime_textures,
-    )
+) -> None:
+    """Writes `output["path"]`, a GLB with every texture it draws embedded."""
+    exporter = PrefabExporter(environment, output["key"], runtime_textures)
     roots = prefab_roots(environment, bundle_path)
     if not roots:
         raise ValueError("the bundle holds no prefab")
@@ -473,4 +485,3 @@ def export_prefab(
         scene_nodes.append(exporter.node(root))
 
     exporter.gltf.write(output["path"])
-    return exporter.written

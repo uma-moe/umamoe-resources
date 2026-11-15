@@ -1,6 +1,7 @@
-//! The publisher's record of what is in the bucket, kept as one JSON shard per top-level game
-//! folder and an index linking them.
+//! The publisher's record of what is in the bucket, kept as one JSON shard per kind of game
+//! file and an index linking them.
 
+use super::catalog::trackGroup;
 use super::types::{
     ArtState, PublishedArt, ShardLink, StateIndex, StateLayout, StateShard, StoredIndex,
     StoredShards, STATE_FOLDER, UPLOAD_CONCURRENCY,
@@ -13,8 +14,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// The top folder of a game file, `chara` for `chara/chr1001/chr_icon_1001`.
+/// Track scenery by its kind, `racetracks` or `skyboxes`; every other file by its top folder,
+/// `chara` for `chara/chr1001/chr_icon_1001`.
 pub(super) fn shardName(name: &str) -> &str {
+    if let Some(group) = trackGroup(name) {
+        return group;
+    }
     name.split_once('/').map_or(name, |(top, _)| top)
 }
 
@@ -214,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn filesShareTheShardOfTheirTopFolder() {
+    fn filesShareTheShardOfTheirTopFolderOrTrackScenery() {
         assert_eq!(
             shardName("chara/chr1001/petit/petit_chr_1001_100101_0020"),
             "chara"
@@ -225,7 +230,11 @@ mod tests {
         );
         assert_eq!(
             shardName("3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002"),
-            "3d"
+            "racetracks"
+        );
+        assert_eq!(
+            shardName("3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112"),
+            "skyboxes"
         );
         assert_eq!(shardName("shader"), "shader");
     }

@@ -1,7 +1,7 @@
 use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, Dependencies, Fit,
-    PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY,
-    TRACK_FOLDER,
+    PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, MODEL_CONVERTER_REVISION,
+    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY, TRACK_FOLDER,
 };
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
@@ -86,12 +86,33 @@ pub(super) fn isUnusedDependency(name: &str) -> bool {
     name == "shader" || name.starts_with("3d/motion/")
 }
 
-/// Where a model's textures from this bundle are written: the bundle's game folder, with the
-/// game's `sourceresources/` copy of the tree folded into the main one.
-pub(super) fn modelTextureFolder(bundle: &str) -> String {
-    let path = bundle.strip_prefix("sourceresources/").unwrap_or(bundle);
-    let folder = path.rsplit_once('/').map_or("", |(folder, _)| folder);
-    format!("game-assets/{folder}")
+pub(super) fn converterRevision(name: &str) -> u32 {
+    if isTrackPrefab(name) {
+        MODEL_CONVERTER_REVISION
+    } else {
+        CONVERTER_REVISION
+    }
+}
+
+/// The kind of track scenery a file below the track folder belongs to: a racecourse, a
+/// starting gate, the skydomes or the other props every course shares.
+pub(super) fn trackGroup(name: &str) -> Option<&'static str> {
+    let mut segments = name.strip_prefix(TRACK_FOLDER)?.split('/');
+    let track = segments.next()?;
+    let part = segments.next()?;
+    let number: u32 = track.strip_prefix("race")?.parse().ok()?;
+
+    if part.contains("_gate") {
+        return Some("starting-gates");
+    }
+    // Courses are numbered from race10001; the folders below hold what every course shares.
+    if number >= 10000 {
+        return Some("racetracks");
+    }
+    if part.ends_with("_9000") {
+        return Some("skyboxes");
+    }
+    Some("track-props")
 }
 
 /// Such as `3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002`.
@@ -436,18 +457,45 @@ mod tests {
     }
 
     #[test]
-    fn modelTexturesKeepTheirGameFolder() {
+    fn trackFilesAreGroupedByTheSceneryTheyShow() {
+        let groups = [
+            "3d/env/race/race10006/race10006_0000/pfb_env_race10006_0000_002",
+            "3d/env/race/race10006/race10006_0000/textures/tex_env_race10006_0000_112_turf00",
+            "3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112",
+            "3d/env/race/race00000/race00000_gate000/pfb_env_race00000_gate000_000",
+            "3d/env/race/race00100/race00100_gate000/pfb_env_race00100_gate000_000",
+            "3d/env/race/race00000/race00000_rachi000/pfb_env_race00000_rachi000_000",
+            "3d/env/race/audienceimpostors/ast_audience111000001",
+            "chara/chr1001/chr_icon_1001",
+        ]
+        .map(trackGroup);
+
         assert_eq!(
-            modelTextureFolder(
-                "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00"
-            ),
-            "game-assets/3d/env/race/race10001/race10001_0000/textures"
+            groups,
+            [
+                Some("racetracks"),
+                Some("racetracks"),
+                Some("skyboxes"),
+                Some("starting-gates"),
+                Some("starting-gates"),
+                Some("track-props"),
+                None,
+                None,
+            ]
         );
+    }
+
+    #[test]
+    fn onlyModelsFollowTheModelRevision() {
+        let prefab = "3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002";
+        let texture =
+            "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00";
+
+        assert_eq!(converterRevision(prefab), MODEL_CONVERTER_REVISION);
+        assert_eq!(converterRevision(texture), CONVERTER_REVISION);
         assert_eq!(
-            modelTextureFolder(
-                "sourceresources/3d/env/set/set70002/main/materials/mtl_env_set70002_main000_000_monitor00"
-            ),
-            "game-assets/3d/env/set/set70002/main/materials"
+            converterRevision("supportcard/support30050/tex_support_card_30050"),
+            CONVERTER_REVISION
         );
     }
 

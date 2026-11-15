@@ -1,7 +1,7 @@
-use super::catalog::{modelTextureFolder, trackTextureKey};
+use super::catalog::trackTextureKey;
 use super::types::{
     ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, ConvertResult, Fit,
-    RuntimeTexture, WrittenTexture, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    RuntimeTexture, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -44,11 +44,8 @@ impl Drop for WorkDir {
 }
 
 pub(super) enum JobOutcome {
-    /// Converted files as (bucket key, local file), and the textures a model wrote beside them.
-    Built {
-        outputs: Vec<(String, PathBuf)>,
-        textures: Vec<(String, PathBuf)>,
-    },
+    /// Converted files as (bucket key, local file).
+    Built { outputs: Vec<(String, PathBuf)> },
     /// The bundle downloaded but does not convert.
     Unconvertible(String),
     /// The bundle could not be fetched; worth retrying on the next run.
@@ -77,12 +74,8 @@ pub(super) async fn buildBatch(
     for (index, conversion) in convertAll(conversions).await? {
         outcomes[index] = Some(match conversion {
             Err(error) => JobOutcome::Unconvertible(error),
-            Ok(textures) => JobOutcome::Built {
+            Ok(()) => JobOutcome::Built {
                 outputs: outputFiles(&jobs[index], &dir, index),
-                textures: textures
-                    .into_iter()
-                    .map(|texture| (texture.key, texture.path))
-                    .collect(),
             },
         });
     }
@@ -228,44 +221,42 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
         })
         .collect();
 
-    let builds_model = job
-        .outputs
-        .iter()
-        .any(|output| outputFormat(&output.key) == "glb");
-    let texture_folders = if builds_model {
-        jobBundles(job)
-            .map(|entry| modelTextureFolder(&entry.name))
-            .collect()
-    } else {
-        Vec::new()
+    let path = |file: &PathBuf| file.to_string_lossy().into_owned();
+    // `files` holds the job's bundle, then its dependencies in order.
+    let downloaded = |name: &str| {
+        let position = job
+            .dependencies
+            .iter()
+            .position(|entry| entry.name == name)?;
+        Some(path(&files[position + 1]))
     };
-
     let runtime_textures = job
         .runtime_textures
         .iter()
-        .map(|name| RuntimeTexture {
-            name,
-            key: trackTextureKey(name),
+        .filter_map(|name| {
+            Some(RuntimeTexture {
+                name,
+                key: trackTextureKey(name),
+                bundle: downloaded(name)?,
+            })
         })
         .collect();
 
-    let path = |file: &PathBuf| file.to_string_lossy().into_owned();
     ConvertJob {
         bundle: path(&files[0]),
         dependencies: files[1..].iter().map(path).collect(),
-        texture_folders,
         runtime_textures,
         outputs,
     }
 }
 
-/// The textures a converted job wrote, or why it did not convert.
-type Conversion = std::result::Result<Vec<WrittenTexture>, String>;
+/// Why a job did not convert, if it did not.
+type Conversion = std::result::Result<(), String>;
 
 fn conversion(result: ConvertResult) -> Conversion {
     match result.error {
         Some(error) => Err(error),
-        None => Ok(result.textures),
+        None => Ok(()),
     }
 }
 
