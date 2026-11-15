@@ -229,7 +229,7 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
-          GAME_ASSET_KEY: ${{ secrets.GAME_ASSET_KEY }}
+          GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
         run: |
           set -euo pipefail
 
@@ -450,7 +450,7 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
-          GAME_ASSET_KEY: ${{ secrets.GAME_ASSET_KEY }}
+          GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
         run: |
           set -euo pipefail
 
