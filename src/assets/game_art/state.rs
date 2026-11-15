@@ -1,54 +1,53 @@
-//! The publisher's record of what is in the bucket, kept as a folder of JSON shards with an index,
-//! so no single file grows to thousands of records.
+//! The publisher's record of what is in the bucket, kept as one JSON shard per top-level game
+//! folder and an index linking them.
 
 use super::types::{
-    ArtState, PublishedArt, StateIndex, StateOrigin, StateShard, LEGACY_STATE_KEY, STATE_FOLDER,
-    UPLOAD_CONCURRENCY,
+    ArtState, PublishedArt, ShardLink, StateIndex, StateLayout, StateShard, StoredIndex,
+    StoredShards, STATE_FOLDER, UPLOAD_CONCURRENCY,
 };
 use crate::assets::Bucket;
 use anyhow::{Context, Result};
+use chrono::Utc;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// Characters and race tracks get a shard each, since chibi sprites and prefabs make them the
-/// largest groups; every other game file is grouped by its top folder.
-pub(super) fn shardName(name: &str) -> String {
-    let segments: Vec<&str> = name.split('/').collect();
-    match segments.as_slice() {
-        ["chara", character, _, ..] => format!("chara/{character}"),
-        ["3d", "env", "race", track, _, ..] => format!("3d/env/race/{track}"),
-        [top, _, ..] => top.to_string(),
-        _ => name.to_string(),
-    }
+/// The top folder of a game file, `chara` for `chara/chr1001/chr_icon_1001`.
+pub(super) fn shardName(name: &str) -> &str {
+    name.split_once('/').map_or(name, |(top, _)| top)
 }
 
 pub(super) async fn loadState(
     client: &reqwest::Client,
     bucket: &Bucket,
-) -> Result<(ArtState, StateOrigin)> {
-    if let Some(bytes) = bucket.getObject(client, &indexKey()).await? {
-        let index: StateIndex = serde_json::from_slice(&bytes)
-            .context("the game art index in the bucket is not valid JSON")?;
-        let files = loadShards(client, bucket, index.shards.into_keys().collect()).await?;
-        let state = ArtState {
-            resource_version: index.resource_version,
-            files,
-        };
-        return Ok((state, StateOrigin::Shards));
-    }
+) -> Result<(ArtState, StateLayout)> {
+    let Some(bytes) = bucket.getObject(client, &indexKey()).await? else {
+        return Ok((ArtState::default(), StateLayout::Current));
+    };
 
-    if let Some(bytes) = bucket.getObject(client, LEGACY_STATE_KEY).await? {
-        let state: ArtState = serde_json::from_slice(&bytes)
-            .context("the legacy game art record in the bucket is not valid JSON")?;
-        return Ok((state, StateOrigin::Legacy));
-    }
+    let index: StoredIndex = serde_json::from_slice(&bytes)
+        .context("the game art index in the bucket is not valid JSON")?;
+    let (stored_shards, linked): (Vec<String>, bool) = match index.shards {
+        StoredShards::Links(links) => (links.into_iter().map(|link| link.name).collect(), true),
+        StoredShards::Counts(counts) => (counts.into_keys().collect(), false),
+    };
+    let files = loadShards(client, bucket, stored_shards.clone()).await?;
+    let state = ArtState {
+        resource_version: index.resource_version,
+        files,
+    };
 
-    Ok((ArtState::default(), StateOrigin::Empty))
+    let obsolete_keys = obsoleteShardKeys(&state, &stored_shards);
+    let layout = if linked && obsolete_keys.is_empty() {
+        StateLayout::Current
+    } else {
+        StateLayout::Outdated { obsolete_keys }
+    };
+    Ok((state, layout))
 }
 
-/// Writes the shards that hold a `changed` file, then the index, so the index never names a
+/// Writes the shards that hold a `changed` file, then the index, so the index never links a
 /// shard that was not written.
 pub(super) async fn saveState(
     client: &reqwest::Client,
@@ -63,42 +62,69 @@ pub(super) async fn saveState(
     putJson(client, bucket, &indexKey(), &index).await
 }
 
-/// Splits the single-file record earlier versions kept into shards, then removes that file.
-pub(super) async fn migrateLegacyState(
+/// Writes every shard in the current layout, then removes the files of the earlier one.
+pub(super) async fn rewriteState(
     client: &reqwest::Client,
     bucket: &Bucket,
     state: &ArtState,
+    obsolete_keys: &[String],
 ) -> Result<()> {
-    let every_shard = state.files.keys().map(|name| shardName(name)).collect();
+    let every_shard = state
+        .files
+        .keys()
+        .map(|name| shardName(name).to_string())
+        .collect();
     saveState(client, bucket, state, &every_shard).await?;
-    bucket.deleteObject(client, LEGACY_STATE_KEY).await
+    for key in obsolete_keys {
+        bucket.deleteObject(client, key).await?;
+    }
+    Ok(())
 }
 
-/// The records of every `changed` shard, and the index counting the records of all shards.
+/// The keys of stored shards that the current layout no longer writes.
+fn obsoleteShardKeys(state: &ArtState, stored_shards: &[String]) -> Vec<String> {
+    let current: BTreeSet<&str> = state.files.keys().map(|name| shardName(name)).collect();
+    stored_shards
+        .iter()
+        .filter(|shard| !current.contains(shard.as_str()))
+        .map(|shard| shardKey(shard))
+        .collect()
+}
+
+/// The records of every `changed` shard, and the index linking all shards.
 fn shardRecords<'a>(
     state: &'a ArtState,
     changed: &BTreeSet<String>,
-) -> (BTreeMap<String, StateShard<&'a PublishedArt>>, StateIndex) {
-    let mut shards: BTreeMap<String, StateShard<&PublishedArt>> = BTreeMap::new();
-    let mut index = StateIndex {
-        resource_version: state.resource_version.clone(),
-        shards: BTreeMap::new(),
-    };
+) -> (BTreeMap<&'a str, StateShard<&'a PublishedArt>>, StateIndex) {
+    let mut shards: BTreeMap<&str, StateShard<&PublishedArt>> = BTreeMap::new();
+    let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
 
     for (name, record) in &state.files {
         let shard = shardName(name);
-        if changed.contains(&shard) {
+        if changed.contains(shard) {
             shards
-                .entry(shard.clone())
+                .entry(shard)
                 .or_insert_with(|| StateShard {
                     files: BTreeMap::new(),
                 })
                 .files
                 .insert(name.clone(), record);
         }
-        *index.shards.entry(shard).or_default() += 1;
+        *counts.entry(shard).or_default() += 1;
     }
 
+    let index = StateIndex {
+        resource_version: state.resource_version.clone(),
+        generated_at: Utc::now().to_rfc3339(),
+        shards: counts
+            .into_iter()
+            .map(|(shard, files)| ShardLink {
+                name: shard.to_string(),
+                path: format!("/{}", shardKey(shard)),
+                files,
+            })
+            .collect(),
+    };
     (shards, index)
 }
 
@@ -177,47 +203,84 @@ mod tests {
         }
     }
 
+    fn stateWith(names: &[&str]) -> ArtState {
+        let mut state = ArtState::default();
+        for (checksum, name) in names.iter().enumerate() {
+            state
+                .files
+                .insert(name.to_string(), record(checksum as u64));
+        }
+        state
+    }
+
     #[test]
-    fn charactersGetAShardAndOtherFilesShareTheirTopFolder() {
+    fn filesShareTheShardOfTheirTopFolder() {
         assert_eq!(
             shardName("chara/chr1001/petit/petit_chr_1001_100101_0020"),
-            "chara/chr1001"
+            "chara"
         );
-        assert_eq!(shardName("chara/chr1001/chr_icon_1001"), "chara/chr1001");
         assert_eq!(
             shardName("supportcard/support10001/tex_support_card_10001"),
             "supportcard"
         );
-        assert_eq!(shardName("atlas/common/common"), "atlas");
         assert_eq!(
             shardName("3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002"),
-            "3d/env/race/race10001"
+            "3d"
         );
+        assert_eq!(shardName("shader"), "shader");
     }
 
     #[test]
-    fn onlyChangedShardsAreWrittenButTheIndexCountsEveryShard() {
-        let mut state = ArtState::default();
-        state
-            .files
-            .insert("chara/chr1001/chr_icon_1001".to_string(), record(1));
-        state.files.insert(
-            "chara/chr1001/petit/petit_chr_1001_100101_0020".to_string(),
-            record(2),
-        );
-        state
-            .files
-            .insert("item/item_icon_00041".to_string(), record(3));
-        let changed = BTreeSet::from(["chara/chr1001".to_string()]);
+    fn onlyChangedShardsAreWrittenButTheIndexLinksEveryShard() {
+        let state = stateWith(&[
+            "chara/chr1001/chr_icon_1001",
+            "chara/chr1002/petit/petit_chr_1002_100201_0020",
+            "item/item_icon_00041",
+        ]);
+        let changed = BTreeSet::from(["chara".to_string()]);
 
         let (shards, index) = shardRecords(&state, &changed);
 
-        let written: Vec<&String> = shards.keys().collect();
-        assert_eq!(written, vec!["chara/chr1001"]);
-        assert_eq!(shards["chara/chr1001"].files.len(), 2);
-        assert_eq!(
-            index.shards,
-            BTreeMap::from([("chara/chr1001".to_string(), 2), ("item".to_string(), 1)])
-        );
+        let written: Vec<&str> = shards.keys().copied().collect();
+        assert_eq!(written, vec!["chara"]);
+        assert_eq!(shards["chara"].files.len(), 2);
+        let expected_links = vec![
+            ShardLink {
+                name: "chara".to_string(),
+                path: "/_state/game-art/chara.json".to_string(),
+                files: 2,
+            },
+            ShardLink {
+                name: "item".to_string(),
+                path: "/_state/game-art/item.json".to_string(),
+                files: 1,
+            },
+        ];
+        assert_eq!(index.shards, expected_links);
+    }
+
+    #[test]
+    fn shardsOfTheEarlierLayoutAreObsolete() {
+        let state = stateWith(&[
+            "chara/chr1001/chr_icon_1001",
+            "supportcard/support10001/tex_support_card_10001",
+        ]);
+        let stored_shards = vec!["chara/chr1001".to_string(), "supportcard".to_string()];
+
+        let obsolete_keys = obsoleteShardKeys(&state, &stored_shards);
+
+        assert_eq!(obsolete_keys, vec!["_state/game-art/chara/chr1001.json"]);
+    }
+
+    #[test]
+    fn earlierIndexesReadAsShardCounts() {
+        let earlier = r#"{"resource_version": "10008600", "shards": {"chara/chr1001": 4}}"#;
+
+        let index: StoredIndex = serde_json::from_str(earlier).unwrap();
+
+        let StoredShards::Counts(counts) = index.shards else {
+            panic!("an earlier index should read as shard counts");
+        };
+        assert_eq!(counts["chara/chr1001"], 4);
     }
 }
