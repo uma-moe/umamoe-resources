@@ -1,7 +1,5 @@
-use super::catalog::{isTrackTexture, isUnusedDependency, runtimeTextureFolder};
-use super::types::{
-    ArtJob, ArtState, Catalog, Dependencies, PlannedOutput, PublishedArt, CONVERTER_REVISION,
-};
+use super::catalog::{converterRevision, isTrackTexture, isUnusedDependency, runtimeTextureFolder};
+use super::types::{ArtJob, ArtState, Catalog, Dependencies, PlannedOutput, PublishedArt};
 use crate::game_cdn::{CdnSource, ManifestEntry};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -30,7 +28,7 @@ pub(super) fn planJobs(
                 continue;
             };
 
-            let dependencies = match catalog.dependencies(&entry.name) {
+            let mut dependencies = match catalog.dependencies(&entry.name) {
                 Dependencies::None => Vec::new(),
                 Dependencies::AtlasTexture(texture) => match by_name.get(texture) {
                     Some(dependency) => vec![(*dependency).clone()],
@@ -44,17 +42,24 @@ pub(super) fn planJobs(
                 },
             };
 
+            let runtime_textures = runtimeTextureFolder(&entry.name)
+                .and_then(|folder| track_textures.get(folder.as_str()))
+                .cloned()
+                .unwrap_or_default();
+            // The model embeds a set of them, so it is rebuilt when one changes.
+            dependencies.extend(
+                runtime_textures
+                    .iter()
+                    .filter_map(|name| by_name.get(name.as_str()))
+                    .map(|texture| (*texture).clone()),
+            );
+
             let published = state.files.get(&entry.name);
             let is_current = published
                 .is_some_and(|record| isCurrent(record, source, entry, &dependencies, &outputs));
             if is_current {
                 continue;
             }
-
-            let runtime_textures = runtimeTextureFolder(&entry.name)
-                .and_then(|folder| track_textures.get(folder.as_str()))
-                .cloned()
-                .unwrap_or_default();
 
             jobs.push(ArtJob {
                 source,
@@ -69,18 +74,14 @@ pub(super) fn planJobs(
     jobs
 }
 
-pub(super) fn publishedRecord(
-    job: &ArtJob,
-    textures: Vec<String>,
-    error: Option<String>,
-) -> PublishedArt {
+pub(super) fn publishedRecord(job: &ArtJob, error: Option<String>) -> PublishedArt {
     PublishedArt {
         region: job.source.region.to_string(),
         checksum: job.entry.checksum,
-        converter: CONVERTER_REVISION,
+        converter: converterRevision(&job.entry.name),
         outputs: outputKeys(&job.outputs),
         dependency_checksums: checksums(&job.dependencies),
-        textures,
+        textures: Vec::new(),
         error,
     }
 }
@@ -131,7 +132,7 @@ fn isCurrent(
     record.region == source.region
         && record.checksum == entry.checksum
         && record.dependency_checksums == checksums(dependencies)
-        && record.converter == CONVERTER_REVISION
+        && record.converter == converterRevision(&entry.name)
         && record.outputs == outputKeys(outputs)
 }
 
@@ -146,7 +147,7 @@ fn outputKeys(outputs: &[PlannedOutput]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::assets::game_art::types::CardOutfit;
+    use crate::assets::game_art::types::{CardOutfit, CONVERTER_REVISION};
     use crate::game_cdn::GLOBAL_CDN;
 
     static JAPAN_CDN: CdnSource = CdnSource {
@@ -223,10 +224,9 @@ mod tests {
         let mut state = ArtState::default();
 
         let from_japan = planJobs(&japan_only, &catalog(), &state);
-        state.files.insert(
-            CARD.to_string(),
-            publishedRecord(&from_japan[0], Vec::new(), None),
-        );
+        state
+            .files
+            .insert(CARD.to_string(), publishedRecord(&from_japan[0], None));
         let from_global = planJobs(&both, &catalog(), &state);
 
         assert_eq!(planned(&from_japan), vec![(CARD, "jp")]);
@@ -277,10 +277,9 @@ mod tests {
         let mut state = ArtState::default();
 
         let first_run = planJobs(&first, &catalog(), &state);
-        state.files.insert(
-            ATLAS.to_string(),
-            publishedRecord(&first_run[0], Vec::new(), None),
-        );
+        state
+            .files
+            .insert(ATLAS.to_string(), publishedRecord(&first_run[0], None));
         let unchanged = planJobs(&first, &catalog(), &state);
         let rebuilt = planJobs(&new_texture, &catalog(), &state);
 
@@ -313,10 +312,9 @@ mod tests {
         let sources = vec![(&GLOBAL_CDN, vec![entry(OUTFIT, 1)])];
         let mut state = ArtState::default();
         let first_run = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
-        state.files.insert(
-            OUTFIT.to_string(),
-            publishedRecord(&first_run[0], Vec::new(), None),
-        );
+        state
+            .files
+            .insert(OUTFIT.to_string(), publishedRecord(&first_run[0], None));
 
         let unchanged = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
         let with_new_card = planJobs(
@@ -363,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn trackPrefabsLinkTheSeasonTexturesOfTheirPart() {
+    fn trackPrefabsCarryTheSeasonTexturesOfTheirPart() {
         let summer =
             "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_212_turf00";
         let other_part =
@@ -380,7 +378,13 @@ mod tests {
         let jobs = planJobs(&sources, &catalog(), &ArtState::default());
 
         let prefab = jobs.iter().find(|job| job.entry.name == PREFAB).unwrap();
+        let downloaded: Vec<&str> = prefab
+            .dependencies
+            .iter()
+            .map(|dependency| dependency.name.as_str())
+            .collect();
         assert_eq!(prefab.runtime_textures, vec![summer]);
+        assert_eq!(downloaded, vec![summer]);
         assert_eq!(jobs.len(), 3);
     }
 

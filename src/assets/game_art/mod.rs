@@ -15,7 +15,7 @@ use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use plan::{planJobs, publishedRecord};
 use state::{loadState, rewriteState, saveState, shardName};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::task::JoinSet;
@@ -173,11 +173,11 @@ async fn runJobs(
 
     for batch in jobs.chunks(CONVERT_BATCH_SIZE) {
         let outcomes = buildBatch(client, &work, batch, &base_key).await?;
-        // Models in one batch often link the same texture; it is uploaded once.
         let mut files = BTreeMap::new();
+        let mut dropped_textures = BTreeSet::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
-            let (error, texture_keys) = match outcome {
+            let error = match outcome {
                 JobOutcome::NotDownloaded(error) => {
                     summary.download_failures += 1;
                     warn!(file = job.entry.name, error, "game art download failed");
@@ -186,19 +186,19 @@ async fn runJobs(
                 JobOutcome::Unconvertible(error) => {
                     summary.conversion_failures += 1;
                     warn!(file = job.entry.name, error, "game art does not convert");
-                    (Some(error), Vec::new())
+                    Some(error)
                 }
-                JobOutcome::Built { outputs, textures } => {
+                JobOutcome::Built { outputs } => {
                     summary.built += 1;
-                    let texture_keys = textures.iter().map(|(key, _)| key.clone()).collect();
                     files.extend(outputs);
-                    files.extend(textures);
-                    (None, texture_keys)
+                    None
                 }
             };
             if let Some(state) = state.as_deref_mut() {
-                let record = publishedRecord(job, texture_keys, error);
-                state.files.insert(job.entry.name.clone(), record);
+                let record = publishedRecord(job, error);
+                if let Some(replaced) = state.files.insert(job.entry.name.clone(), record) {
+                    dropped_textures.extend(replaced.textures);
+                }
             }
         }
 
@@ -210,6 +210,7 @@ async fn runJobs(
                 .map(|job| shardName(&job.entry.name).to_string())
                 .collect();
             saveState(client, bucket, state, &changed).await?;
+            removeUnlistedTextures(client, bucket, state, &dropped_textures).await?;
             purgeOverwritten(&replaced, &options.purge_origins).await?;
         }
     }
@@ -264,6 +265,30 @@ async fn deliver(
         }
     }
     Ok(replaced)
+}
+
+/// Deletes textures earlier converters wrote beside a model once no record lists them, unless
+/// they are another file's output.
+async fn removeUnlistedTextures(
+    client: &reqwest::Client,
+    bucket: &Bucket,
+    state: &ArtState,
+    dropped: &BTreeSet<String>,
+) -> Result<()> {
+    if dropped.is_empty() {
+        return Ok(());
+    }
+
+    let listed: HashSet<&str> = state
+        .files
+        .values()
+        .flat_map(|record| record.textures.iter().chain(&record.outputs))
+        .map(String::as_str)
+        .collect();
+    for key in dropped.iter().filter(|key| !listed.contains(key.as_str())) {
+        bucket.deleteObject(client, key).await?;
+    }
+    Ok(())
 }
 
 fn outputFolder(job: &ArtJob) -> String {
