@@ -62,7 +62,8 @@ pub(super) async fn loadState(
 }
 
 /// Writes the shards that hold a `changed` file, then the index, so the index never links a
-/// shard that was not written.
+/// shard that was not written. A changed shard left without records is deleted once the index
+/// stops linking it.
 pub(super) async fn saveState(
     client: &reqwest::Client,
     bucket: &Bucket,
@@ -73,7 +74,12 @@ pub(super) async fn saveState(
     for (shard, records) in &shards {
         putJson(client, bucket, &shardKey(shard), records).await?;
     }
-    putJson(client, bucket, &indexKey(), &index).await
+    putJson(client, bucket, &indexKey(), &index).await?;
+
+    for key in obsoleteShardKeys(state, changed) {
+        bucket.deleteObject(client, &key).await?;
+    }
+    Ok(())
 }
 
 /// Writes every shard in the current layout, then removes the files of the earlier one.
@@ -95,11 +101,14 @@ pub(super) async fn rewriteState(
     Ok(())
 }
 
-/// The keys of stored shards that the current layout no longer writes.
-fn obsoleteShardKeys(state: &ArtState, stored_shards: &[String]) -> Vec<String> {
+/// The keys of `shards` that hold no record in the current layout.
+fn obsoleteShardKeys<'a>(
+    state: &ArtState,
+    shards: impl IntoIterator<Item = &'a String>,
+) -> Vec<String> {
     let current: BTreeSet<&str> = state.files.keys().map(|name| shardName(name)).collect();
-    stored_shards
-        .iter()
+    shards
+        .into_iter()
         .filter(|shard| !current.contains(shard.as_str()))
         .map(|shard| shardKey(shard))
         .collect()
@@ -306,6 +315,16 @@ mod tests {
         let obsolete_keys = obsoleteShardKeys(&state, &stored_shards);
 
         assert_eq!(obsolete_keys, vec!["_state/game-art/chara/chr1001.json"]);
+    }
+
+    #[test]
+    fn aChangedShardWithoutRecordsIsObsolete() {
+        let state = stateWith(&["chara/chr1001/chr_icon_1001"]);
+        let changed = BTreeSet::from(["chara".to_string(), "umas".to_string()]);
+
+        let obsolete_keys = obsoleteShardKeys(&state, &changed);
+
+        assert_eq!(obsolete_keys, vec!["_state/game-art/umas.json"]);
     }
 
     #[test]

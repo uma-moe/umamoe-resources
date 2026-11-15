@@ -61,6 +61,38 @@ pub(super) fn planJobs(
     jobs
 }
 
+/// Records of what the catalog no longer builds: a file no source lists any more or the
+/// catalog stopped serving, a racecourse whose track is gone and an outfit that left master.mdb
+/// or whose body is gone. Records waiting for a missing dependency are not orphans.
+pub(super) fn orphanedRecords(
+    sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
+    catalog: &Catalog,
+    state: &ArtState,
+) -> Vec<String> {
+    let mut built: HashSet<&str> = HashSet::new();
+    for (_, files) in sources {
+        let names: HashSet<&str> = files.iter().map(|entry| entry.name.as_str()).collect();
+        let is_catalogued =
+            |name: &str| catalog.outputs(name).is_some() || raceMotion(name).is_some();
+        built.extend(names.iter().copied().filter(|name| is_catalogued(name)));
+        built.extend(courseScenes(names.iter().copied()).into_keys());
+
+        for uma in &catalog.umas {
+            let body = uma.prefabs.first().map(String::as_str);
+            if body.is_some_and(|body| names.contains(body)) {
+                built.insert(uma.record.as_str());
+            }
+        }
+    }
+
+    state
+        .files
+        .keys()
+        .filter(|name| !built.contains(name.as_str()))
+        .cloned()
+        .collect()
+}
+
 pub(super) fn publishedRecord(job: &ArtJob, error: Option<String>) -> PublishedArt {
     PublishedArt {
         region: job.source.region.to_string(),
@@ -827,5 +859,93 @@ mod tests {
         let jobs = planJobs(&sources, &catalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
+    }
+
+    const SPECIAL_WEEK: &str = "3d/chara/body/bdy1001_00";
+
+    fn recordedFiles(names: &[&str]) -> ArtState {
+        let mut state = ArtState::default();
+        for name in names {
+            let record = PublishedArt {
+                region: "global".to_string(),
+                checksum: 1,
+                converter: CONVERTER_REVISION,
+                outputs: Vec::new(),
+                dependency_checksums: Vec::new(),
+                textures: Vec::new(),
+                error: None,
+            };
+            state.files.insert(name.to_string(), record);
+        }
+        state
+    }
+
+    fn without(files: Vec<ManifestEntry>, gone: &str) -> Vec<ManifestEntry> {
+        files
+            .into_iter()
+            .filter(|entry| !entry.name.contains(gone))
+            .collect()
+    }
+
+    #[test]
+    fn aFileNoSourceListsAnyMoreIsAnOrphan() {
+        let state = recordedFiles(&[CARD, SKILL, RUN_CLIP]);
+        let sources = vec![(&GLOBAL_CDN, vec![entry(CARD, 1), entry(RUN_CLIP, 2)])];
+
+        let orphans = orphanedRecords(&sources, &catalog(), &state);
+
+        assert_eq!(orphans, vec![SKILL]);
+    }
+
+    #[test]
+    fn aFileTheCatalogStoppedServingIsAnOrphan() {
+        let card = CardOutfit {
+            chara: 1001,
+            card: 100103,
+            dress: 100102,
+        };
+        let state = recordedFiles(&[OUTFIT]);
+        let sources = vec![(&GLOBAL_CDN, vec![entry(OUTFIT, 1)])];
+
+        let served = orphanedRecords(&sources, &Catalog::fromOutfits(&[card]), &state);
+        let dropped = orphanedRecords(&sources, &catalog(), &state);
+
+        assert!(served.is_empty());
+        assert_eq!(dropped, vec![OUTFIT]);
+    }
+
+    #[test]
+    fn filesWaitingForWhatTheyNeedAreNoOrphans() {
+        let state = recordedFiles(&[ATLAS, SPECIAL_WEEK]);
+        let mut files = without(umaFiles(1), HEAD);
+        files.push(entry(ATLAS, 1));
+
+        let orphans = orphanedRecords(&[(&GLOBAL_CDN, files)], &umaCatalog(), &state);
+
+        assert!(orphans.is_empty());
+    }
+
+    #[test]
+    fn anOutfitIsAnOrphanOnceItsBodyOrItsDressIsGone() {
+        let state = recordedFiles(&[SPECIAL_WEEK]);
+        let without_body = without(umaFiles(1), BODY);
+
+        let body_gone = orphanedRecords(&[(&GLOBAL_CDN, without_body)], &umaCatalog(), &state);
+        let dress_gone = orphanedRecords(&[(&GLOBAL_CDN, umaFiles(1))], &catalog(), &state);
+
+        assert_eq!(body_gone, vec![SPECIAL_WEEK]);
+        assert_eq!(dress_gone, vec![SPECIAL_WEEK]);
+    }
+
+    #[test]
+    fn aRacecourseIsAnOrphanOnceItsTrackIsGone() {
+        let state = recordedFiles(&[COURSE]);
+        let without_track = without(sapporoFiles(8), "pfb_env_race10001_0000_");
+
+        let listed = orphanedRecords(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
+        let track_gone = orphanedRecords(&[(&GLOBAL_CDN, without_track)], &catalog(), &state);
+
+        assert!(listed.is_empty());
+        assert_eq!(track_gone, vec![COURSE]);
     }
 }

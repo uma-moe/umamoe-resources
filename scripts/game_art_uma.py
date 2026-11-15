@@ -95,7 +95,7 @@ class CharacterExporter(gm.PrefabExporter):
         self.skinned: list[tuple[str, Any]] = []
         self.filled_materials: set[int] = set()
         self.root: int | None = None
-        self.vertex_shift: list[float] | None = None
+        self.bind_offsets: list[Matrix] = []
 
     def add_prefab(self, prefab: dict[str, str]) -> None:
         roots = gm.bundle_objects(self.environment, prefab["bundle"], "Transform")
@@ -179,9 +179,9 @@ class CharacterExporter(gm.PrefabExporter):
             joints = [self.node_of[gm.object_key(bone.deref())] for bone in renderer.m_Bones]
             bind_poses = [gltf_matrix(pose) for pose in mesh_reader.read().m_BindPose]
             materials = tuple(self.material(pointer) for pointer in renderer.m_Materials)
-            self.vertex_shift = bind_shift(name, joints, bind_poses, world)
+            self.bind_offsets = bind_offsets(joints, bind_poses, world)
             mesh = self.mesh(mesh_reader, materials)
-            self.vertex_shift = None
+            self.bind_offsets = []
             if mesh is None:
                 continue
 
@@ -240,25 +240,21 @@ class CharacterExporter(gm.PrefabExporter):
         self.root = index_of[self.root]
 
     def vertex_attributes(self, handler: Any) -> dict[str, int] | None:
-        if self.vertex_shift is not None and handler.m_Vertices:
-            x, y, z = self.vertex_shift
-            # The shift is in glTF space; Unity's X is mirrored.
-            handler.m_Vertices = [(v[0] - x, v[1] + y, v[2] + z) for v in handler.m_Vertices]
+        bones = vertex_bones(handler)
+        if self.bind_offsets and handler.m_Vertices:
+            pose_to_rest(handler, self.bind_offsets, bones)
         attributes = super().vertex_attributes(handler)
-        weights_by_vertex = getattr(handler, "m_BoneWeights", None)
-        if attributes is None or not weights_by_vertex:
+        if attributes is None or not getattr(handler, "m_BoneWeights", None):
             return attributes
 
         count = handler.m_VertexCount
         joints = array("H")
         weights = array("f")
-        for indices, values in zip(handler.m_BoneIndices[:count], weights_by_vertex[:count]):
-            total = sum(values[:4])
-            if total <= 0:
-                indices, values, total = (0, 0, 0, 0), (1.0, 0.0, 0.0, 0.0), 1.0
-            for index, value in zip(indices[:4], values[:4]):
-                joints.append(index if value > 0 else 0)
-                weights.append(value / total)
+        # Some meshes store two weights per vertex; glTF wants four.
+        for pairs in bones:
+            for index, weight in pairs + ((0, 0.0),) * (4 - len(pairs)):
+                joints.append(index)
+                weights.append(weight)
         attributes["JOINTS_0"] = self.gltf.accessor(joints, "VEC4", count, gm.ARRAY_BUFFER)
         attributes["WEIGHTS_0"] = self.gltf.accessor(weights, "VEC4", count, gm.ARRAY_BUFFER)
         return attributes
@@ -321,27 +317,84 @@ class CharacterExporter(gm.PrefabExporter):
         return self.gltf.add("accessors", accessor)
 
 
-def bind_shift(
-    mesh_name: str, joints: list[int], bind_poses: list[list[float]], world: dict[int, Matrix]
-) -> list[float] | None:
-    """How far, in glTF space, a mesh was modelled away from the T-pose: one translation shared
-    by every bone, or `None` for a mesh without bones."""
-    shifts = []
+def bind_offsets(joints: list[int], bind_poses: list[list[float]], world: dict[int, Matrix]) -> list[Matrix]:
+    """Per bone, the glTF-space matrix moving a vertex from where the mesh was modelled to where
+    the bone puts it in the T-pose."""
+    offsets = []
     for joint, column_major in zip(joints, bind_poses):
         inverse_bind = [[column_major[c * 4 + r] for c in range(4)] for r in range(4)]
-        offset = multiply(world[joint], inverse_bind)
+        offsets.append(multiply(world[joint], inverse_bind))
+    return offsets
+
+
+def unity_matrix(matrix: Matrix) -> Matrix:
+    """A glTF-space matrix in Unity space, whose X is mirrored."""
+    sign = (-1, 1, 1, 1)
+    return [[matrix[r][c] * sign[r] * sign[c] for c in range(4)] for r in range(4)]
+
+
+def vertex_bones(handler: Any) -> list[tuple[tuple[int, float], ...]]:
+    """Each vertex's bones with positive weight, normalised; an unweighted vertex follows the
+    first bone."""
+    weights_by_vertex = getattr(handler, "m_BoneWeights", None) or []
+    indices_by_vertex = getattr(handler, "m_BoneIndices", None) or []
+    bones = []
+    for vertex in range(handler.m_VertexCount):
+        pairs: tuple[tuple[int, float], ...] = ()
+        if vertex < len(weights_by_vertex):
+            values = weights_by_vertex[vertex][:4]
+            total = sum(value for value in values if value > 0)
+            if total > 0:
+                indices = indices_by_vertex[vertex][:4]
+                pairs = tuple((index, value / total) for index, value in zip(indices, values) if value > 0)
+        bones.append(pairs or ((0, 1.0),))
+    return bones
+
+
+def common_shift(offsets: list[Matrix]) -> list[float] | None:
+    """The translation every offset shares when none of them rotates, else `None`."""
+    for offset in offsets:
         rotation_error = max(abs(offset[r][c] - IDENTITY[r][c]) for r in range(3) for c in range(3))
         if rotation_error > BIND_TOLERANCE:
-            raise ValueError(f"{mesh_name}: a bind pose is rotated away from the rest pose")
-        shifts.append([offset[r][3] for r in range(3)])
-    if not shifts:
-        return None
+            return None
 
+    shifts = [[offset[r][3] for r in range(3)] for offset in offsets]
     mean = [sum(shift[axis] for shift in shifts) / len(shifts) for axis in range(3)]
     spread = max(abs(shift[axis] - mean[axis]) for shift in shifts for axis in range(3))
-    if spread > BIND_TOLERANCE:
-        raise ValueError(f"{mesh_name}: bones disagree on the bind offset by {spread * 100:.2f} cm")
-    return mean
+    return mean if spread <= BIND_TOLERANCE else None
+
+
+def pose_to_rest(handler: Any, offsets: list[Matrix], bones: list[tuple[tuple[int, float], ...]]) -> None:
+    """Moves the vertices and normals to the T-pose the way the game skins them there, so the
+    skin can bind to the rest pose. Most meshes were modelled at one offset from it, such as a
+    head at the origin; a few have bones bound rotated or apart."""
+    count = handler.m_VertexCount
+    if count == 0:
+        return
+
+    unity_offsets = [unity_matrix(offset) for offset in offsets]
+    weighted = sorted({index for pairs in bones for index, _ in pairs})
+    if weighted[-1] >= len(unity_offsets):
+        raise ValueError("a vertex is weighted to a bone the mesh does not bind")
+
+    shift = common_shift([unity_offsets[index] for index in weighted])
+    if shift is not None:
+        x, y, z = shift
+        handler.m_Vertices = [(v[0] + x, v[1] + y, v[2] + z) for v in handler.m_Vertices[:count]]
+        return
+
+    vertices, normals = [], []
+    source_normals = handler.m_Normals or []
+    for vertex, pairs in enumerate(bones):
+        blend = [[sum(weight * unity_offsets[index][r][c] for index, weight in pairs) for c in range(4)] for r in range(3)]
+        x, y, z = handler.m_Vertices[vertex][:3]
+        vertices.append(tuple(row[0] * x + row[1] * y + row[2] * z + row[3] for row in blend))
+        if vertex < len(source_normals):
+            nx, ny, nz = source_normals[vertex][:3]
+            normals.append(tuple(row[0] * nx + row[1] * ny + row[2] * nz for row in blend))
+    handler.m_Vertices = vertices
+    if len(normals) == count:
+        handler.m_Normals = normals
 
 
 def rest_value(attribute: int, node: dict[str, Any]) -> list[float]:

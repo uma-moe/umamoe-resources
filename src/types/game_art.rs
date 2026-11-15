@@ -11,7 +11,7 @@ pub(super) const CONVERTER_REVISION: u32 = 1;
 pub(super) const MODEL_CONVERTER_REVISION: u32 = 2;
 
 /// Raise when uma or race motion output changes, so every one is rebuilt once.
-pub(super) const UMA_CONVERTER_REVISION: u32 = 1;
+pub(super) const UMA_CONVERTER_REVISION: u32 = 2;
 
 /// The publisher's record in the bucket, outside every path the site routes there: an
 /// `index.json` linking the shards, and one JSON file of records per top-level game folder.
@@ -27,6 +27,12 @@ pub(super) const CONVERT_BATCH_SIZE: usize = 32;
 pub(super) const DOWNLOAD_CONCURRENCY: usize = 8;
 
 pub(super) const UPLOAD_CONCURRENCY: usize = 16;
+
+/// Orphaned records are left alone when more than this many, and this share of all records,
+/// look orphaned at once: an incomplete file list is likelier than such a change.
+pub(super) const ORPHAN_ALERT_MINIMUM: usize = 20;
+
+pub(super) const ORPHAN_ALERT_PERCENT: usize = 20;
 
 /// Race track prefabs: every `pfb_` bundle below this folder becomes one model.
 pub(super) const TRACK_FOLDER: &str = "3d/env/race/";
@@ -549,7 +555,7 @@ pub(super) struct AtlasPlan {
 }
 
 /// What the publisher has put in the bucket, by game file name.
-#[derive(Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 pub(super) struct ArtState {
     /// The resource version whose files were all handled.
     pub(super) resource_version: Option<String>,
@@ -696,6 +702,8 @@ pub struct GameArtSummary {
     pub conversion_failures: usize,
     /// Files that could not be downloaded; retried on the next run.
     pub download_failures: usize,
+    /// Objects it had published that no record lists any more.
+    pub deleted: usize,
 }
 
 #[derive(Serialize)]
