@@ -1,6 +1,7 @@
+use super::catalog::{modelTextureFolder, trackTextureKey};
 use super::types::{
-    ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, Fit, CONVERTER_PYTHON,
-    CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    ArtJob, ConvertJob, ConvertOutput, ConvertRequest, ConvertResponse, ConvertResult, Fit,
+    RuntimeTexture, WrittenTexture, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -43,8 +44,11 @@ impl Drop for WorkDir {
 }
 
 pub(super) enum JobOutcome {
-    /// Converted images as (bucket key, local file).
-    Built(Vec<(String, PathBuf)>),
+    /// Converted files as (bucket key, local file), and the textures a model wrote beside them.
+    Built {
+        outputs: Vec<(String, PathBuf)>,
+        textures: Vec<(String, PathBuf)>,
+    },
     /// The bundle downloaded but does not convert.
     Unconvertible(String),
     /// The bundle could not be fetched; worth retrying on the next run.
@@ -70,10 +74,16 @@ pub(super) async fn buildBatch(
         }
     }
 
-    for (index, error) in convertAll(conversions).await? {
-        outcomes[index] = Some(match error {
-            Some(error) => JobOutcome::Unconvertible(error),
-            None => JobOutcome::Built(outputFiles(&jobs[index], &dir, index)),
+    for (index, conversion) in convertAll(conversions).await? {
+        outcomes[index] = Some(match conversion {
+            Err(error) => JobOutcome::Unconvertible(error),
+            Ok(textures) => JobOutcome::Built {
+                outputs: outputFiles(&jobs[index], &dir, index),
+                textures: textures
+                    .into_iter()
+                    .map(|texture| (texture.key, texture.path))
+                    .collect(),
+            },
         });
     }
 
@@ -178,15 +188,18 @@ fn outputFiles(job: &ArtJob, dir: &Path, index: usize) -> Vec<(String, PathBuf)>
         .iter()
         .enumerate()
         .map(|(position, output)| {
-            let file = dir.join(format!("{index}-{position}.{}", imageFormat(&output.key)));
+            let file = dir.join(format!("{index}-{position}.{}", outputFormat(&output.key)));
             (output.key.clone(), file)
         })
         .collect()
 }
 
-/// The site keeps a few PNG paths; everything else is WebP.
-fn imageFormat(key: &str) -> &'static str {
-    if key.ends_with(".png") {
+/// Track prefabs become `.glb` models and the site keeps a few PNG paths; every other picture
+/// is WebP.
+fn outputFormat(key: &str) -> &'static str {
+    if key.ends_with(".glb") {
+        "glb"
+    } else if key.ends_with(".png") {
         "png"
     } else {
         "webp"
@@ -206,11 +219,33 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
             };
             ConvertOutput {
                 object: &output.object,
+                key: &output.key,
                 path: file.to_string_lossy().into_owned(),
-                format: imageFormat(&key),
+                format: outputFormat(&key),
                 size,
                 art_size,
             }
+        })
+        .collect();
+
+    let builds_model = job
+        .outputs
+        .iter()
+        .any(|output| outputFormat(&output.key) == "glb");
+    let texture_folders = if builds_model {
+        jobBundles(job)
+            .map(|entry| modelTextureFolder(&entry.name))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let runtime_textures = job
+        .runtime_textures
+        .iter()
+        .map(|name| RuntimeTexture {
+            name,
+            key: trackTextureKey(name),
         })
         .collect();
 
@@ -218,15 +253,25 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
     ConvertJob {
         bundle: path(&files[0]),
         dependencies: files[1..].iter().map(path).collect(),
+        texture_folders,
+        runtime_textures,
         outputs,
+    }
+}
+
+/// The textures a converted job wrote, or why it did not convert.
+type Conversion = std::result::Result<Vec<WrittenTexture>, String>;
+
+fn conversion(result: ConvertResult) -> Conversion {
+    match result.error {
+        Some(error) => Err(error),
+        None => Ok(result.textures),
     }
 }
 
 /// Converts the bundles in one converter process. If the process itself fails, each bundle gets
 /// its own process, so one bundle that crashes the decoder cannot hold back the others.
-async fn convertAll(
-    conversions: Vec<(usize, ConvertJob<'_>)>,
-) -> Result<Vec<(usize, Option<String>)>> {
+async fn convertAll(conversions: Vec<(usize, ConvertJob<'_>)>) -> Result<Vec<(usize, Conversion)>> {
     if conversions.is_empty() {
         return Ok(Vec::new());
     }
@@ -244,25 +289,24 @@ async fn convertAll(
             .into_iter()
             .filter_map(|result| {
                 let index = *indexes.get(&result.bundle)?;
-                Some((index, result.error))
+                Some((index, conversion(result)))
             })
             .collect()),
         Err(error) if request.jobs.len() == 1 => {
-            Ok(vec![(positions[0], Some(format!("{error:#}")))])
+            Ok(vec![(positions[0], Err(format!("{error:#}")))])
         }
         Err(_) => {
             let mut results = Vec::with_capacity(request.jobs.len());
             for (index, job) in positions.into_iter().zip(request.jobs) {
                 let single = ConvertRequest { jobs: vec![job] };
-                let error = match runConverter(&single).await {
-                    Ok(response) => response
-                        .results
-                        .into_iter()
-                        .next()
-                        .and_then(|result| result.error),
-                    Err(error) => Some(format!("{error:#}")),
+                let outcome = match runConverter(&single).await {
+                    Ok(response) => response.results.into_iter().next().map_or_else(
+                        || Err("the converter did not report this bundle".to_string()),
+                        conversion,
+                    ),
+                    Err(error) => Err(format!("{error:#}")),
                 };
-                results.push((index, error));
+                results.push((index, outcome));
             }
             Ok(results)
         }

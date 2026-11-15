@@ -1,13 +1,20 @@
-"""Turns decrypted Unity asset bundles into the images the site serves.
+"""Turns decrypted Unity asset bundles into the images and models the site serves.
 
 The resources service decrypts each bundle and sends a job list as JSON on stdin:
-{"jobs": [{"bundle": "<path>", "dependencies": ["<path>"], "outputs": [{"object": "<name>",
-"path": "<path>", "format": "webp" | "png", "size": [width, height] | null,
+{"jobs": [{"bundle": "<path>", "dependencies": ["<path>"], "texture_folders": ["<key folder>"],
+"outputs": [{"object": "<name>", "key": "<bucket key>", "path": "<path>",
+"format": "webp" | "png" | "glb", "size": [width, height] | null,
 "art_size": [width, height] | null}]}]}
-`dependencies` are loaded with the bundle, such as the texture an atlas's sprites draw from.
+`dependencies` are loaded with the bundle, such as the texture an atlas's sprites draw from or
+the meshes, materials and textures a track prefab draws.
 `size` null keeps the picture's own size. `art_size` is the art's real shape when it is centred
 on a larger served canvas.
-It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
+A `glb` output exports the prefab `object` with `game_art_model`; the textures it links to are
+written beside it, under the bucket folder `texture_folders` gives for the bundle each came from
+(in `bundle`, `dependencies` order). `runtime_textures` ({"name", "key"}) are the season and
+weather textures the game puts on the prefab's course materials; they are linked, not loaded.
+It prints {"results": [{"bundle": "<path>", "written": [...], "textures": [{"key", "path"}],
+"error": null | "<message>"}]}.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
 """
 
@@ -19,11 +26,12 @@ from typing import Any, TextIO
 import UnityPy
 from PIL import Image
 
+from game_art_model import export_prefab
+
 WEBP_QUALITY = 90
 
 
-def read_images(*bundle_paths: str) -> tuple[dict[str, Any], dict[str, Any]]:
-    environment = UnityPy.load(*bundle_paths)
+def read_images(environment: Any) -> tuple[dict[str, Any], dict[str, Any]]:
     sprites: dict[str, Any] = {}
     textures: dict[str, Any] = {}
     for obj in environment.objects:
@@ -81,18 +89,35 @@ def save_image(image: Image.Image, output: dict[str, Any]) -> None:
 
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
     try:
-        sprites, textures = read_images(job["bundle"], *job.get("dependencies", []))
+        bundle_paths = [job["bundle"], *job.get("dependencies", [])]
+        environment = UnityPy.load(*bundle_paths)
+        texture_folders = dict(
+            zip(map(os.path.basename, bundle_paths), job.get("texture_folders", []))
+        )
+
+        images = None
         written = []
+        model_textures = []
         for output in job["outputs"]:
-            save_image(pick_image(sprites, textures, output["object"]), output)
+            if output["format"] == "glb":
+                model_textures += export_prefab(
+                    environment,
+                    job["bundle"],
+                    output,
+                    texture_folders,
+                    job.get("runtime_textures", []),
+                )
+            else:
+                images = images or read_images(environment)
+                save_image(pick_image(*images, output["object"]), output)
             written.append(output["path"])
-        return {"bundle": job["bundle"], "written": written, "error": None}
+        return {"bundle": job["bundle"], "written": written, "textures": model_textures, "error": None}
     except Exception as error:
         return {"bundle": job["bundle"], "written": [], "error": f"{type(error).__name__}: {error}"}
 
 
 def inspect_bundle(bundle_path: str) -> dict[str, Any]:
-    sprites, textures = read_images(bundle_path)
+    sprites, textures = read_images(UnityPy.load(bundle_path))
     return {
         "bundle": bundle_path,
         "sprites": {name: list(sprite.image.size) for name, sprite in sorted(sprites.items())},

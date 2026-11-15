@@ -12,12 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// Characters get a shard each, since their chibi sprites make them the largest group; every
-/// other game file is grouped by its top folder.
+/// Characters and race tracks get a shard each, since chibi sprites and prefabs make them the
+/// largest groups; every other game file is grouped by its top folder.
 pub(super) fn shardName(name: &str) -> String {
     let segments: Vec<&str> = name.split('/').collect();
     match segments.as_slice() {
         ["chara", character, _, ..] => format!("chara/{character}"),
+        ["3d", "env", "race", track, _, ..] => format!("3d/env/race/{track}"),
         [top, _, ..] => top.to_string(),
         _ => name.to_string(),
     }
@@ -171,6 +172,7 @@ mod tests {
             converter: 1,
             outputs: Vec::new(),
             dependency_checksums: Vec::new(),
+            textures: Vec::new(),
             error: None,
         }
     }
@@ -187,6 +189,10 @@ mod tests {
             "supportcard"
         );
         assert_eq!(shardName("atlas/common/common"), "atlas");
+        assert_eq!(
+            shardName("3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002"),
+            "3d/env/race/race10001"
+        );
     }
 
     #[test]

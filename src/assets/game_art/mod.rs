@@ -173,7 +173,7 @@ async fn runJobs(
         let mut files = Vec::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
-            let error = match outcome {
+            let (error, texture_keys) = match outcome {
                 JobOutcome::NotDownloaded(error) => {
                     summary.download_failures += 1;
                     warn!(file = job.entry.name, error, "game art download failed");
@@ -182,18 +182,19 @@ async fn runJobs(
                 JobOutcome::Unconvertible(error) => {
                     summary.conversion_failures += 1;
                     warn!(file = job.entry.name, error, "game art does not convert");
-                    Some(error)
+                    (Some(error), Vec::new())
                 }
-                JobOutcome::Built(built) => {
+                JobOutcome::Built { outputs, textures } => {
                     summary.built += 1;
-                    files.extend(built);
-                    None
+                    let texture_keys = textures.iter().map(|(key, _)| key.clone()).collect();
+                    files.extend(outputs);
+                    files.extend(textures);
+                    (None, texture_keys)
                 }
             };
             if let Some(state) = state.as_deref_mut() {
-                state
-                    .files
-                    .insert(job.entry.name.clone(), publishedRecord(job, error));
+                let record = publishedRecord(job, texture_keys, error);
+                state.files.insert(job.entry.name.clone(), record);
             }
         }
 
