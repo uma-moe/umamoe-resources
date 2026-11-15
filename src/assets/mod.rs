@@ -224,6 +224,8 @@ mod tests {
     struct FakeBucket {
         objects: Arc<Mutex<HashMap<String, Vec<u8>>>>,
         puts: Arc<Mutex<usize>>,
+        /// Writes still to be refused with 429, as R2 refuses quick writes to one object.
+        refused_puts: Arc<Mutex<usize>>,
     }
 
     impl FakeBucket {
@@ -263,6 +265,13 @@ mod tests {
         UrlPath((_, key)): UrlPath<(String, String)>,
         body: Bytes,
     ) -> StatusCode {
+        let mut refused_puts = fake.refused_puts.lock().unwrap();
+        if *refused_puts > 0 {
+            *refused_puts -= 1;
+            return StatusCode::TOO_MANY_REQUESTS;
+        }
+        drop(refused_puts);
+
         fake.objects.lock().unwrap().insert(key, body.to_vec());
         *fake.puts.lock().unwrap() += 1;
         StatusCode::OK
@@ -354,6 +363,20 @@ mod tests {
         assert_eq!(summary.unchanged, 1);
         assert_eq!(fake.putCount(), 3);
         std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[tokio::test]
+    async fn aWriteRefusedForLoadIsRetried() {
+        let (bucket, fake) = startFakeBucket().await;
+        *fake.refused_puts.lock().unwrap() = 1;
+        let client = reqwest::Client::new();
+
+        let written = bucket
+            .putObject(&client, "game-assets/a.webp", b"a".to_vec(), "image/webp")
+            .await;
+
+        assert!(written.is_ok(), "{written:?}");
+        assert_eq!(fake.objectKeys(), ["game-assets/a.webp"]);
     }
 
     #[tokio::test]
