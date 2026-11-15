@@ -52,7 +52,8 @@ impl GameArtSummary {
 }
 
 /// Builds and uploads every catalogued image that is new or changed for this resource version,
-/// whose cards are read from `master`. Returns early when this version was already handled.
+/// whose cards are read from `master`. Plans again even for a version already handled, so a
+/// catalog change in a deploy takes effect without waiting for a game update.
 pub async fn publishGameArt(
     bucket: &Bucket,
     options: &GameArtOptions,
@@ -62,11 +63,6 @@ pub async fn publishGameArt(
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
     let mut state = loadState(&client, bucket).await?;
-    if !dry_run && state.resource_version.as_deref() == Some(resource_version) {
-        info!(resource_version, "game art is up to date");
-        return Ok(GameArtSummary::default());
-    }
-
     let catalog = Catalog::load(master)?;
     let sources = listSources(&client, resource_version).await?;
     let jobs = planJobs(&sources, &catalog, &state);

@@ -409,9 +409,9 @@ Files go to the `umamoe-assets` bucket at `ASSETS_S3_ENDPOINT`, signed with `ASS
 
 ## Game Art
 
-Production builds the site's game images itself. Whenever the game version changes, it reads the game's file list, picks the files the site serves (character icons, card portraits, support cards, skill icons, race banners, rank text, item icons; see `ART_FAMILIES` in `src/types/game_art.rs`), and builds only those that are new or changed: download, decrypt, convert to WebP with `scripts/game_art_convert.py`, upload to the same URL paths, purge URLs that already had an image.
+One server builds the site's game images itself. When it starts and whenever the game version changes, it reads the game's file list, picks the files the site serves (character icons, card portraits, support cards, skill icons, race banners, rank text, item icons; see `ART_FAMILIES` in `src/types/game_art.rs`), and builds only those that are new or changed: download, decrypt, convert to WebP with `scripts/game_art_convert.py`, upload to the same URL paths, purge URLs that already had an image.
 
-- It publishes for the version of the local `master.mdb`, which the refresh loop keeps current. Card portraits come from that master: the game names each portrait by the outfit it shows, and `card_rarity_data.race_dress_id` says which outfit each card wears, so card 100102 can show outfit 100130.
+- It publishes for the version of the local `master.mdb`, which the refresh loop keeps current. Card portraits come from that master: the game names each portrait by the outfit it shows, and `card_rarity_data.race_dress_id` at the card's top rarity says which outfit it wears (cards that start below 3★ wear the shared uniform until then), so card 100102 shows outfit 100130 and card 100701 outfit 100701.
 - The game squeezes textures to powers of two (a 3:4 support card is stored as 2048×2048), so every output is resized to the size the site serves. Character icons are narrower than their 256×256 canvas and are centred on it.
 - What was published is recorded in the bucket at `_state/game-art.json` (game file, source, checksum, converter revision, output paths), so a run with no changes downloads no game files, and a new card that wears an existing outfit still gets its portrait. The first run builds everything.
 - Raising `CONVERTER_REVISION` rebuilds every image once.
