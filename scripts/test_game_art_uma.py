@@ -74,5 +74,68 @@ class RestPoseTests(unittest.TestCase):
         self.assertEqual(kept_normal, (0.0, 0.0, 1.0))
 
 
+def transform(name, active=True, children=()):
+    """A Unity transform reader with its game object and child transforms."""
+    game_object = SimpleNamespace(m_Name=name, m_IsActive=active)
+    unity_transform = SimpleNamespace(
+        m_GameObject=SimpleNamespace(read=lambda: game_object),
+        m_Children=[SimpleNamespace(deref=lambda child=child: child) for child in children],
+        m_LocalPosition=SimpleNamespace(x=0.0, y=0.0, z=0.0),
+        m_LocalRotation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0),
+        m_LocalScale=SimpleNamespace(x=1.0, y=1.0, z=1.0),
+    )
+    return SimpleNamespace(
+        assets_file=SimpleNamespace(name="head"),
+        path_id=id(unity_transform),
+        read=lambda: unity_transform,
+    )
+
+
+class DrawnObjectsExporter(uma.CharacterExporter):
+    def __init__(self):
+        super().__init__(None, "game-assets/umas/test.glb", {}, with_renderers=True)
+        self.drawn = []
+        self.root = self.gltf.add("nodes", {"name": "root"})
+        self.node_paths[self.root] = ""
+
+    def attach_renderers(self, game_object, node):
+        self.drawn.append(game_object.m_Name)
+
+
+class SwitchedOffObjectTests(unittest.TestCase):
+    def test_a_switched_off_object_and_its_children_draw_nothing(self):
+        exporter = DrawnObjectsExporter()
+        head = transform("Head", children=[
+            transform("M_Tear", active=False, children=[transform("M_Tear_L")]),
+            transform("M_Face"),
+        ])
+
+        exporter.visit(head, exporter.root, merging=False)
+
+        self.assertEqual(exporter.drawn, ["Head", "M_Face"])
+
+
+def material(name):
+    return {"name": name, "pbrMetallicRoughness": {}, "extras": {"unity": {}}}
+
+
+class BlushTests(unittest.TestCase):
+    def test_the_blush_is_transparent_and_hidden_at_rest(self):
+        document = {
+            "nodes": [{"name": "M_Cheek", "mesh": 0}, {"name": "M_Face", "mesh": 1}],
+            "meshes": [{"primitives": [{"material": 0}]}, {"primitives": [{"material": 1}]}],
+            "materials": [material("mtl_chr1001_00_cheek"), material("mtl_chr1001_00_face")],
+        }
+
+        uma.hide_blush(document)
+
+        blush, face = document["materials"]
+        self.assertEqual(document["nodes"][0]["extras"], {"active": False})
+        self.assertEqual(blush["alphaMode"], "BLEND")
+        self.assertEqual(blush["pbrMetallicRoughness"]["baseColorFactor"], [1.0, 1.0, 1.0, 0.0])
+        self.assertEqual(blush["extras"]["unity"]["blend"], "multiply")
+        self.assertEqual(face, material("mtl_chr1001_00_face"))
+
+
 if __name__ == "__main__":
     unittest.main()

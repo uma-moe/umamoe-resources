@@ -3,7 +3,9 @@
 A uma joins an outfit's body, head and tail prefabs on one skeleton in its rest pose, a T-pose.
 Bones the prefabs share, such as the neck and the tail root, are merged by name. Heads and tails
 are modelled at the origin, so their meshes are moved onto the T-pose and every skin binds to
-the rest pose.
+the rest pose. The uma looks as it does at rest in the game: meshes the game switches off, such
+as tears, are left out, and the blush is fully transparent. The face's expressions, which the
+game poses with bones, become blend shapes (`game_art_face.py`).
 
 Every body and every tail share one rest skeleton, so a race motion is exported on Special
 Week's racewear and the common tail, without meshes, and fits any uma.
@@ -13,11 +15,15 @@ import collections
 import struct
 import zlib
 from array import array
+from collections.abc import Iterable
 from typing import Any
 
+import game_art_face as face
 import game_art_model as gm
 
 Matrix = list[list[float]]
+# Per expression, the matrix moving a rest position by what the expression adds at each bone.
+ExpressionMoves = list[tuple[str, dict[int, Matrix]]]
 
 TRANSFORM_BINDING = 4
 CURVES_PER_ATTRIBUTE = {1: 3, 2: 4, 3: 3, 4: 3}
@@ -25,6 +31,8 @@ CHANNEL_PATHS = {1: "translation", 2: "rotation", 3: "scale"}
 SAMPLE_RATE = 30
 BIND_TOLERANCE = 1e-3
 IDENTITY: Matrix = [[1.0 if row == column else 0.0 for column in range(4)] for row in range(4)]
+# The game shows this mesh only while an uma blushes, multiplying its texture over the skin.
+BLUSH_NODE = "M_Cheek"
 
 
 def gltf_matrix(matrix: Any) -> list[float]:
@@ -96,6 +104,9 @@ class CharacterExporter(gm.PrefabExporter):
         self.filled_materials: set[int] = set()
         self.root: int | None = None
         self.bind_offsets: list[Matrix] = []
+        self.face_poses: tuple[dict[str, face.Pose], list[tuple[str, dict[str, face.Pose]]]] | None = None
+        self.joint_moves: ExpressionMoves = []
+        self.morph_targets: tuple[list[str], list[dict[str, int]]] | None = None
 
     def add_prefab(self, prefab: dict[str, str]) -> None:
         roots = gm.bundle_objects(self.environment, prefab["bundle"], "Transform")
@@ -112,10 +123,22 @@ class CharacterExporter(gm.PrefabExporter):
             self.node_paths[self.root] = ""
         self.visit(root, self.root, merging=not is_first)
 
-    def visit(self, reader: Any, node: int, merging: bool) -> None:
+    def add_expressions(self, target: dict[str, Any]) -> None:
+        """Bakes the head's facial target into blend shapes on the meshes `finish_skins` writes."""
+        nodes = self.gltf.document["nodes"]
+        rest_scales = {name: nodes[node].get("scale", [1.0, 1.0, 1.0]) for name, node in self.bones.items()}
+        self.face_poses = face.expression_poses(target, rest_scales)
+
+    def visit(self, reader: Any, node: int, merging: bool, parent_active: bool = True) -> None:
         self.node_of[gm.object_key(reader)] = node
         transform = reader.read()
-        self.attach_renderers(transform.m_GameObject.read(), node)
+        game_object = transform.m_GameObject.read()
+        # Unity hides a switched-off object's children with it.
+        active = parent_active and game_object.m_IsActive
+        # The game switches these on for an expression, such as tears, and loads their textures then.
+        if active:
+            self.attach_renderers(game_object, node)
+
         for child_pointer in transform.m_Children:
             child_reader = child_pointer.deref()
             child = child_reader.read()
@@ -128,7 +151,7 @@ class CharacterExporter(gm.PrefabExporter):
                 parent_path = self.node_paths[node]
                 self.node_paths[child_node] = f"{parent_path}/{name}" if parent_path else name
                 self.bones.setdefault(name, child_node)
-            self.visit(child_reader, child_node, merging)
+            self.visit(child_reader, child_node, merging, active)
 
     def attach_renderers(self, game_object: Any, node: int) -> None:
         if not self.with_renderers:
@@ -169,8 +192,38 @@ class CharacterExporter(gm.PrefabExporter):
         }
         return self.gltf.add("accessors", accessor)
 
+    def expression_moves(self, world: dict[int, Matrix]) -> ExpressionMoves:
+        """For each expression, how it moves the bones below the face bones it poses, relative
+        to the base pose."""
+        if self.face_poses is None:
+            return []
+
+        base_pose, expressions = self.face_poses
+        nodes = self.gltf.document["nodes"]
+        parent_of = {child: node for node in world for child in nodes[node].get("children", [])}
+        base_locals = {self.bones[bone]: trs_matrix(pose) for bone, pose in base_pose.items()}
+        base_world = {**world, **subtree_world(nodes, world, parent_of, base_locals, base_locals)}
+        inverse_rest: dict[int, Matrix] = {}
+
+        moves_by_expression: ExpressionMoves = []
+        for name, pose in expressions:
+            posed = [self.bones[bone] for bone in pose]
+            local = {**base_locals, **{self.bones[bone]: trs_matrix(trs) for bone, trs in pose.items()}}
+            moves = {}
+            for node, matrix in subtree_world(nodes, base_world, parent_of, local, posed).items():
+                change = [[matrix[r][c] - base_world[node][r][c] for c in range(4)] for r in range(4)]
+                is_moved = max(abs(value) for row in change for value in row) > face.MORPH_TOLERANCE
+                if not is_moved or not is_invertible(world[node]):
+                    continue
+                if node not in inverse_rest:
+                    inverse_rest[node] = invert(world[node])
+                moves[node] = multiply(change, inverse_rest[node])
+            moves_by_expression.append((name, moves))
+        return moves_by_expression
+
     def finish_skins(self) -> None:
         world = self.rest_world()
+        moves_by_expression = self.expression_moves(world)
         for name, renderer in self.skinned:
             if not renderer.m_Enabled or renderer.m_Mesh.m_PathID == 0:
                 continue
@@ -180,8 +233,10 @@ class CharacterExporter(gm.PrefabExporter):
             bind_poses = [gltf_matrix(pose) for pose in mesh_reader.read().m_BindPose]
             materials = tuple(self.material(pointer) for pointer in renderer.m_Materials)
             self.bind_offsets = bind_offsets(joints, bind_poses, world)
+            self.joint_moves = joint_moves(joints, moves_by_expression)
             mesh = self.mesh(mesh_reader, materials)
             self.bind_offsets = []
+            self.joint_moves = []
             if mesh is None:
                 continue
 
@@ -257,7 +312,64 @@ class CharacterExporter(gm.PrefabExporter):
                 weights.append(weight)
         attributes["JOINTS_0"] = self.gltf.accessor(joints, "VEC4", count, gm.ARRAY_BUFFER)
         attributes["WEIGHTS_0"] = self.gltf.accessor(weights, "VEC4", count, gm.ARRAY_BUFFER)
+        if self.joint_moves:
+            self.morph_targets = self.expression_targets(handler, bones)
         return attributes
+
+    def expression_targets(
+        self, handler: Any, bones: list[tuple[tuple[int, float], ...]]
+    ) -> tuple[list[str], list[dict[str, int]]] | None:
+        """The blend shapes of the expressions that move this mesh, and their names."""
+        count = handler.m_VertexCount
+        positions = [(-vertex[0], vertex[1], vertex[2]) for vertex in handler.m_Vertices[:count]]
+        names = []
+        targets = []
+        for name, moves in self.joint_moves:
+            indices, deltas = face.morph_deltas(positions, bones, moves)
+            if indices:
+                names.append(name)
+                targets.append({"POSITION": self.sparse_vectors(count, indices, deltas)})
+        return (names, targets) if names else None
+
+    def sparse_vectors(self, count: int, indices: list[int], vectors: list[list[float]]) -> int:
+        """A VEC3 accessor that is zero except at `indices`, the compact form of a blend shape."""
+        index_values = array("H" if count <= 65535 else "I", indices)
+        values = array("f", [component for vector in vectors for component in vector])
+        stored = values.tolist()
+        # Bounds cover the zeros of the vertices the shape leaves in place.
+        zeros = [0.0] if len(indices) < count else []
+        lowest = [min(stored[axis::3] + zeros) for axis in range(3)]
+        highest = [max(stored[axis::3] + zeros) for axis in range(3)]
+        accessor = {
+            "componentType": gm.FLOAT,
+            "count": count,
+            "type": "VEC3",
+            "min": lowest,
+            "max": highest,
+            "sparse": {
+                "count": len(indices),
+                "indices": {
+                    "bufferView": self.gltf.buffer_view(index_values.tobytes()),
+                    "componentType": gm.COMPONENT_TYPES[index_values.typecode],
+                },
+                "values": {"bufferView": self.gltf.buffer_view(values.tobytes())},
+            },
+        }
+        return self.gltf.add("accessors", accessor)
+
+    def mesh(self, mesh_reader: Any, materials: tuple[int | None, ...]) -> int | None:
+        """Also gives the mesh the blend shapes `vertex_attributes` baked for it."""
+        self.morph_targets = None
+        index = super().mesh(mesh_reader, materials)
+        if index is None or self.morph_targets is None:
+            return index
+
+        names, targets = self.morph_targets
+        gltf_mesh = self.gltf.document["meshes"][index]
+        for primitive in gltf_mesh["primitives"]:
+            primitive["targets"] = targets
+        gltf_mesh["extras"] = {"targetNames": names}
+        return index
 
     def material(self, pointer: Any) -> int | None:
         """Also puts the textures the game loads at runtime, a tail's colours, in their slots."""
@@ -325,6 +437,49 @@ def bind_offsets(joints: list[int], bind_poses: list[list[float]], world: dict[i
         inverse_bind = [[column_major[c * 4 + r] for c in range(4)] for r in range(4)]
         offsets.append(multiply(world[joint], inverse_bind))
     return offsets
+
+
+def subtree_world(
+    nodes: list[dict[str, Any]],
+    world: dict[int, Matrix],
+    parent_of: dict[int, int],
+    local: dict[int, Matrix],
+    posed: Iterable[int],
+) -> dict[int, Matrix]:
+    """The world matrices below the `posed` nodes, where `local` replaces some nodes' own
+    transforms; `world` holds those of everything else."""
+    posed_nodes = set(posed)
+    changed: dict[int, Matrix] = {}
+
+    def has_posed_ancestor(node: int) -> bool:
+        parent = parent_of.get(node)
+        while parent is not None:
+            if parent in posed_nodes:
+                return True
+            parent = parent_of.get(parent)
+        return False
+
+    def walk(node: int, parent_matrix: Matrix) -> None:
+        own = local[node] if node in local else trs_matrix(nodes[node])
+        matrix = multiply(parent_matrix, own)
+        changed[node] = matrix
+        for child in nodes[node].get("children", []):
+            walk(child, matrix)
+
+    for node in posed_nodes:
+        if not has_posed_ancestor(node):
+            walk(node, world[parent_of[node]])
+    return changed
+
+
+def joint_moves(joints: list[int], moves_by_expression: ExpressionMoves) -> ExpressionMoves:
+    """The expressions that move any of a mesh's joints, with their moves by the mesh's bone index."""
+    by_bone_index = []
+    for name, moves in moves_by_expression:
+        bone_moves = {index: moves[node] for index, node in enumerate(joints) if node in moves}
+        if bone_moves:
+            by_bone_index.append((name, bone_moves))
+    return by_bone_index
 
 
 def unity_matrix(matrix: Matrix) -> Matrix:
@@ -492,6 +647,36 @@ def tail_slot_textures(environment: Any, model: dict[str, Any]) -> dict[str, dic
     return {material: textures}
 
 
+def facial_target(environment: Any, model: dict[str, Any]) -> dict[str, Any] | None:
+    """The head's FaceDrivenKeyTarget, which holds its expressions."""
+    for prefab in model["prefabs"]:
+        if not prefab["object"].startswith("pfb_chr"):
+            continue
+        for reader in gm.bundle_objects(environment, prefab["bundle"], "MonoBehaviour"):
+            if reader.peek_name().endswith("_facial_target"):
+                return reader.read_typetree()
+    return None
+
+
+def hide_blush(document: dict[str, Any]) -> None:
+    """glTF cannot multiply, so viewers get the blush fully transparent, as the game shows it
+    at rest. `extras.unity.blend` keeps how the game draws it."""
+    for node in document["nodes"]:
+        if node["name"] != BLUSH_NODE or "mesh" not in node:
+            continue
+
+        node["extras"] = {"active": False}
+        for primitive in document["meshes"][node["mesh"]]["primitives"]:
+            if "material" not in primitive:
+                continue
+            material = document["materials"][primitive["material"]]
+            material["alphaMode"] = "BLEND"
+            pbr = material["pbrMetallicRoughness"]
+            red, green, blue, _ = pbr.get("baseColorFactor", [1.0, 1.0, 1.0, 1.0])
+            pbr["baseColorFactor"] = [red, green, blue, 0.0]
+            material["extras"]["unity"]["blend"] = "multiply"
+
+
 def export_uma(environment: Any, model: dict[str, Any], output: dict[str, Any]) -> None:
     """Writes `output["path"]`: the uma in its T-pose, named for Blender after its title, with
     its traits as the armature's custom properties."""
@@ -500,9 +685,13 @@ def export_uma(environment: Any, model: dict[str, Any], output: dict[str, Any]) 
     )
     for prefab in model["prefabs"]:
         exporter.add_prefab(prefab)
+    target = facial_target(environment, model)
+    if target is not None:
+        exporter.add_expressions(target)
     exporter.finish_skins()
     if not exporter.gltf.document["skins"]:
         raise ValueError("the uma has no skinned mesh")
+    hide_blush(exporter.gltf.document)
 
     root = exporter.gltf.document["nodes"][exporter.root]
     root["name"] = model["title"]
