@@ -47,6 +47,11 @@ enum Command {
         #[arg(long)]
         write_json: bool,
     },
+    /// List the asset bucket by top folder, or empty it.
+    AssetBucket {
+        #[command(subcommand)]
+        action: AssetBucketAction,
+    },
     /// Upload a folder of images to the asset bucket, skipping files whose bytes are already there.
     AssetsPublish {
         /// Folder whose files are uploaded, keeping their paths below it.
@@ -73,18 +78,20 @@ enum Command {
         /// Refreshed first; its cards decide which portraits are built.
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
-        /// Report what would be built without downloading game files.
+        /// Report what would be built without downloading game files. With --out-dir, write the
+        /// directory documents there as if every file converted.
         #[arg(long)]
         dry_run: bool,
-        /// Build a few images per family into this folder instead of the bucket, to check them.
+        /// Build a few files per family into this folder instead of the bucket, to check them.
         #[arg(long)]
         out_dir: Option<PathBuf>,
-        /// Images per family with --out-dir.
+        /// Files per family with --out-dir.
         #[arg(long, default_value_t = 3)]
         sample: usize,
-        /// With --out-dir, only files served below this key prefix, such as game-assets/umas/.
+        /// With --out-dir, only files served below this key prefix, such as art/umas/100101/.
+        /// Repeat it for several prefixes.
         #[arg(long)]
-        only: Option<String>,
+        only: Vec<String>,
     },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
@@ -148,6 +155,17 @@ enum Command {
         oembed_endpoint: String,
         #[arg(long, default_value = "src/global_data/official_social_archive.json")]
         out: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum AssetBucketAction {
+    /// Log the objects and bytes below each top folder, and their total.
+    Inventory,
+    /// Delete every object, only when the bucket holds exactly as many as an inventory reported.
+    Clear {
+        #[arg(long)]
+        expect: usize,
     },
 }
 
@@ -240,6 +258,17 @@ async fn main() -> Result<()> {
                 "generated resources"
             );
         }
+        Command::AssetBucket { action } => {
+            let bucket = assets::Bucket::fromEnv()?;
+            match action {
+                AssetBucketAction::Inventory => {
+                    assets::bucketInventory(&bucket).await?;
+                }
+                AssetBucketAction::Clear { expect } => {
+                    assets::clearBucket(&bucket, expect).await?;
+                }
+            }
+        }
         Command::AssetsPublish {
             dir,
             prefix,
@@ -271,16 +300,12 @@ async fn main() -> Result<()> {
             let version = master_fetch::localResourceVersion(&master)
                 .context("master.mdb has no version marker")?;
             match out_dir {
+                Some(folder) if dry_run => {
+                    assets::previewGameArtDirectory(&master, &version, &folder).await?;
+                }
                 Some(folder) => {
-                    assets::buildGameArtSample(
-                        &options,
-                        &master,
-                        &version,
-                        &folder,
-                        sample,
-                        only.as_deref(),
-                    )
-                    .await?;
+                    assets::buildGameArtSample(&options, &master, &version, &folder, sample, &only)
+                        .await?;
                 }
                 None => {
                     let bucket = assets::Bucket::fromEnv()?;

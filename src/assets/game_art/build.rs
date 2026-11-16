@@ -1,8 +1,9 @@
-use super::catalog::{objectName, trackTextureKey};
+use super::catalog::objectName;
+use super::layout::rootLink;
 use super::types::{
     ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
-    ConvertResult, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab, SlotBundle,
-    CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    ConvertResult, ConvertedArt, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab,
+    SlotBundle, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -46,10 +47,10 @@ impl Drop for WorkDir {
 
 pub(super) enum JobOutcome {
     /// Converted files as (bucket key, local file): the planned outputs, then those the converter
-    /// named after the bundle's contents, whose keys `content_outputs` lists.
+    /// named after the bundle's contents, which `converted` lists with the shaders a model uses.
     Built {
         outputs: Vec<(String, PathBuf)>,
-        content_outputs: Vec<String>,
+        converted: ConvertedArt,
     },
     /// The bundle downloaded but does not convert.
     Unconvertible(String),
@@ -79,14 +80,14 @@ pub(super) async fn buildBatch(
     for (index, conversion) in convertAll(conversions).await? {
         outcomes[index] = Some(match conversion {
             Err(error) => JobOutcome::Unconvertible(error),
-            Ok(content_files) => {
-                let content_outputs = content_files.iter().map(|(key, _)| key.clone()).collect();
+            Ok(reported) => {
+                let converted = ConvertedArt {
+                    content_outputs: reported.files.iter().map(|(key, _)| key.clone()).collect(),
+                    shaders: reported.shaders,
+                };
                 let mut outputs = outputFiles(&jobs[index], &dir, index);
-                outputs.extend(content_files);
-                JobOutcome::Built {
-                    outputs,
-                    content_outputs,
-                }
+                outputs.extend(reported.files);
+                JobOutcome::Built { outputs, converted }
             }
         });
     }
@@ -265,11 +266,11 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
             runtime_textures: scene
                 .runtime_textures
                 .iter()
-                .filter_map(|name| {
+                .filter_map(|texture| {
                     Some(RuntimeTexture {
-                        name,
-                        key: trackTextureKey(name),
-                        bundle: downloaded(name)?,
+                        name: &texture.name,
+                        key: texture.key.clone(),
+                        bundle: downloaded(&texture.name)?,
                     })
                 })
                 .collect(),
@@ -319,6 +320,7 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
                 .map(|(entry, file)| NamedBundle {
                     name: &entry.name,
                     bundle: path(file),
+                    file: job.links.get(&entry.name).map(|key| rootLink(key)),
                 })
                 .collect(),
         },
@@ -333,19 +335,28 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
     }
 }
 
-/// The files a job's converter named after its bundle's contents as (bucket key, local file), or
-/// why it did not convert.
-type Conversion = std::result::Result<Vec<(String, PathBuf)>, String>;
+/// What a job's converter reported beside the planned outputs, or why it did not convert.
+type Conversion = std::result::Result<ReportedFiles, String>;
+
+#[derive(Debug, PartialEq)]
+struct ReportedFiles {
+    /// Files named after the bundle's contents as (bucket key, local file).
+    files: Vec<(String, PathBuf)>,
+    shaders: Vec<String>,
+}
 
 fn conversion(result: ConvertResult) -> Conversion {
     if let Some(error) = result.error {
         return Err(error);
     }
-    Ok(result
-        .files
-        .into_iter()
-        .map(|file| (file.key, PathBuf::from(file.path)))
-        .collect())
+    Ok(ReportedFiles {
+        files: result
+            .files
+            .into_iter()
+            .map(|file| (file.key, PathBuf::from(file.path)))
+            .collect(),
+        shaders: result.shaders,
+    })
 }
 
 /// Converts the bundles in one converter process. If the process itself fails, each bundle gets
@@ -421,10 +432,11 @@ async fn runConverter(request: &ConvertRequest<'_>) -> Result<ConvertResponse> {
 mod tests {
     use super::*;
     use crate::assets::game_art::types::{
-        PlannedOutput, SceneryModel, SlotTexture, UmaOutfit, UmaTraits,
+        PlacedTexture, PlannedOutput, SceneryModel, SlotTexture, UmaOutfit, UmaTraits,
     };
     use crate::game_cdn::GLOBAL_CDN;
     use serde_json::json;
+    use std::collections::BTreeMap;
 
     const TRACK: &str = "3d/env/race/race10006/race10006_0000/pfb_env_race10006_0000_002";
     const TREES: &str = "3d/env/race/race10006/race10006_6000/pfb_env_race10006_6000_100";
@@ -435,19 +447,90 @@ mod tests {
     fn filesTheConverterNamedArePublishedBesideThePlannedOnes() {
         let result: ConvertResult = serde_json::from_value(json!({
             "bundle": "shader",
-            "files": [{"key": "game-assets/shaders/gallop/ui/default.json", "path": "work/default.json"}],
+            "files": [{"key": "art/shaders/gallop/ui/default.json", "path": "work/default.json"}],
             "error": null,
         }))
         .unwrap();
 
-        let named = conversion(result);
+        let reported = conversion(result);
 
         assert_eq!(
-            named,
-            Ok(vec![(
-                "game-assets/shaders/gallop/ui/default.json".to_string(),
-                PathBuf::from("work/default.json")
-            )])
+            reported,
+            Ok(ReportedFiles {
+                files: vec![(
+                    "art/shaders/gallop/ui/default.json".to_string(),
+                    PathBuf::from("work/default.json")
+                )],
+                shaders: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn aModelReportsTheShadersItsMaterialsUse() {
+        let result: ConvertResult = serde_json::from_value(json!({
+            "bundle": "body",
+            "shaders": ["/art/shaders/gallop/3d/chara/toon/tser.json"],
+            "error": null,
+        }))
+        .unwrap();
+
+        let reported = conversion(result).unwrap();
+
+        assert_eq!(
+            reported.shaders,
+            vec!["/art/shaders/gallop/3d/chara/toon/tser.json"]
+        );
+    }
+
+    #[test]
+    fn aTimelineLinksWhatItPlaysFromTheBucketRoot() {
+        let entry = |name: &str| ManifestEntry::new(name, 1, 1, 1);
+        let timeline = "cutt/cutin/skill/crd100101_001/crd100101_001";
+        let camera = "3d/motion/cutin/card/camera/crd100101_001/anm_cti_crd100101_001_01_cam";
+        let effect = "3d/effect/charaskill/pfb_eff_chr1001_00/pfb_eff_chr1001_00_01";
+        let job = ArtJob {
+            source: &GLOBAL_CDN,
+            name: timeline.to_string(),
+            entry: entry(timeline),
+            dependencies: Vec::new(),
+            lookups: vec![entry(camera), entry(effect)],
+            links: BTreeMap::from([
+                (
+                    camera.to_string(),
+                    "art/umas/100101/cutin/camera/01_cam.glb".to_string(),
+                ),
+                (
+                    effect.to_string(),
+                    "art/characters/1001/effects/00/01.glb".to_string(),
+                ),
+            ]),
+            model: Some(ArtModel::Scripts),
+            outputs: vec![PlannedOutput {
+                key: "art/umas/100101/cutin/timeline.json".to_string(),
+                object: "crd100101_001".to_string(),
+                fit: Fit::Native,
+            }],
+        };
+        let files = ["timeline", "camera", "effect"].map(PathBuf::from);
+
+        let request = serde_json::to_value(convertJob(&job, &files, Path::new("work"), 0)).unwrap();
+
+        assert_eq!(
+            request["model"]["bundles"],
+            json!([
+                {"name": timeline, "bundle": "timeline"},
+                {
+                    "name": camera,
+                    "bundle": "camera",
+                    "file": "/art/umas/100101/cutin/camera/01_cam.glb",
+                },
+                {
+                    "name": effect,
+                    "bundle": "effect",
+                    "file": "/art/characters/1001/effects/00/01.glb",
+                },
+            ])
         );
     }
 
@@ -460,13 +543,17 @@ mod tests {
             entry: entry(TRACK),
             dependencies: vec![entry(TURF_TEXTURE), entry(TREES)],
             lookups: Vec::new(),
+            links: BTreeMap::new(),
             model: Some(ArtModel::Scenery(SceneryModel {
                 prefabs: vec![TRACK.to_string(), TREES.to_string()],
-                runtime_textures: vec![TURF_TEXTURE.to_string()],
+                runtime_textures: vec![PlacedTexture {
+                    name: TURF_TEXTURE.to_string(),
+                    key: "art/racecourses/10006/textures/0000_112_turf00.webp".to_string(),
+                }],
                 components: false,
             })),
             outputs: vec![PlannedOutput {
-                key: "game-assets/racetracks/tokyo.glb".to_string(),
+                key: "art/racecourses/10006/model.glb".to_string(),
                 object: "race10006".to_string(),
                 fit: Fit::Native,
             }],
@@ -485,7 +572,7 @@ mod tests {
                 ],
                 "runtime_textures": [{
                     "name": TURF_TEXTURE,
-                    "key": format!("game-assets/{TURF_TEXTURE}.webp"),
+                    "key": "art/racecourses/10006/textures/0000_112_turf00.webp",
                     "bundle": "turf",
                 }],
             })
@@ -507,7 +594,7 @@ mod tests {
                 name: diffuse.to_string(),
             }],
             title: "Special Week: Special Dreamer".to_string(),
-            key: "game-assets/umas/special-week/special-dreamer.glb".to_string(),
+            key: "art/umas/100101/model.glb".to_string(),
             traits: UmaTraits {
                 chara: 1001,
                 dress: 100101,
@@ -522,6 +609,7 @@ mod tests {
             entry: entry(body),
             dependencies: vec![entry(diffuse), entry(head)],
             lookups: Vec::new(),
+            links: BTreeMap::new(),
             outputs: vec![PlannedOutput {
                 key: uma.key.clone(),
                 object: "pfb_bdy1001_00".to_string(),

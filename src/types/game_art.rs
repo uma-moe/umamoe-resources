@@ -36,12 +36,19 @@ pub(super) const SHADER_BUNDLE: &str = "shader";
 /// name.
 pub(super) const SHADER_RECORD: &str = "android/shader";
 
-/// The list of published shaders; each shader's file lies below it, named after the shader.
-pub(super) const SHADER_INDEX_KEY: &str = "game-assets/shaders/index.json";
-
 /// The publisher's record in the bucket, outside every path the site routes there: an
 /// `index.json` linking the shards, and one JSON file of records per top-level game folder.
 pub(super) const STATE_FOLDER: &str = "_state/game-art";
+
+/// The directory documents last published and the MD5 of each, so only changed ones are written
+/// and those no longer built are deleted.
+pub(super) const DIRECTORY_STATE_KEY: &str = "_state/game-art/_directory.json";
+
+/// Raise when a directory document changes shape, so a page can refuse a shape it does not know.
+pub(super) const DOCUMENT_SCHEMA: u32 = 1;
+
+/// Documents larger than this are reported; an uma's should stay far below it.
+pub(super) const DOCUMENT_SIZE_LIMIT: usize = 64 * 1024;
 
 pub(super) const CONVERTER_PYTHON: &str = "/opt/game-art/bin/python";
 
@@ -78,17 +85,11 @@ pub(super) const COURSE_ENVIRONMENT: &str = "112";
 pub(super) const COURSE_SKY: &str =
     "3d/env/race/race00000/race00000_9000/pfb_env_race00000_9000_112";
 
-/// Where each racecourse's combined model is served, named after the course.
-pub(super) const COURSE_MODEL_FOLDER: &str = "game-assets/racetracks";
-
 /// The master.mdb `text_data` category of racecourse names, indexed by course number.
 pub(super) const COURSE_NAME_CATEGORY: u32 = 35;
 
 /// Outfit bodies, one folder each: `3d/chara/body/bdy1001_00`, which names the uma's record.
 pub(super) const UMA_BODY_FOLDER: &str = "3d/chara/body/";
-
-/// Where each outfit's uma is served: `game-assets/umas/special-week/special-dreamer.glb`.
-pub(super) const UMA_MODEL_FOLDER: &str = "game-assets/umas";
 
 /// The `text_data` categories of character names by character and outfit names by outfit.
 pub(super) const CHARA_NAME_CATEGORY: u32 = 6;
@@ -96,9 +97,6 @@ pub(super) const DRESS_NAME_CATEGORY: u32 = 14;
 
 /// Race clips that move the whole body, one folder per motion set.
 pub(super) const RACE_MOTION_SOURCE: &str = "3d/motion/racemain/body/";
-
-/// Where race motions are served: `game-assets/uma-motions/race/bright/run-fast-standard.glb`.
-pub(super) const RACE_MOTION_FOLDER: &str = "game-assets/uma-motions/race";
 
 /// The skeleton a race motion is exported on. Every body and every tail share one rest skeleton,
 /// so Special Week's racewear and the common tail stand for all of them.
@@ -120,10 +118,6 @@ pub(super) const TAIL_TEXTURES: &[(&str, &str)] = &[
 /// Chibi bodies, one folder per outfit: `3d/chara/mini/body/mbdy1001_00`, which names the
 /// chibi's record.
 pub(super) const CHIBI_BODY_FOLDER: &str = "3d/chara/mini/body/";
-
-/// Where each outfit's chibi is served, at its uma's path:
-/// `game-assets/chibis/special-week/special-dreamer.glb`.
-pub(super) const CHIBI_MODEL_FOLDER: &str = "game-assets/chibis";
 
 /// The face every chibi shares, the only one the file list holds; its materials are empty until
 /// the game loads the character's sheets into them.
@@ -147,7 +141,7 @@ pub(super) const CHIBI_SKIN_SHEETS: &[(&str, &str)] = &[
     ("mtl_mchr0001_00_cheek", "cheek0"),
 ];
 
-/// Chibi clips, served at their game paths.
+/// Chibi clips: what every chibi can play by scene, and what one character plays alone.
 pub(super) const CHIBI_CLIP_FOLDER: &str = "3d/motion/mini/";
 
 /// The skeleton chibi body and face clips are exported on: Special Week's racewear chibi, her
@@ -158,8 +152,8 @@ pub(super) const CHIBI_SKELETON: &[&str] = &[
     "3d/chara/mini/tail/mtail0001_00/pfb_mtail0001_00",
 ];
 
-/// Cut-in clips, served at their game paths: per shot the uma's body, face, ears and position,
-/// the camera, and the props and sets in it.
+/// Cut-in clips, one folder per timeline: per shot the uma's body, face, ears and position, the
+/// camera, and the props and sets in it.
 pub(super) const CUTIN_CLIP_FOLDER: &str = "3d/motion/cutin/";
 
 /// The skeleton cut-in body and face clips are exported on: `MOTION_SKELETON` with Special Week's
@@ -174,7 +168,7 @@ pub(super) const CUTIN_SKELETON: &[&str] = &[
 /// `cutt/cutin/skill/crd100101_001/crd100101_001`.
 pub(super) const CUTIN_TIMELINE_FOLDER: &str = "cutt/cutin/skill/";
 
-/// The sets cut-ins play in, served like track prefabs at their game paths.
+/// The sets cut-ins play in, each played by one timeline.
 pub(super) const CUTIN_SET_FOLDER: &str = "3d/env/cutin/";
 
 /// The props umas hold in cut-ins, one folder each: `3d/chara/prop/prop1001_00`.
@@ -207,13 +201,6 @@ pub(super) struct ArtOutput {
 }
 
 impl ArtOutput {
-    const fn native(path: &'static str) -> Self {
-        Self {
-            path,
-            fit: Fit::Native,
-        }
-    }
-
     const fn resized(path: &'static str, size: (u32, u32)) -> Self {
         Self {
             path,
@@ -233,7 +220,7 @@ pub(super) const ART_FAMILIES: &[ArtFamily] = &[
     ArtFamily {
         source: "chara/chr{chara}/chr_icon_{chara}",
         outputs: &[ArtOutput::centred(
-            "game-assets/umamusume_icons/chr_icon_{chara}.webp",
+            "art/characters/{chara}/icon.webp",
             (256, 256),
             (232, 256),
         )],
@@ -241,74 +228,65 @@ pub(super) const ART_FAMILIES: &[ArtFamily] = &[
     ArtFamily {
         source: "supportcard/support{card}/tex_support_card_{card}",
         outputs: &[ArtOutput::resized(
-            "game-assets/umamusume_cards/tex_support_card_{card}.webp",
+            "art/support-cards/{card}/card.webp",
             (450, 600),
         )],
     },
     ArtFamily {
         source: "supportcard/support{card}/support_card_s_{card}",
         outputs: &[ArtOutput::resized(
-            "assets/images/support_card/half/support_card_s_{card}.webp",
+            "art/support-cards/{card}/half.webp",
             (128, 128),
         )],
     },
     ArtFamily {
         source: "outgame/skillicon/utx_ico_skill_{icon}",
-        outputs: &[ArtOutput::resized(
-            "assets/images/skills/utx_ico_skill_{icon}.webp",
-            (96, 96),
-        )],
+        outputs: &[ArtOutput::resized("art/skills/icons/{icon}.webp", (96, 96))],
     },
     ArtFamily {
         source: "race/racetitle/thumb/thum_race_rt_000_{race}_00",
         outputs: &[ArtOutput::resized(
-            "game-assets/textures/race_banners/thum_race_rt_000_{race}_00.webp",
+            "art/races/banners/{race}.webp",
             (128, 64),
         )],
     },
     ArtFamily {
         source: "uianimation/flash/singlemode/rank/utx_txt_rank_{rank}",
-        outputs: &[ArtOutput::resized(
-            "assets/images/icon/ranks/utx_txt_rank_{rank}.webp",
-            (154, 154),
-        )],
-    },
-    // Chibi sprites keep their size: most are 256x256, scenes with props are wider.
-    ArtFamily {
-        source: "chara/chr{chara}/petit/petit_chr_{chara}_{dress}_{pose}",
-        outputs: &[ArtOutput::native(
-            "game-assets/petit/petit_chr_{chara}_{dress}_{pose}.webp",
-        )],
-    },
-    ArtFamily {
-        source: "outgame/campaign/valentine/chara/petit_chr_{chara}_{dress}_{pose}",
-        outputs: &[ArtOutput::native(
-            "game-assets/petit/petit_chr_{chara}_{dress}_{pose}.webp",
-        )],
+        outputs: &[ArtOutput::resized("art/ui/ranks/{rank}.webp", (154, 154))],
     },
     ArtFamily {
         source: "item/item_icon_{item}",
-        outputs: &[ArtOutput::resized(
-            "assets/images/item/item_icon_{item}.webp",
-            (128, 128),
-        )],
+        outputs: &[ArtOutput::resized("art/items/{item}.webp", (128, 128))],
     },
 ];
 
-/// Character portraits. The game names each by the outfit it shows, the site by card, so the
-/// outfit of every card comes from master.mdb.
+/// Chibi sprites, served in their outfit's uma folder. Most are 256x256 and scenes with props are
+/// wider, so they keep their size. The Valentine campaign's poses are kept apart.
+pub(super) const SPRITE_SOURCES: &[SpriteSource] = &[
+    SpriteSource {
+        source: "chara/chr{chara}/petit/petit_chr_{chara}_{dress}_{pose}",
+        folder: "sprites",
+    },
+    SpriteSource {
+        source: "outgame/campaign/valentine/chara/petit_chr_{chara}_{dress}_{pose}",
+        folder: "sprites/valentine",
+    },
+];
+
+pub(super) struct SpriteSource {
+    pub(super) source: &'static str,
+    /// The folder below the uma's, where each pose is `{pose}.webp`.
+    pub(super) folder: &'static str,
+}
+
+/// Character portraits. The game names each by the outfit it shows; it is served in the folder of
+/// the card that wears it, so the outfit of every card comes from master.mdb.
 pub(super) const PORTRAIT_SOURCE: &str = "chara/chr{chara}/chara_stand_{chara}_{dress}";
 
-pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[
-    ArtOutput::resized(
-        "game-assets/character_thumbs/chara_stand_{chara}_{card}.webp",
-        (128, 128),
-    ),
-    ArtOutput::resized(
-        "assets/images/character_stand/chara_stand_{card}.webp",
-        (128, 128),
-    ),
-];
+pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[ArtOutput::resized(
+    "art/umas/{card}/portrait.webp",
+    (128, 128),
+)];
 
 /// Sprites cut from one of the game's atlases. The sprites name their pictures in a second
 /// bundle, so both are loaded together.
@@ -319,35 +297,35 @@ pub(super) struct AtlasFamily {
 }
 
 pub(super) enum AtlasSprites {
-    /// One sprite and the paths it is served at.
+    /// One sprite and the path it is served at.
     Named {
         sprite: &'static str,
-        paths: &'static [&'static str],
+        path: &'static str,
     },
-    /// A run of sprites whose `{n}`, zero-padded to `width` digits, also names their paths.
+    /// A run of sprites whose `{n}`, zero-padded to `width` digits, also names their path.
     Numbered {
         sprite: &'static str,
         numbers: RangeInclusive<u32>,
         width: usize,
-        paths: &'static [&'static str],
+        path: &'static str,
     },
 }
 
-const fn named(sprite: &'static str, paths: &'static [&'static str]) -> AtlasSprites {
-    AtlasSprites::Named { sprite, paths }
+const fn named(sprite: &'static str, path: &'static str) -> AtlasSprites {
+    AtlasSprites::Named { sprite, path }
 }
 
 const fn numbered(
     sprite: &'static str,
     numbers: RangeInclusive<u32>,
     width: usize,
-    paths: &'static [&'static str],
+    path: &'static str,
 ) -> AtlasSprites {
     AtlasSprites::Numbered {
         sprite,
         numbers,
         width,
-        paths,
+        path,
     }
 }
 
@@ -359,10 +337,7 @@ pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
             "utx_ico_statusrank_{n}",
             0..=97,
             2,
-            &[
-                "game-assets/textures/uma_ranks/utx_ico_statusrank_{n}.webp",
-                "assets/images/icon/statusrank/utx_ico_statusrank_{n}.webp",
-            ],
+            "art/ui/status-ranks/{n}.webp",
         )],
     },
     AtlasFamily {
@@ -372,119 +347,69 @@ pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
             "utx_ico_circle_rank_{n}",
             1..=11,
             2,
-            &["assets/images/icon/circle_rank/utx_ico_circle_rank_{n}.webp"],
+            "art/ui/circle-ranks/{n}.webp",
         )],
     },
     AtlasFamily {
         atlas: "atlas/common/common",
         texture: "atlas/common/common_tex",
         sprites: &[
-            named(
-                "utx_ico_weather_00",
-                &[
-                    "game-assets/textures/utx_ico_weather_00.png",
-                    "game-assets/track_details/Sunny.webp",
-                ],
-            ),
-            named(
-                "utx_ico_weather_01",
-                &[
-                    "game-assets/textures/utx_ico_weather_01.png",
-                    "game-assets/track_details/Cloudy.webp",
-                ],
-            ),
-            named(
-                "utx_ico_weather_02",
-                &[
-                    "game-assets/textures/utx_ico_weather_02.png",
-                    "game-assets/track_details/Rainy.webp",
-                ],
-            ),
-            named(
-                "utx_ico_weather_03",
-                &[
-                    "game-assets/textures/utx_ico_weather_03.png",
-                    "game-assets/track_details/Snowy.webp",
-                ],
-            ),
+            named("utx_ico_weather_00", "art/ui/weather/sunny.webp"),
+            named("utx_ico_weather_01", "art/ui/weather/cloudy.webp"),
+            named("utx_ico_weather_02", "art/ui/weather/rainy.webp"),
+            named("utx_ico_weather_03", "art/ui/weather/snowy.webp"),
             numbered(
                 "utx_ico_timezone_{n}",
                 0..=2,
                 2,
-                &["game-assets/textures/utx_ico_timezone_{n}.png"],
-            ),
-            numbered(
-                "utx_ico_runstyle_{n}",
-                0..=3,
-                2,
-                &["game-assets/textures/utx_ico_runstyle_{n}.webp"],
-            ),
-            named("utx_txt_runstyle_00", &["game-assets/textures/front.webp"]),
-            named("utx_txt_runstyle_01", &["game-assets/textures/pace.webp"]),
-            named("utx_txt_runstyle_02", &["game-assets/textures/late.webp"]),
-            named("utx_txt_runstyle_03", &["game-assets/textures/end.webp"]),
-            named(
-                "utx_ico_obtain_00",
-                &[
-                    "assets/images/icon/stats/speed.webp",
-                    "game-assets/textures/speed.webp",
-                ],
+                "art/ui/times-of-day/{n}.webp",
             ),
             named(
-                "utx_ico_obtain_01",
-                &[
-                    "assets/images/icon/stats/stamina.webp",
-                    "game-assets/textures/stamina.webp",
-                ],
+                "utx_ico_runstyle_00",
+                "art/ui/running-styles/icons/front.webp",
             ),
             named(
-                "utx_ico_obtain_02",
-                &[
-                    "assets/images/icon/stats/power.webp",
-                    "game-assets/textures/power.webp",
-                ],
+                "utx_ico_runstyle_01",
+                "art/ui/running-styles/icons/pace.webp",
             ),
             named(
-                "utx_ico_obtain_03",
-                &[
-                    "assets/images/icon/stats/guts.webp",
-                    "game-assets/textures/guts.webp",
-                ],
+                "utx_ico_runstyle_02",
+                "art/ui/running-styles/icons/late.webp",
             ),
             named(
-                "utx_ico_obtain_04",
-                &[
-                    "assets/images/icon/stats/wit.webp",
-                    "game-assets/textures/wit.webp",
-                ],
+                "utx_ico_runstyle_03",
+                "art/ui/running-styles/icons/end.webp",
             ),
             named(
-                "utx_ico_obtain_05",
-                &["assets/images/icon/stats/friend.webp"],
+                "utx_txt_runstyle_00",
+                "art/ui/running-styles/labels/front.webp",
             ),
             named(
-                "utx_ico_obtain_06",
-                &["assets/images/icon/stats/group.webp"],
-            ),
-            named("utx_ico_rarity_00", &["game-assets/support-rarity/r.png"]),
-            named("utx_ico_rarity_01", &["game-assets/support-rarity/sr.png"]),
-            named("utx_ico_rarity_02", &["game-assets/support-rarity/ssr.png"]),
-            named(
-                "utx_txt_season_00",
-                &["game-assets/track_details/Spring.webp"],
+                "utx_txt_runstyle_01",
+                "art/ui/running-styles/labels/pace.webp",
             ),
             named(
-                "utx_txt_season_01",
-                &["game-assets/track_details/Summer.webp"],
+                "utx_txt_runstyle_02",
+                "art/ui/running-styles/labels/late.webp",
             ),
             named(
-                "utx_txt_season_02",
-                &["game-assets/track_details/Fall.webp"],
+                "utx_txt_runstyle_03",
+                "art/ui/running-styles/labels/end.webp",
             ),
-            named(
-                "utx_txt_season_03",
-                &["game-assets/track_details/Winter.webp"],
-            ),
+            named("utx_ico_obtain_00", "art/ui/stats/speed.webp"),
+            named("utx_ico_obtain_01", "art/ui/stats/stamina.webp"),
+            named("utx_ico_obtain_02", "art/ui/stats/power.webp"),
+            named("utx_ico_obtain_03", "art/ui/stats/guts.webp"),
+            named("utx_ico_obtain_04", "art/ui/stats/wit.webp"),
+            named("utx_ico_obtain_05", "art/ui/stats/friend.webp"),
+            named("utx_ico_obtain_06", "art/ui/stats/group.webp"),
+            named("utx_ico_rarity_00", "art/ui/support-rarities/r.webp"),
+            named("utx_ico_rarity_01", "art/ui/support-rarities/sr.webp"),
+            named("utx_ico_rarity_02", "art/ui/support-rarities/ssr.webp"),
+            named("utx_txt_season_00", "art/ui/seasons/spring.webp"),
+            named("utx_txt_season_01", "art/ui/seasons/summer.webp"),
+            named("utx_txt_season_02", "art/ui/seasons/fall.webp"),
+            named("utx_txt_season_03", "art/ui/seasons/winter.webp"),
         ],
     },
     AtlasFamily {
@@ -493,19 +418,19 @@ pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
         sprites: &[
             named(
                 "utx_txt_raceresult_condition_1",
-                &["game-assets/track_details/Firm.webp"],
+                "art/ui/ground-conditions/firm.webp",
             ),
             named(
                 "utx_txt_raceresult_condition_2",
-                &["game-assets/track_details/Good.webp"],
+                "art/ui/ground-conditions/good.webp",
             ),
             named(
                 "utx_txt_raceresult_condition_3",
-                &["game-assets/track_details/Soft.webp"],
+                "art/ui/ground-conditions/soft.webp",
             ),
             named(
                 "utx_txt_raceresult_condition_4",
-                &["game-assets/track_details/Heavy.webp"],
+                "art/ui/ground-conditions/heavy.webp",
             ),
         ],
     },
@@ -513,26 +438,11 @@ pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
         atlas: "atlas/racecommon/racecommon",
         texture: "atlas/racecommon/racecommon_tex",
         sprites: &[
-            named(
-                "utx_ico_motivation_s_00",
-                &["game-assets/textures/awful.webp"],
-            ),
-            named(
-                "utx_ico_motivation_s_01",
-                &["game-assets/textures/bad.webp"],
-            ),
-            named(
-                "utx_ico_motivation_s_02",
-                &["game-assets/textures/normal.webp"],
-            ),
-            named(
-                "utx_ico_motivation_s_03",
-                &["game-assets/textures/good.webp"],
-            ),
-            named(
-                "utx_ico_motivation_s_04",
-                &["game-assets/textures/great.webp"],
-            ),
+            named("utx_ico_motivation_s_00", "art/ui/moods/awful.webp"),
+            named("utx_ico_motivation_s_01", "art/ui/moods/bad.webp"),
+            named("utx_ico_motivation_s_02", "art/ui/moods/normal.webp"),
+            named("utx_ico_motivation_s_03", "art/ui/moods/good.webp"),
+            named("utx_ico_motivation_s_04", "art/ui/moods/great.webp"),
         ],
     },
 ];
@@ -544,17 +454,31 @@ pub(super) struct CardOutfit {
     pub(super) dress: u32,
 }
 
-/// The game files the site uses and the bucket keys built from each.
+/// What master.mdb says about the game files the site uses, and the pictures built from them.
 pub(super) struct Catalog {
     /// Portrait outputs by game file; the fixed families are matched by name instead.
     pub(super) portraits: HashMap<String, Vec<PlannedOutput>>,
     pub(super) atlases: HashMap<&'static str, AtlasPlan>,
     /// Racecourse names by course number, `Tokyo` for 10006.
     pub(super) course_names: HashMap<u32, String>,
+    /// Each playable card and the outfit it wears at its top rarity.
+    pub(super) cards: Vec<CardOutfit>,
+    /// Every outfit with a body of its own, in outfit order.
+    pub(super) outfits: Vec<OutfitRow>,
+    /// The folder below `art/umas/` of each outfit, by game outfit.
+    pub(super) uma_folders: HashMap<u32, String>,
     /// Every outfit with a body of its own; those whose files are listed become umas.
     pub(super) umas: Vec<UmaOutfit>,
     /// Every such outfit with a chibi; those whose files are listed become chibis.
     pub(super) chibis: Vec<ChibiOutfit>,
+    pub(super) support_cards: Vec<SupportCard>,
+}
+
+/// A support card and the character it shows.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct SupportCard {
+    pub(super) id: u32,
+    pub(super) chara: u32,
 }
 
 /// An outfit with a body of its own, as master.mdb describes it with its character.
@@ -669,14 +593,32 @@ pub(super) enum ClipKind {
     Script,
 }
 
-/// A chibi or cut-in clip and where it is served.
+/// A chibi or cut-in clip: how it is published and whose it is.
 #[derive(Debug, PartialEq)]
-pub(super) struct GameClip {
-    pub(super) key: String,
+pub(super) struct GameClip<'a> {
     pub(super) kind: ClipKind,
+    pub(super) owner: ClipOwner<'a>,
+    /// The game's folder for what the clip moves: `body`, `camera`, `position`, `facial`, `prop`,
+    /// `bg` or `belt`.
+    pub(super) role: &'a str,
+    /// The clip's game name without the prefix its siblings share, `01_cam`; the role when nothing
+    /// is left, as for a character cut-in's one body clip.
+    pub(super) short_name: String,
 }
 
-/// The prefab families built into one model each, at their game paths except a course's parts.
+/// Whose a clip is, which decides its folder.
+#[derive(Debug, PartialEq)]
+pub(super) enum ClipOwner<'a> {
+    /// A cut-in clip, made for the timeline of the same name: `crd100101_001`.
+    Cutin { timeline: &'a str },
+    /// A chibi clip only this character plays, with its scene and set folders for when the
+    /// character has no folder of its own: `event/chara/chr1001_00`.
+    Character { chara: u32, folder: String },
+    /// A chibi clip any chibi can play, by scene and set below the role: `event/type00`.
+    Library { folder: String },
+}
+
+/// The prefab families built into one model each.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum PrefabFamily {
     Track,
@@ -685,10 +627,13 @@ pub(super) enum PrefabFamily {
     Prop,
 }
 
-/// A race clip and where it is served, named after what it shows.
+/// A race clip, named after what it shows.
 #[derive(Debug, PartialEq)]
 pub(super) struct RaceMotion {
-    pub(super) key: String,
+    /// The motion set's folder, `bright`.
+    pub(super) set: String,
+    /// The file name within the set, `run-fast-standard`.
+    pub(super) stem: String,
     /// What Blender names the action: `Bright: Fast run, standard form`.
     pub(super) title: String,
 }
@@ -800,6 +745,21 @@ pub(super) struct PublishedArt {
     /// converter changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) error: Option<String>,
+    /// The shader files its model's materials use, as links from the bucket root.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) shaders: Vec<String>,
+    /// MD5 of the published files a cut-in timeline links, so it is rebuilt when one moves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) links: Option<String>,
+}
+
+/// What the converter reported about a built file beside its planned outputs.
+#[derive(Debug, Default, PartialEq)]
+pub(super) struct ConvertedArt {
+    /// Keys it named after the file's contents: one per shader of the shader bundle.
+    pub(super) content_outputs: Vec<String>,
+    /// The shader files a model's materials use.
+    pub(super) shaders: Vec<String>,
 }
 
 /// A game file to build, the source it comes from and the bucket keys it is served at.
@@ -816,6 +776,9 @@ pub(super) struct ArtJob {
     /// them does not rebuild the job. A model looks its materials' shader names up in the shader
     /// bundle, and a cut-in timeline names the clips, effects and sets it plays.
     pub(super) lookups: Vec<ManifestEntry>,
+    /// The published key of each lookup the publisher builds, by game file, which a timeline
+    /// links beside the game name.
+    pub(super) links: BTreeMap<String, String>,
     /// What a model draws; `None` for pictures.
     pub(super) model: Option<ArtModel>,
     pub(super) outputs: Vec<PlannedOutput>,
@@ -847,10 +810,17 @@ pub(super) struct SceneryModel {
     pub(super) prefabs: Vec<String>,
     /// Textures the game puts on the prefabs' materials at runtime, one set per season and
     /// weather. They are published on their own and are among the job's `dependencies`, so the
-    /// model can embed the first set.
-    pub(super) runtime_textures: Vec<String>,
+    /// model can embed the first set and link the others.
+    pub(super) runtime_textures: Vec<PlacedTexture>,
     /// Whether each object keeps its particle systems and scripts, as effects and cut-in sets do.
     pub(super) components: bool,
+}
+
+/// A texture published on its own, by game file and bucket key.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct PlacedTexture {
+    pub(super) name: String,
+    pub(super) key: String,
 }
 
 pub(super) struct MotionModel {
@@ -978,6 +948,9 @@ pub(super) struct NamedBundle<'a> {
     /// The game file, `3d/effect/charaskill/pfb_eff_chr1001_00/pfb_eff_chr1001_00_01`.
     pub(super) name: &'a str,
     pub(super) bundle: String,
+    /// Where it is published, relative to the output, when the publisher builds it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) file: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -1011,6 +984,9 @@ pub(super) struct ConvertResult {
     /// Files the converter named after the bundle's contents, beside the planned outputs.
     #[serde(default)]
     pub(super) files: Vec<ConvertedFile>,
+    /// The shader files the model's materials use, below the shader folder.
+    #[serde(default)]
+    pub(super) shaders: Vec<String>,
     pub(super) error: Option<String>,
 }
 

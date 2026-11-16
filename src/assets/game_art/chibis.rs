@@ -1,14 +1,16 @@
 //! The chibis built from master.mdb's outfits: every outfit with a chibi and a body of its own
 //! becomes one model of its chibi body, the face every chibi shares, its hair and its tail, served
-//! at its uma's path. The paths follow the client's `MINI_BODY_SPECIAL_DRESS_MODEL_PATH`,
+//! as `chibi.glb` in its uma's folder. The paths follow the client's `MINI_BODY_SPECIAL_DRESS_MODEL_PATH`,
 //! `MINI_HAIR_MODEL_PATH` and `MINI_TAIL_MODEL_PATH`; the face's sheets follow its face and head
 //! texture paths.
 
+use super::layout::umaKey;
 use super::types::{
     CharacterModel, ChibiOutfit, MaterialTexture, OutfitRow, OutfitTraits, CHIBI_BODY_FOLDER,
-    CHIBI_FACE_FOLDER, CHIBI_FACE_PREFAB, CHIBI_FACE_SHEETS, CHIBI_MODEL_FOLDER, CHIBI_SKIN_SHEETS,
+    CHIBI_FACE_FOLDER, CHIBI_FACE_PREFAB, CHIBI_FACE_SHEETS, CHIBI_SKIN_SHEETS,
 };
-use super::umas::{outfitPaths, outfitTitle, tailModel};
+use super::umas::{outfitFolder, outfitTitle, tailModel};
+use std::collections::HashMap;
 
 /// A chibi's record, its body's folder such as `3d/chara/mini/body/mbdy1001_00`.
 pub(super) fn isChibiRecord(name: &str) -> bool {
@@ -16,12 +18,11 @@ pub(super) fn isChibiRecord(name: &str) -> bool {
         .is_some_and(|folder| !folder.is_empty() && !folder.contains('/'))
 }
 
-/// The chibi of every outfit that has one: `game-assets/chibis/special-week/special-dreamer.glb`.
-pub(super) fn chibiOutfits(rows: &[OutfitRow]) -> Vec<ChibiOutfit> {
+/// The chibi of every outfit that has one: `art/umas/100101/chibi.glb`.
+pub(super) fn chibiOutfits(rows: &[OutfitRow], folders: &HashMap<u32, String>) -> Vec<ChibiOutfit> {
     rows.iter()
-        .zip(outfitPaths(rows))
-        .filter(|(row, _)| row.has_chibi)
-        .map(|(row, path)| chibiOutfit(row, format!("{CHIBI_MODEL_FOLDER}/{path}.glb")))
+        .filter(|row| row.has_chibi)
+        .map(|row| chibiOutfit(row, umaKey(&outfitFolder(row, folders), "chibi.glb")))
         .collect()
 }
 
@@ -103,6 +104,10 @@ mod tests {
         }
     }
 
+    fn chibis(row: OutfitRow) -> Vec<ChibiOutfit> {
+        chibiOutfits(&[row], &HashMap::from([(100101, "100101".to_string())]))
+    }
+
     fn filled(chibi: &ChibiOutfit) -> Vec<(String, String)> {
         chibi
             .model
@@ -114,13 +119,10 @@ mod tests {
 
     #[test]
     fn aChibiJoinsItsBodyTheSharedFaceItsHairAndItsCharactersTail() {
-        let chibi = &chibiOutfits(&[specialWeek()])[0];
+        let chibi = &chibis(specialWeek())[0];
 
         assert_eq!(chibi.record, "3d/chara/mini/body/mbdy1001_00");
-        assert_eq!(
-            chibi.key,
-            "game-assets/chibis/special-week/special-dreamer.glb"
-        );
+        assert_eq!(chibi.key, "art/umas/100101/chibi.glb");
         assert_eq!(
             chibi.model.prefabs,
             vec![
@@ -134,7 +136,7 @@ mod tests {
 
     #[test]
     fn theFaceWearsTheCharactersSkinAndSheetsAndTheTailItsColour() {
-        let chibi = &chibiOutfits(&[specialWeek()])[0];
+        let chibi = &chibis(specialWeek())[0];
 
         let head = "3d/chara/mini/head/mchr1001_00/textures/tex_mchr1001_00";
         let face = "3d/chara/mini/head/mchr0001_00/textures/tex_mchr0001_00_face0_1";
@@ -161,6 +163,6 @@ mod tests {
             ..specialWeek()
         };
 
-        assert!(chibiOutfits(&[row]).is_empty());
+        assert!(chibis(row).is_empty());
     }
 }

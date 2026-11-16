@@ -250,6 +250,8 @@ mod tests {
             content_outputs: Vec::new(),
             textures: Vec::new(),
             error: None,
+            shaders: Vec::new(),
+            links: None,
         }
     }
 

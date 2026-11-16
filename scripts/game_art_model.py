@@ -8,12 +8,13 @@ Every texture is embedded as WebP (EXT_texture_webp), so the one file opens on i
 Blender for one. The game's shaders have no glTF equivalent, so a material's `_MainTex` becomes
 its base colour texture, and every Unity texture slot (baked light in `_LightTex`, for one),
 number and colour is kept in `extras.unity`, each slot naming its glTF texture, beside the
-material's shader (its name and its file among the published shaders) and keywords. Course
-materials (turf, dirt, base) are left empty in the game files and filled at runtime with one
-season and weather variant of their part's textures: the first variant is embedded in those
-slots, and every variant is listed in `extras.unity.variants` as links to the separately
-published textures, relative to the model's URL. Several prefabs, such as a racecourse's track,
-trees, stands and sky, are placed side by side in their own coordinates. Vertex colours, which
+material's shader (its name and its published file) and keywords. Course materials (turf,
+dirt, base) are left empty in the game files and filled at runtime with one season and weather
+variant of their part's textures: the first variant is embedded in those slots, and every variant
+is listed in `extras.unity.variants` as links to the separately published textures. Every link is
+a path from the bucket root, `/art/...`, so the asset origin plus the link is the file's URL.
+Several prefabs, such as a racecourse's track, trees, stands and sky, are placed side by side in
+their own coordinates. Vertex colours, which
 those shaders read in their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard
 viewers do not tint the model by them.
 
@@ -37,7 +38,7 @@ from urllib.parse import quote
 from UnityPy.helpers.MeshHelper import MeshHandler
 
 import game_art_unity as unity
-from game_art_shader import serialized_shader_files
+from game_art_shader import SHADER_FOLDER, serialized_shader_files
 
 FLOAT = 5126
 UNSIGNED_BYTE = 5121
@@ -173,18 +174,21 @@ def node_transform(transform: Any) -> dict[str, list[float]]:
     return fields
 
 
+def root_link(bucket_key: str) -> str:
+    """How a model links a published file: from the bucket root, `/art/shaders/gallop/ui/x.json`."""
+    return "/" + quote(bucket_key)
+
+
 class PrefabExporter:
     def __init__(
         self,
         environment: Any,
-        glb_key: str,
         runtime_textures: list[dict[str, str]],
         components: bool = False,
     ) -> None:
         self.gltf = Gltf()
         self.components = components
         self.environment = environment
-        self.glb_folder = posixpath.dirname(glb_key)
         self.runtime_textures = runtime_textures
         self.attributes: dict[tuple[str, int], dict[str, int] | None] = {}
         self.meshes: dict[tuple[Any, ...], int | None] = {}
@@ -494,7 +498,8 @@ class PrefabExporter:
         serialized = reader.assets_file
         if serialized.name not in self.shader_files:
             self.shader_files[serialized.name] = serialized_shader_files(serialized)
-        return self.shader_files[serialized.name][reader.path_id]
+        shader = self.shader_files[serialized.name][reader.path_id]
+        return {"name": shader["name"], "file": root_link(f"{SHADER_FOLDER}/{shader['file']}")}
 
     def runtime_variants(self, material_name: str) -> dict[str, dict[str, dict[str, str]]]:
         """The textures the game puts in this material's `_MainTex` and `_SubTex`, by variant:
@@ -513,7 +518,7 @@ class PrefabExporter:
         return dict(sorted(variants.items()))
 
     def link(self, bucket_key: str) -> str:
-        return quote(posixpath.relpath(bucket_key, self.glb_folder))
+        return root_link(bucket_key)
 
     def image(self, reader: Any, texture: Any) -> int:
         """Embeds the texture as WebP once and returns its image."""
@@ -598,7 +603,7 @@ def export_model(
 ) -> None:
     """Writes `output["path"]`, a GLB of the prefabs ({"object", "bundle"}) with every texture
     they draw embedded, and with `components` their objects' other components."""
-    exporter = PrefabExporter(environment, output["key"], runtime_textures, components)
+    exporter = PrefabExporter(environment, runtime_textures, components)
     scene_nodes = exporter.gltf.document["scenes"][0]["nodes"]
     for prefab in prefabs:
         roots = prefab_roots(environment, prefab["bundle"])

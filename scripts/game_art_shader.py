@@ -30,6 +30,11 @@ PASS_TYPES = ("normal", "use", "grab")
 TEXTURE_DIMENSIONS = {1: "any", 2: "2d", 3: "3d", 4: "cube", 5: "2d-array", 6: "cube-array"}
 # A render state value not set by a material property names none.
 UNBOUND_PROPERTY = "<noninit>"
+INDEX_FILE = "index.json"
+# Where the publisher puts the shader bundle: the folder of `SHADER_INDEX_KEY` in layout.rs.
+SHADER_FOLDER = "art/shaders"
+# Raised when the shape of a folder index changes.
+INDEX_SCHEMA = 1
 # Unity's ShaderGpuProgramType of the GLES programs, by the GLSL version each is written in.
 GLSL_VERSIONS = {2: "310 es", 3: "310 es", 4: "300 es"}
 UNIFORM_LOCATION_ON = "#define UNITY_SUPPORTS_UNIFORM_LOCATION 1"
@@ -271,9 +276,32 @@ def write_json(path: str, document: dict[str, Any]) -> None:
         json.dump(document, file, separators=(",", ":"))
 
 
+def folder_indexes(listed: list[dict[str, str]]) -> dict[str, dict[str, Any]]:
+    """One browsing document per folder of shader files, by folder ("" for the top): the folders
+    below it and the shaders in it, each named relative to that folder."""
+    indexes: dict[str, dict[str, Any]] = {"": {"schema": INDEX_SCHEMA}}
+
+    def add_folder(folder: str) -> None:
+        if folder in indexes:
+            return
+        indexes[folder] = {"schema": INDEX_SCHEMA}
+        above, name = posixpath.split(folder)
+        add_folder(above)
+        indexes[above].setdefault("folders", []).append(name)
+
+    for entry in sorted(listed, key=lambda item: item["file"]):
+        folder, file = posixpath.split(entry["file"])
+        add_folder(folder)
+        indexes[folder].setdefault("shaders", []).append({"name": entry["name"], "file": file})
+    for index in indexes.values():
+        if "folders" in index:
+            index["folders"].sort()
+    return indexes
+
+
 def export_shaders(readers: list[Any], output: dict[str, Any]) -> list[dict[str, str]]:
-    """Writes every shader beside the output, which becomes the index, and returns each shader
-    file as {"key", "path"}."""
+    """Writes every shader beside the output, which becomes the top folder's index, with an
+    `index.json` in each folder below, and returns each further file as {"key", "path"}."""
     shader_folder = posixpath.dirname(output["key"])
     local_folder = os.path.splitext(output["path"])[0]
     if not readers:
@@ -285,11 +313,18 @@ def export_shaders(readers: list[Any], output: dict[str, Any]) -> list[dict[str,
     for reader in readers:
         document = ShaderDocument(reader.read_typetree()).document()
         file = files[reader.path_id]
+        if posixpath.basename(file) == INDEX_FILE:
+            raise ValueError(f"shader file {file} would replace its folder's index")
         local_path = os.path.join(local_folder, *file.split("/"))
         write_json(local_path, document)
         listed.append({"name": document["name"], "file": file})
         written.append({"key": f"{shader_folder}/{file}", "path": local_path})
 
-    listed.sort(key=lambda entry: entry["file"])
-    write_json(output["path"], {"shaders": listed})
+    for folder, index in folder_indexes(listed).items():
+        if not folder:
+            write_json(output["path"], index)
+            continue
+        local_path = os.path.join(local_folder, *folder.split("/"), INDEX_FILE)
+        write_json(local_path, index)
+        written.append({"key": f"{shader_folder}/{folder}/{INDEX_FILE}", "path": local_path})
     return written

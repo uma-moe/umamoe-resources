@@ -10,6 +10,19 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      asset_bucket:
+        description: "Asset bucket, on the beta host: inventory lists it and skips the deploy; clear empties it, then deploys"
+        type: choice
+        options:
+          - keep
+          - inventory
+          - clear
+        default: keep
+      expected_objects:
+        description: "With clear: the object count the last inventory reported"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -311,8 +324,33 @@ jobs:
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.BETA_SHARED_SERVICE_ALIAS }}
           AUTH_INTERNAL_BASE_URL: ${{ env.BETA_AUTH_INTERNAL_BASE_URL }}
+          ASSET_BUCKET: ${{ github.event_name == 'workflow_dispatch' && inputs.asset_bucket || 'keep' }}
+          EXPECTED_OBJECTS: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_objects || '' }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
           set -euo pipefail
+
+          # Bucket errors can quote the endpoint, whose host names the account.
+          if [ -n "$R2_ENDPOINT" ]; then
+            r2_host="${R2_ENDPOINT#https://}"
+            r2_host="${r2_host%%/*}"
+            echo "::add-mask::$r2_host"
+            echo "::add-mask::${r2_host%%.*}"
+          fi
+
+          case "$ASSET_BUCKET" in
+            keep | inventory) ;;
+            clear)
+              if [[ ! "$EXPECTED_OBJECTS" =~ ^[0-9]+$ ]]; then
+                echo "Clearing the asset bucket needs expected_objects, the count an inventory reported." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unknown asset_bucket choice: $ASSET_BUCKET" >&2
+              exit 1
+              ;;
+          esac
 
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
 
@@ -320,7 +358,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" "$ASSETS_ENV_FILE" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" "$ASSETS_ENV_FILE" "$ASSET_BUCKET" "$EXPECTED_OBJECTS" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -338,6 +376,8 @@ jobs:
           auth_internal_base_url="${13}"
           history_volume_name="${14}"
           assets_env_file="${15}"
+          asset_bucket="${16}"
+          expected_objects="${17}"
 
           for required_env_file in "$env_file" "$assets_env_file"; do
             if [ ! -f "$required_env_file" ]; then
@@ -347,6 +387,24 @@ jobs:
           done
 
           gzip -dc "$archive" | docker load
+
+          # The old container is stopped before the bucket is emptied, so no publish writes
+          # while it goes; the new container then builds every file again.
+          case "$asset_bucket" in
+            inventory)
+              docker run --rm --env-file "$assets_env_file" "$image_tag" asset-bucket inventory
+              rm -f "$archive"
+              exit 0
+              ;;
+            clear)
+              docker stop "$container_name" >/dev/null 2>&1 || true
+              if ! docker run --rm --env-file "$assets_env_file" "$image_tag" asset-bucket clear --expect "$expected_objects"; then
+                docker start "$container_name" >/dev/null 2>&1 || true
+                exit 1
+              fi
+              ;;
+          esac
+
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
           mkdir -p "$config_dir"
 

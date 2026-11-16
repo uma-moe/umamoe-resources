@@ -3,7 +3,9 @@
 //! recorded, such as the copied web root and the timeline banners, are never touched.
 
 use super::plan::publishedRecord;
-use super::types::{ArtJob, ArtState, PublishedArt, ORPHAN_ALERT_MINIMUM, ORPHAN_ALERT_PERCENT};
+use super::types::{
+    ArtJob, ArtState, ConvertedArt, PublishedArt, ORPHAN_ALERT_MINIMUM, ORPHAN_ALERT_PERCENT,
+};
 use crate::assets::Bucket;
 use anyhow::Result;
 use std::collections::{BTreeSet, HashSet};
@@ -17,13 +19,16 @@ pub(super) fn recordKeys(record: &PublishedArt) -> impl Iterator<Item = &String>
         .chain(&record.textures)
 }
 
-/// The keys a file's record lists as named after its contents, which are only known once it is
-/// converted again.
-pub(super) fn keptContentOutputs(state: &ArtState, name: &str) -> Vec<String> {
+/// What a file's record says its last conversion reported: the keys named after its contents and
+/// the shaders it uses, which are only known once it is converted again.
+pub(super) fn keptConversion(state: &ArtState, name: &str) -> ConvertedArt {
     state
         .files
         .get(name)
-        .map(|record| record.content_outputs.clone())
+        .map(|record| ConvertedArt {
+            content_outputs: record.content_outputs.clone(),
+            shaders: record.shaders.clone(),
+        })
         .unwrap_or_default()
 }
 
@@ -58,22 +63,28 @@ pub(super) fn removeRecords(state: &mut ArtState, names: &[String]) -> BTreeSet<
     keys
 }
 
-/// What publishing `jobs` and dropping `orphans` would delete, for a dry run.
-pub(super) fn plannedDeletions(
-    state: &ArtState,
-    jobs: &[ArtJob],
-    orphans: &[String],
-) -> Vec<String> {
+/// What publishing `jobs` and dropping `orphans` would leave, for a dry run, if every job
+/// converted.
+pub(super) struct PlannedRun {
+    pub(super) state: ArtState,
+    pub(super) deletions: Vec<String>,
+}
+
+pub(super) fn plannedRun(state: &ArtState, jobs: &[ArtJob], orphans: &[String]) -> PlannedRun {
     let mut after = state.clone();
     let mut stale_keys = removeRecords(&mut after, orphans);
     for job in jobs {
         // A dry run does not convert, so it cannot tell which content outputs would go.
-        let record = publishedRecord(job, None, keptContentOutputs(&after, &job.name));
+        let record = publishedRecord(job, None, keptConversion(&after, &job.name));
         if let Some(replaced) = after.files.insert(job.name.clone(), record) {
             stale_keys.extend(recordKeys(&replaced).cloned());
         }
     }
-    unlistedKeys(&after, stale_keys)
+    let deletions = unlistedKeys(&after, stale_keys);
+    PlannedRun {
+        state: after,
+        deletions,
+    }
 }
 
 pub(super) async fn deleteKeys(
@@ -103,6 +114,8 @@ mod tests {
             content_outputs: Vec::new(),
             textures: textures.iter().map(|key| key.to_string()).collect(),
             error: None,
+            shaders: Vec::new(),
+            links: None,
         }
     }
 
@@ -113,6 +126,7 @@ mod tests {
             entry: ManifestEntry::new(name, 1, 2, 1),
             dependencies: Vec::new(),
             lookups: Vec::new(),
+            links: Default::default(),
             model: None,
             outputs: keys
                 .iter()
@@ -129,9 +143,9 @@ mod tests {
         PublishedArt {
             content_outputs: files
                 .iter()
-                .map(|file| format!("game-assets/shaders/{file}"))
+                .map(|file| format!("art/shaders/{file}"))
                 .collect(),
-            ..record(&["game-assets/shaders/index.json"], &[])
+            ..record(&["art/shaders/index.json"], &[])
         }
     }
 
@@ -149,7 +163,7 @@ mod tests {
             .unwrap();
         let deletable = unlistedKeys(&state, recordKeys(&replaced).cloned().collect());
 
-        assert_eq!(deletable, vec!["game-assets/shaders/gone.json"]);
+        assert_eq!(deletable, vec!["art/shaders/gone.json"]);
     }
 
     #[test]
@@ -158,11 +172,11 @@ mod tests {
         state
             .files
             .insert("android/shader".to_string(), shaderRecord(&["kept.json"]));
-        let rebuilt = job("android/shader", &["game-assets/shaders/index.json"]);
+        let rebuilt = job("android/shader", &["art/shaders/index.json"]);
 
-        let deletions = plannedDeletions(&state, &[rebuilt], &[]);
+        let planned = plannedRun(&state, &[rebuilt], &[]);
 
-        assert!(deletions.is_empty());
+        assert!(planned.deletions.is_empty());
     }
 
     #[test]
@@ -184,19 +198,13 @@ mod tests {
         let mut state = ArtState::default();
         state.files.insert(
             "3d/chara/body/bdy1001_00".to_string(),
-            record(&["game-assets/umas/special-week/old-name.glb"], &[]),
+            record(&["art/umas/100101/model-old.glb"], &[]),
         );
-        let renamed = job(
-            "3d/chara/body/bdy1001_00",
-            &["game-assets/umas/special-week/new-name.glb"],
-        );
+        let renamed = job("3d/chara/body/bdy1001_00", &["art/umas/100101/model.glb"]);
 
-        let deletions = plannedDeletions(&state, &[renamed], &[]);
+        let planned = plannedRun(&state, &[renamed], &[]);
 
-        assert_eq!(
-            deletions,
-            vec!["game-assets/umas/special-week/old-name.glb"]
-        );
+        assert_eq!(planned.deletions, vec!["art/umas/100101/model-old.glb"]);
     }
 
     #[test]
@@ -212,9 +220,9 @@ mod tests {
         );
         let orphans = vec!["chara/chr1007/chara_stand_1007_101".to_string()];
 
-        let deletions = plannedDeletions(&state, &[], &orphans);
+        let planned = plannedRun(&state, &[], &orphans);
 
-        assert_eq!(deletions, vec!["thumbs/old.webp"]);
+        assert_eq!(planned.deletions, vec!["thumbs/old.webp"]);
     }
 
     #[test]

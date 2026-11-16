@@ -1,14 +1,15 @@
 use super::chibis::{chibiOutfits, isChibiRecord};
 use super::clips::{isChibiClip, isCutinClip};
+use super::layout::{characterKey, umaFolders, umaKey};
 use super::race_motions::raceMotion;
 use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
-    Fit, PlannedOutput, PrefabFamily, ART_FAMILIES, ATLAS_FAMILIES, CHIBI_CONVERTER_REVISION,
-    CONVERTER_REVISION, COURSE_ENVIRONMENT, COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY,
-    COURSE_PARTS, COURSE_SKY, CUTIN_CONVERTER_REVISION, CUTIN_SET_FOLDER, CUTIN_TIMELINE_FOLDER,
-    EFFECT_CONVERTER_REVISION, EFFECT_FOLDER, MODEL_CONVERTER_REVISION, PORTRAIT_OUTPUTS,
-    PORTRAIT_SOURCE, PROP_FOLDER, SHADER_BUNDLE, SHADER_CONVERTER_REVISION, SHADER_RECORD,
-    TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
+    Fit, OutfitRow, PlannedOutput, PrefabFamily, SpriteSource, SupportCard, ART_FAMILIES,
+    ATLAS_FAMILIES, CHIBI_CONVERTER_REVISION, CONVERTER_REVISION, COURSE_ENVIRONMENT,
+    COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, CUTIN_CONVERTER_REVISION, CUTIN_SET_FOLDER,
+    CUTIN_TIMELINE_FOLDER, EFFECT_CONVERTER_REVISION, EFFECT_FOLDER, MODEL_CONVERTER_REVISION,
+    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, PROP_FOLDER, SHADER_BUNDLE, SHADER_CONVERTER_REVISION,
+    SHADER_RECORD, SPRITE_SOURCES, TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
 };
 use super::umas::{isUmaRecord, outfitRows, umaOutfits};
 use anyhow::{Context, Result};
@@ -18,16 +19,23 @@ use std::path::Path;
 
 impl Catalog {
     /// The fixed families and atlases plus a portrait for every card, a name for every
-    /// racecourse and a uma and chibi for every outfit in this master.
+    /// racecourse, a uma and chibi for every outfit and every support card in this master.
     pub(super) fn load(master: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(master, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("failed to open {}", master.display()))?;
         let mut catalog = Self::fromOutfits(&cardOutfits(&connection)?);
         catalog.course_names = courseNames(&connection)?;
-        let outfits = outfitRows(&connection)?;
-        catalog.umas = umaOutfits(&outfits);
-        catalog.chibis = chibiOutfits(&outfits);
+        catalog.support_cards = supportCards(&connection)?;
+        catalog.setOutfits(outfitRows(&connection)?);
         Ok(catalog)
+    }
+
+    /// Every outfit with a body of its own, its uma folder, uma and chibi.
+    pub(super) fn setOutfits(&mut self, outfits: Vec<OutfitRow>) {
+        self.uma_folders = umaFolders(&self.cards, &outfits);
+        self.umas = umaOutfits(&outfits, &self.uma_folders);
+        self.chibis = chibiOutfits(&outfits, &self.uma_folders);
+        self.outfits = outfits;
     }
 
     pub(super) fn fromOutfits(outfits: &[CardOutfit]) -> Self {
@@ -47,47 +55,72 @@ impl Catalog {
             .map(|family| {
                 let plan = AtlasPlan {
                     texture: family.texture,
-                    outputs: family.sprites.iter().flat_map(spriteOutputs).collect(),
+                    outputs: family.sprites.iter().flat_map(atlasOutputs).collect(),
                 };
                 (family.atlas, plan)
             })
             .collect();
 
+        let uma_folders = outfits
+            .iter()
+            .map(|outfit| (outfit.dress, outfit.card.to_string()))
+            .collect();
         Self {
             portraits,
             atlases,
             course_names: HashMap::new(),
+            cards: outfits.to_vec(),
+            outfits: Vec::new(),
+            uma_folders,
             umas: Vec::new(),
             chibis: Vec::new(),
+            support_cards: Vec::new(),
         }
     }
 
-    /// The bucket keys a game file is served at, or `None` when the site does not use it.
+    /// The pictures a game file is served as, or `None` when it is no picture the site uses.
+    /// Models, clips and the other files the layout places are not pictures.
     pub(super) fn outputs(&self, name: &str) -> Option<Vec<PlannedOutput>> {
         ART_FAMILIES
             .iter()
             .find_map(|family| familyOutputs(family, name))
             .or_else(|| self.portraits.get(name).cloned())
             .or_else(|| self.atlases.get(name).map(|plan| plan.outputs.clone()))
-            .or_else(|| prefabOutputs(name))
-            .or_else(|| trackTextureOutputs(name))
+            .or_else(|| {
+                SPRITE_SOURCES
+                    .iter()
+                    .find_map(|sprites| self.spriteOutputs(sprites, name))
+            })
     }
 
-    /// The model combining a racecourse, named after the course where master.mdb names it:
-    /// `game-assets/racetracks/tokyo.glb` for `3d/env/race/race10006`.
-    pub(super) fn courseOutputs(&self, course: &str) -> Vec<PlannedOutput> {
-        let folder = objectName(course);
-        let file = courseNumber(folder)
-            .and_then(|number| self.course_names.get(&number))
-            .map(|name| fileSlug(name))
-            .filter(|slug| !slug.is_empty())
-            .unwrap_or_else(|| folder.to_string());
+    /// A chibi sprite in its outfit's uma folder, `art/umas/100101/sprites/0020.webp`, or in its
+    /// character's folder for an outfit without one.
+    fn spriteOutputs(&self, sprites: &SpriteSource, name: &str) -> Option<Vec<PlannedOutput>> {
+        let captures = matchPattern(sprites.source, name)?;
+        let captured = |placeholder: &str| {
+            captures
+                .iter()
+                .find(|(known, _)| *known == placeholder)
+                .map(|(_, digits)| *digits)
+        };
+        let (chara, dress, pose) = (captured("chara")?, captured("dress")?, captured("pose")?);
+        let folder = dress
+            .parse()
+            .ok()
+            .and_then(|dress: u32| self.uma_folders.get(&dress));
 
-        vec![PlannedOutput {
-            key: format!("{COURSE_MODEL_FOLDER}/{file}.glb"),
-            object: folder.to_string(),
+        let key = match folder {
+            Some(folder) => umaKey(folder, &format!("{}/{pose}.webp", sprites.folder)),
+            None => characterKey(
+                chara.parse().ok()?,
+                &format!("{}/{dress}_{pose}.webp", sprites.folder),
+            ),
+        };
+        Some(vec![PlannedOutput {
+            key,
+            object: objectName(name).to_string(),
             fit: Fit::Native,
-        }]
+        }])
     }
 
     /// The bundles a game file is loaded with.
@@ -109,6 +142,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .iter()
         .map(|family| family.source)
         .chain([PORTRAIT_SOURCE])
+        .chain(SPRITE_SOURCES.iter().map(|sprites| sprites.source))
         .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
         .chain([TRACK_CATEGORY, SHADER_BUNDLE])
@@ -290,7 +324,7 @@ fn trackNumber(track: &str) -> Option<u32> {
 
 /// A racecourse's number from its folder, `race10006`. Courses are numbered from race10001; the
 /// folders below hold what every course shares.
-fn courseNumber(track: &str) -> Option<u32> {
+pub(super) fn courseNumber(track: &str) -> Option<u32> {
     trackNumber(track).filter(|number| *number >= 10000)
 }
 
@@ -316,10 +350,6 @@ pub(super) fn isTrackTexture(name: &str) -> bool {
     })
 }
 
-pub(super) fn trackTextureKey(name: &str) -> String {
-    format!("game-assets/{name}.webp")
-}
-
 /// The folder holding the textures the game puts on a prefab's materials at runtime.
 pub(super) fn runtimeTextureFolder(prefab: &str) -> Option<String> {
     if !isTrackPrefab(prefab) {
@@ -327,30 +357,6 @@ pub(super) fn runtimeTextureFolder(prefab: &str) -> Option<String> {
     }
     let (part, _) = prefab.rsplit_once('/')?;
     Some(format!("{part}/textures"))
-}
-
-/// A track texture keeps its own size at its game path, where models link it.
-fn trackTextureOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
-    if !isTrackTexture(name) {
-        return None;
-    }
-
-    Some(vec![PlannedOutput {
-        key: trackTextureKey(name),
-        object: objectName(name).to_string(),
-        fit: Fit::Native,
-    }])
-}
-
-/// A track prefab, effect, cut-in set or prop becomes one model at its game path.
-fn prefabOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
-    prefabFamily(name)?;
-
-    Some(vec![PlannedOutput {
-        key: format!("game-assets/{name}.glb"),
-        object: objectName(name).to_string(),
-        fit: Fit::Native,
-    }])
 }
 
 /// The game file's name without its folders, which is also its texture's or prefab's name.
@@ -381,29 +387,26 @@ fn cardOutfits(connection: &Connection) -> Result<Vec<CardOutfit>> {
         .context("failed to read card outfits from master.mdb")
 }
 
+/// Every support card and the character it shows.
+fn supportCards(connection: &Connection) -> Result<Vec<SupportCard>> {
+    let mut statement =
+        connection.prepare("SELECT id, chara_id FROM support_card_data ORDER BY id")?;
+    let rows = statement.query_map([], |row| {
+        Ok(SupportCard {
+            id: row.get(0)?,
+            chara: row.get(1)?,
+        })
+    })?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("failed to read support cards from master.mdb")
+}
+
 fn courseNames(connection: &Connection) -> Result<HashMap<u32, String>> {
     let mut statement =
         connection.prepare("SELECT \"index\", text FROM text_data WHERE category = ?1")?;
     let rows = statement.query_map([COURSE_NAME_CATEGORY], |row| Ok((row.get(0)?, row.get(1)?)))?;
     rows.collect::<rusqlite::Result<HashMap<_, _>>>()
         .context("failed to read course names from master.mdb")
-}
-
-/// `Longchamp` as `longchamp` and `Mejiro Palmer's` as `mejiro-palmers`: apostrophes are dropped
-/// and every other run of characters but ASCII letters and digits becomes one dash.
-pub(super) fn fileSlug(name: &str) -> String {
-    let words: String = name
-        .chars()
-        .filter(|character| !matches!(character, '\'' | '\u{2019}'))
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character.to_ascii_lowercase()
-            } else {
-                ' '
-            }
-        })
-        .collect();
-    words.split_whitespace().collect::<Vec<_>>().join("-")
 }
 
 fn familyOutputs(family: &ArtFamily, name: &str) -> Option<Vec<PlannedOutput>> {
@@ -427,7 +430,7 @@ fn plannedOutputs(
 }
 
 /// Sprites are cut at the size they are drawn, which is already the size the site serves.
-fn spriteOutputs(sprites: &AtlasSprites) -> Vec<PlannedOutput> {
+fn atlasOutputs(sprites: &AtlasSprites) -> Vec<PlannedOutput> {
     let sprite_output = |object: &str, key: String| PlannedOutput {
         key,
         object: object.to_string(),
@@ -435,27 +438,23 @@ fn spriteOutputs(sprites: &AtlasSprites) -> Vec<PlannedOutput> {
     };
 
     match sprites {
-        AtlasSprites::Named { sprite, paths } => paths
-            .iter()
-            .map(|path| sprite_output(sprite, path.to_string()))
-            .collect(),
+        AtlasSprites::Named { sprite, path } => vec![sprite_output(sprite, path.to_string())],
         AtlasSprites::Numbered {
             sprite,
             numbers,
             width,
-            paths,
-        } => {
-            let mut outputs = Vec::new();
-            for number in numbers.clone() {
+            path,
+        } => numbers
+            .clone()
+            .map(|number| {
                 let digits = format!("{number:0width$}");
                 let captures = [("n", digits.as_str())];
-                let object = fillPattern(sprite, &captures);
-                for path in *paths {
-                    outputs.push(sprite_output(&object, fillPattern(path, &captures)));
-                }
-            }
-            outputs
-        }
+                sprite_output(
+                    &fillPattern(sprite, &captures),
+                    fillPattern(path, &captures),
+                )
+            })
+            .collect(),
     }
 }
 
@@ -526,20 +525,20 @@ mod tests {
     }
 
     #[test]
-    fn gameFilesMapToTheUrlsTheSiteServes() {
+    fn picturesAreServedInTheFolderOfWhatTheyShow() {
         let catalog = Catalog::fromOutfits(&[]);
 
         assert_eq!(
             keys(&catalog, "chara/chr1001/chr_icon_1001"),
-            Some(vec![
-                "game-assets/umamusume_icons/chr_icon_1001.webp".to_string()
-            ])
+            Some(vec!["art/characters/1001/icon.webp".to_string()])
         );
         assert_eq!(
             keys(&catalog, "race/racetitle/thumb/thum_race_rt_000_1001_00"),
-            Some(vec![
-                "game-assets/textures/race_banners/thum_race_rt_000_1001_00.webp".to_string()
-            ])
+            Some(vec!["art/races/banners/1001.webp".to_string()])
+        );
+        assert_eq!(
+            keys(&catalog, "supportcard/support30050/support_card_s_30050"),
+            Some(vec!["art/support-cards/30050/half.webp".to_string()])
         );
     }
 
@@ -552,17 +551,11 @@ mod tests {
 
         assert_eq!(
             ruler_of_japan,
-            Some(vec![
-                "game-assets/character_thumbs/chara_stand_1001_100103.webp".to_string(),
-                "assets/images/character_stand/chara_stand_100103.webp".to_string(),
-            ])
+            Some(vec!["art/umas/100103/portrait.webp".to_string()])
         );
         assert_eq!(
             happy_heart,
-            Some(vec![
-                "game-assets/character_thumbs/chara_stand_1001_100102.webp".to_string(),
-                "assets/images/character_stand/chara_stand_100102.webp".to_string(),
-            ])
+            Some(vec!["art/umas/100102/portrait.webp".to_string()])
         );
     }
 
@@ -600,15 +593,15 @@ mod tests {
 
         let speed = common
             .iter()
-            .find(|output| output.key == "assets/images/icon/stats/speed.webp")
+            .find(|output| output.key == "art/ui/stats/speed.webp")
             .unwrap();
         assert_eq!(speed.object, "utx_ico_obtain_00");
         assert_eq!(speed.fit, Fit::Native);
-        assert_eq!(ranks.len(), 98 * 2);
+        assert_eq!(ranks.len(), 98);
         assert!(ranks
             .iter()
             .any(|output| output.object == "utx_ico_statusrank_97"
-                && output.key == "game-assets/textures/uma_ranks/utx_ico_statusrank_97.webp"));
+                && output.key == "art/ui/status-ranks/97.webp"));
     }
 
     #[test]
@@ -627,26 +620,13 @@ mod tests {
     }
 
     #[test]
-    fn trackPrefabsBecomeModelsAtTheirGamePath() {
+    fn trackPrefabsAreModelsBuiltFromEverythingTheyDraw() {
         let catalog = Catalog::fromOutfits(&[]);
         let prefab = "3d/env/race/race10001/race10001_0000/pfb_env_race10001_0000_002";
-        let gate = "3d/env/race/race00000/race00000_gate000/pfb_env_race00000_gate000_000";
-        let texture =
-            "3d/env/race/race10001/race10001_0000/textures/tex_env_race10001_0000_112_base00";
 
-        let model = catalog.outputs(prefab).unwrap();
-
-        assert_eq!(model[0].key, format!("game-assets/{prefab}.glb"));
-        assert_eq!(model[0].object, "pfb_env_race10001_0000_002");
+        assert_eq!(keys(&catalog, prefab), None);
         assert_eq!(catalog.dependencies(prefab), Dependencies::Listed);
-        assert_eq!(
-            keys(&catalog, gate),
-            Some(vec![format!("game-assets/{gate}.glb")])
-        );
-        assert_eq!(
-            keys(&catalog, texture),
-            Some(vec![format!("game-assets/{texture}.webp")])
-        );
+        assert_eq!(prefabFamily(prefab), Some(PrefabFamily::Track));
         assert!(catalogCategories().contains(&TRACK_CATEGORY));
     }
 
@@ -779,35 +759,6 @@ mod tests {
     }
 
     #[test]
-    fn courseModelsAreNamedAfterTheCourse() {
-        let mut catalog = Catalog::fromOutfits(&[]);
-        catalog.course_names.insert(10006, "Tokyo".to_string());
-        catalog.course_names.insert(10201, "Longchamp".to_string());
-        catalog
-            .course_names
-            .insert(10999, "Ooi (Night)".to_string());
-
-        let key = |course: &str| catalog.courseOutputs(course)[0].key.clone();
-
-        assert_eq!(
-            key("3d/env/race/race10006"),
-            "game-assets/racetracks/tokyo.glb"
-        );
-        assert_eq!(
-            key("3d/env/race/race10201"),
-            "game-assets/racetracks/longchamp.glb"
-        );
-        assert_eq!(
-            key("3d/env/race/race10999"),
-            "game-assets/racetracks/ooi-night.glb"
-        );
-        assert_eq!(
-            key("3d/env/race/race10001"),
-            "game-assets/racetracks/race10001.glb"
-        );
-    }
-
-    #[test]
     fn courseNamesComeFromTheirTextCategory() {
         let connection = Connection::open_in_memory().unwrap();
         connection
@@ -840,27 +791,65 @@ mod tests {
     }
 
     #[test]
-    fn chibiSpritesKeepTheirSize() {
-        let catalog = Catalog::fromOutfits(&[]);
+    fn chibiSpritesKeepTheirSizeInTheirOutfitsFolder() {
+        let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
 
         let chibi = catalog
-            .outputs("chara/chr1001/petit/petit_chr_1001_100101_0020")
+            .outputs("chara/chr1001/petit/petit_chr_1001_100130_0020")
             .unwrap();
         let valentine = keys(
             &catalog,
             "outgame/campaign/valentine/chara/petit_chr_1001_100101_0100",
         );
 
-        assert_eq!(
-            chibi[0].key,
-            "game-assets/petit/petit_chr_1001_100101_0020.webp"
-        );
+        assert_eq!(chibi[0].key, "art/umas/100102/sprites/0020.webp");
         assert_eq!(chibi[0].fit, Fit::Native);
         assert_eq!(
             valentine,
             Some(vec![
-                "game-assets/petit/petit_chr_1001_100101_0100.webp".to_string()
+                "art/umas/100101/sprites/valentine/0100.webp".to_string()
             ])
+        );
+    }
+
+    #[test]
+    fn aSpriteOfAnOutfitWithoutAnUmaGoesToItsCharacter() {
+        let catalog = Catalog::fromOutfits(&[]);
+
+        let sprite = keys(&catalog, "chara/chr1001/petit/petit_chr_1001_100101_0020");
+
+        assert_eq!(
+            sprite,
+            Some(vec![
+                "art/characters/1001/sprites/100101_0020.webp".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn supportCardsComeWithTheirCharacter() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE support_card_data (id INTEGER, chara_id INTEGER);
+                 INSERT INTO support_card_data VALUES (30050, 1050), (10001, 1001);",
+            )
+            .unwrap();
+
+        let cards = supportCards(&connection).unwrap();
+
+        assert_eq!(
+            cards,
+            vec![
+                SupportCard {
+                    id: 10001,
+                    chara: 1001
+                },
+                SupportCard {
+                    id: 30050,
+                    chara: 1050
+                },
+            ]
         );
     }
 

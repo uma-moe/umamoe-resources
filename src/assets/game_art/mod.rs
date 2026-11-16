@@ -5,6 +5,9 @@ mod catalog;
 mod chibis;
 mod cleanup;
 mod clips;
+mod directory;
+mod directory_store;
+mod layout;
 mod plan;
 mod race_motions;
 mod state;
@@ -19,9 +22,12 @@ use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use cleanup::{
-    deleteKeys, isSuspiciousOrphanCount, keptContentOutputs, plannedDeletions, recordKeys,
-    removeRecords, unlistedKeys,
+    deleteKeys, isSuspiciousOrphanCount, keptConversion, plannedRun, recordKeys, removeRecords,
+    unlistedKeys,
 };
+use directory::directoryDocuments;
+use directory_store::{reportDocumentSizes, DirectoryWriter};
+use layout::Layout;
 use plan::{orphanedRecords, planJobs, publishedRecord};
 use state::{loadState, rewriteState, saveState, shardName};
 use std::collections::{BTreeMap, BTreeSet};
@@ -85,30 +91,40 @@ pub async fn publishGameArt(
 
     let catalog = Catalog::load(master)?;
     let sources = listSources(&client, resource_version).await?;
-    let jobs = planJobs(&sources, &catalog, &state);
+    let layout = Layout::new(&catalog, &sources);
+    reportClashes(&layout);
+    let jobs = planJobs(&sources, &catalog, &layout, &state);
     let orphans = removableOrphans(orphanedRecords(&sources, &catalog, &state), &state);
     let mut summary = GameArtSummary::default();
-    for (folder, count) in countByFolder(&jobs) {
-        info!(folder, count, dry_run, "game art to build");
+    for (shard, count) in countByShard(&jobs) {
+        info!(shard, count, dry_run, "game art to build");
     }
     if dry_run {
-        for key in plannedDeletions(&state, &jobs, &orphans) {
+        let planned = plannedRun(&state, &jobs, &orphans);
+        for key in &planned.deletions {
             info!(key, "game art to delete");
         }
         info!(orphans = orphans.len(), "game art records to remove");
+        reportDocumentSizes(&directoryDocuments(&catalog, &layout, &planned.state)?);
         return Ok(summary);
     }
 
+    let destination = ArtDestination::Bucket(bucket);
+    let mut directory = DirectoryWriter::forBucket(&client, bucket, &catalog, &layout).await?;
     runJobs(
         &client,
         &jobs,
-        ArtDestination::Bucket(bucket),
+        &destination,
         options,
-        Some(&mut state),
+        &mut state,
+        &mut directory,
         &mut summary,
     )
     .await?;
     removeOrphans(&client, bucket, options, &mut state, &orphans, &mut summary).await?;
+    directory
+        .write(&client, &destination, &state, &options.purge_origins)
+        .await?;
 
     if summary.isComplete() {
         state.resource_version = Some(resource_version.to_string());
@@ -123,50 +139,85 @@ pub async fn publishGameArt(
     Ok(summary)
 }
 
-/// Builds up to `per_family` images of each family into `folder`, without the bucket, so
-/// conversions can be checked by eye. `only` keeps the files served below a key prefix, such as
-/// `game-assets/umas/special-week/`.
+/// Builds up to `per_family` files of each family into `folder`, without the bucket, so
+/// conversions can be checked by eye, with the directory documents of what was built. `only`
+/// keeps the files served below any of these key prefixes, such as `art/umas/100101/`.
 pub async fn buildGameArtSample(
     options: &GameArtOptions,
     master: &Path,
     resource_version: &str,
     folder: &Path,
     per_family: usize,
-    only: Option<&str>,
+    only: &[String],
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
     let catalog = Catalog::load(master)?;
     let sources = listSources(&client, resource_version).await?;
+    let layout = Layout::new(&catalog, &sources);
+    reportClashes(&layout);
 
     let mut taken: BTreeMap<String, usize> = BTreeMap::new();
-    let jobs: Vec<ArtJob> = planJobs(&sources, &catalog, &ArtState::default())
+    let jobs: Vec<ArtJob> = planJobs(&sources, &catalog, &layout, &ArtState::default())
         .into_iter()
         .filter(|job| {
-            only.is_none_or(|prefix| {
-                job.outputs
-                    .iter()
-                    .any(|output| output.key.starts_with(prefix))
-            })
+            only.is_empty()
+                || job.outputs.iter().any(|output| {
+                    only.iter()
+                        .any(|prefix| output.key.starts_with(prefix.as_str()))
+                })
         })
         .filter(|job| {
-            let count = taken.entry(outputFolder(job)).or_default();
+            let count = taken.entry(shardName(&job.name).to_string()).or_default();
             *count += 1;
             *count <= per_family
         })
         .collect();
 
     let mut summary = GameArtSummary::default();
+    let mut state = ArtState::default();
+    let destination = ArtDestination::Folder(folder);
+    let mut directory = DirectoryWriter::new(&catalog, &layout);
     runJobs(
         &client,
         &jobs,
-        ArtDestination::Folder(folder),
+        &destination,
         options,
-        None,
+        &mut state,
+        &mut directory,
         &mut summary,
     )
     .await?;
+    directory.write(&client, &destination, &state, &[]).await?;
     info!(folder = %folder.display(), planned = jobs.len(), ?summary, "built game art sample");
     Ok(summary)
+}
+
+/// Writes the directory documents into `folder` as if every planned file converted, without
+/// downloading anything, to check the documents against the whole file list.
+pub async fn previewGameArtDirectory(
+    master: &Path,
+    resource_version: &str,
+    folder: &Path,
+) -> Result<()> {
+    let client = reqwest::Client::new();
+    let catalog = Catalog::load(master)?;
+    let sources = listSources(&client, resource_version).await?;
+    let layout = Layout::new(&catalog, &sources);
+    reportClashes(&layout);
+
+    let jobs = planJobs(&sources, &catalog, &layout, &ArtState::default());
+    let planned = plannedRun(&ArtState::default(), &jobs, &[]);
+    reportDocumentSizes(&directoryDocuments(&catalog, &layout, &planned.state)?);
+    DirectoryWriter::new(&catalog, &layout)
+        .write(
+            &client,
+            &ArtDestination::Folder(folder),
+            &planned.state,
+            &[],
+        )
+        .await?;
+    info!(folder = %folder.display(), planned = jobs.len(), "previewed the game art directory");
+    Ok(())
 }
 
 /// Every source's file list, in precedence order: its Windows files and its Android shader
@@ -191,12 +242,15 @@ async fn listSources(
     Ok(vec![(&GLOBAL_CDN, files)])
 }
 
+/// Builds the jobs batch by batch; after each batch, records what it published and rewrites the
+/// directory documents when they are due.
 async fn runJobs(
     client: &reqwest::Client,
     jobs: &[ArtJob],
-    destination: ArtDestination<'_>,
+    destination: &ArtDestination<'_>,
     options: &GameArtOptions,
-    mut state: Option<&mut ArtState>,
+    state: &mut ArtState,
+    directory: &mut DirectoryWriter<'_>,
     summary: &mut GameArtSummary,
 ) -> Result<()> {
     if jobs.is_empty() {
@@ -212,7 +266,7 @@ async fn runJobs(
         let mut stale_keys = BTreeSet::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
-            let (error, content_outputs) = match outcome {
+            let (error, converted) = match outcome {
                 JobOutcome::NotDownloaded(error) => {
                     summary.download_failures += 1;
                     warn!(file = job.name, error, "game art download failed");
@@ -223,29 +277,23 @@ async fn runJobs(
                     warn!(file = job.name, error, "game art does not convert");
                     (Some(error), None)
                 }
-                JobOutcome::Built {
-                    outputs,
-                    content_outputs,
-                } => {
+                JobOutcome::Built { outputs, converted } => {
                     summary.built += 1;
                     files.extend(outputs);
-                    (None, Some(content_outputs))
+                    (None, Some(converted))
                 }
             };
-            if let Some(state) = state.as_deref_mut() {
-                // A file that stopped converting keeps the files it published before.
-                let content_outputs =
-                    content_outputs.unwrap_or_else(|| keptContentOutputs(state, &job.name));
-                let record = publishedRecord(job, error, content_outputs);
-                if let Some(replaced) = state.files.insert(job.name.clone(), record) {
-                    stale_keys.extend(recordKeys(&replaced).cloned());
-                }
+            // A file that stopped converting keeps the files it published before.
+            let converted = converted.unwrap_or_else(|| keptConversion(state, &job.name));
+            let record = publishedRecord(job, error, converted);
+            if let Some(replaced) = state.files.insert(job.name.clone(), record) {
+                stale_keys.extend(recordKeys(&replaced).cloned());
             }
         }
 
         summary.uploaded += files.len();
-        let mut changed_urls = deliver(client, &destination, files).await?;
-        if let (ArtDestination::Bucket(bucket), Some(state)) = (&destination, state.as_deref()) {
+        let mut changed_urls = deliver(client, destination, files).await?;
+        if let ArtDestination::Bucket(bucket) = destination {
             // Deleted before the state is saved, so a failed run deletes them again next time.
             let deleted = unlistedKeys(state, stale_keys);
             deleteKeys(client, bucket, &deleted).await?;
@@ -259,6 +307,9 @@ async fn runJobs(
             changed_urls.extend(deleted);
             purgeOverwritten(&changed_urls, &options.purge_origins).await?;
         }
+        directory
+            .writeWhenDue(client, destination, state, &options.purge_origins)
+            .await?;
     }
 
     Ok(())
@@ -359,17 +410,17 @@ async fn removeOrphans(
     Ok(())
 }
 
-fn outputFolder(job: &ArtJob) -> String {
-    let key = job.outputs.first().map_or("", |output| output.key.as_str());
-    key.rsplit_once('/')
-        .map_or(key, |(folder, _)| folder)
-        .to_string()
+/// Logs files whose natural keys collide; each of them keeps its full game name instead.
+fn reportClashes(layout: &Layout) {
+    for clash in layout.clashes() {
+        warn!(key = clash.key, files = ?clash.names, "game art keys collide");
+    }
 }
 
-fn countByFolder(jobs: &[ArtJob]) -> BTreeMap<String, usize> {
+fn countByShard(jobs: &[ArtJob]) -> BTreeMap<&str, usize> {
     let mut counts = BTreeMap::new();
     for job in jobs {
-        *counts.entry(outputFolder(job)).or_default() += 1;
+        *counts.entry(shardName(&job.name)).or_default() += 1;
     }
     counts
 }

@@ -3,11 +3,12 @@ use super::catalog::{
     objectName, prefabFamily, runtimeTextureFolder,
 };
 use super::clips::gameClip;
+use super::layout::{courseModelKey, Layout, SHADER_INDEX_KEY};
 use super::race_motions::raceMotion;
 use super::types::{
-    ArtJob, ArtModel, ArtState, Catalog, CharacterModel, ChibiOutfit, ClipKind, Dependencies, Fit,
-    MotionModel, PlannedOutput, PrefabFamily, PublishedArt, SceneryModel, SlotTexture, UmaOutfit,
-    MOTION_SKELETON, SHADER_BUNDLE, SHADER_INDEX_KEY, SHADER_RECORD,
+    ArtJob, ArtModel, ArtState, Catalog, CharacterModel, ChibiOutfit, ClipKind, ConvertedArt,
+    Dependencies, Fit, MotionModel, PlacedTexture, PlannedOutput, PrefabFamily, PublishedArt,
+    SceneryModel, SlotTexture, UmaOutfit, MOTION_SKELETON, SHADER_BUNDLE, SHADER_RECORD,
 };
 use crate::game_cdn::{CdnSource, ManifestEntry, ANDROID, WINDOWS};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -19,6 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 pub(super) fn planJobs(
     sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
     catalog: &Catalog,
+    layout: &Layout,
     state: &ArtState,
 ) -> Vec<ArtJob> {
     let mut claimed: HashSet<&str> = HashSet::new();
@@ -31,10 +33,10 @@ pub(super) fn planJobs(
             if !claimed.insert(entry.name.as_str()) {
                 continue;
             }
-            let job = fileJob(source, entry, &listing, catalog)
-                .or_else(|| motionJob(source, entry, &listing))
-                .or_else(|| clipJob(source, entry, &listing))
-                .or_else(|| timelineJob(source, entry, &listing));
+            let job = fileJob(source, entry, &listing, catalog, layout)
+                .or_else(|| motionJob(source, entry, &listing, layout))
+                .or_else(|| clipJob(source, entry, &listing, layout))
+                .or_else(|| timelineJob(source, entry, &listing, layout));
             jobs.extend(job);
         }
 
@@ -42,7 +44,7 @@ pub(super) fn planJobs(
             if !claimed.insert(course) {
                 continue;
             }
-            if let Some(job) = courseJob(source, course, &scene, &listing, catalog) {
+            if let Some(job) = courseJob(source, course, &scene, &listing, layout) {
                 jobs.push(job);
             }
         }
@@ -98,6 +100,8 @@ pub(super) fn orphanedRecords(
         let names: HashSet<&str> = files.iter().map(|entry| entry.name.as_str()).collect();
         let is_catalogued = |name: &str| {
             catalog.outputs(name).is_some()
+                || prefabFamily(name).is_some()
+                || isTrackTexture(name)
                 || raceMotion(name).is_some()
                 || gameClip(name).is_some()
                 || isCutinTimeline(name)
@@ -135,12 +139,11 @@ pub(super) fn orphanedRecords(
         .collect()
 }
 
-/// The record of a built job; `content_outputs` are the keys its converter named after the file's
-/// contents.
+/// The record of a built job with what its converter reported beside the planned outputs.
 pub(super) fn publishedRecord(
     job: &ArtJob,
     error: Option<String>,
-    content_outputs: Vec<String>,
+    converted: ConvertedArt,
 ) -> PublishedArt {
     PublishedArt {
         region: job.source.region.to_string(),
@@ -148,9 +151,11 @@ pub(super) fn publishedRecord(
         converter: converterRevision(&job.name),
         outputs: outputKeys(&job.outputs),
         dependency_checksums: checksums(&job.dependencies),
-        content_outputs,
+        content_outputs: converted.content_outputs,
         textures: Vec::new(),
         error,
+        shaders: converted.shaders,
+        links: linksDigest(&job.links),
     }
 }
 
@@ -251,15 +256,18 @@ impl<'a> Listing<'a> {
     }
 }
 
-/// The job building one catalogued file, or `None` when the site does not use it or the file
-/// list lacks what it is built from.
+/// The job building one picture, prefab or track texture, or `None` when the site does not use
+/// the file or the file list lacks what it is built from.
 fn fileJob(
     source: &'static CdnSource,
     entry: &ManifestEntry,
     listing: &Listing,
     catalog: &Catalog,
+    layout: &Layout,
 ) -> Option<ArtJob> {
-    let outputs = catalog.outputs(&entry.name)?;
+    let outputs = catalog
+        .outputs(&entry.name)
+        .or_else(|| layout.outputs(&entry.name))?;
     let mut dependencies = match catalog.dependencies(&entry.name) {
         Dependencies::None => Vec::new(),
         // An atlas cannot be cut without its texture.
@@ -268,7 +276,7 @@ fn fileJob(
         Dependencies::Listed => listing.listedDependencies(entry)?,
     };
 
-    let model = prefabFamily(&entry.name).map(|family| prefabModel(family, entry, listing));
+    let model = prefabFamily(&entry.name).map(|family| prefabModel(family, entry, listing, layout));
     let lookups = if model.is_some() {
         listing.materialLookups()?
     } else {
@@ -280,7 +288,7 @@ fn fileJob(
             scene
                 .runtime_textures
                 .iter()
-                .filter_map(|name| listing.by_name.get(name.as_str()))
+                .filter_map(|texture| listing.by_name.get(texture.name.as_str()))
                 .map(|texture| (*texture).clone()),
         );
     }
@@ -291,18 +299,35 @@ fn fileJob(
         entry: entry.clone(),
         dependencies,
         lookups,
+        links: BTreeMap::new(),
         model,
         outputs,
     })
 }
 
+/// Textures published on their own, each with its key.
+fn placedTextures(names: Vec<String>, layout: &Layout) -> Vec<PlacedTexture> {
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let key = layout.key(&name)?;
+            Some(PlacedTexture { name, key })
+        })
+        .collect()
+}
+
 /// A track prefab with its season textures, an effect or cut-in set with each object's particle
 /// systems and scripts, or a prop on its own bones.
-fn prefabModel(family: PrefabFamily, entry: &ManifestEntry, listing: &Listing) -> ArtModel {
+fn prefabModel(
+    family: PrefabFamily,
+    entry: &ManifestEntry,
+    listing: &Listing,
+    layout: &Layout,
+) -> ArtModel {
     let prefabs = vec![entry.name.clone()];
     match family {
         PrefabFamily::Track => ArtModel::Scenery(SceneryModel {
-            runtime_textures: listing.runtimeTextures(&entry.name),
+            runtime_textures: placedTextures(listing.runtimeTextures(&entry.name), layout),
             prefabs,
             components: false,
         }),
@@ -327,7 +352,7 @@ fn courseJob(
     course: &str,
     scene: &[&str],
     listing: &Listing,
-    catalog: &Catalog,
+    layout: &Layout,
 ) -> Option<ArtJob> {
     let prefabs: Vec<String> = scene.iter().map(|prefab| prefab.to_string()).collect();
     let entry = *listing.by_name.get(prefabs.first()?.as_str())?;
@@ -353,12 +378,17 @@ fn courseJob(
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
         lookups: listing.materialLookups()?,
+        links: BTreeMap::new(),
         model: Some(ArtModel::Scenery(SceneryModel {
             prefabs,
-            runtime_textures,
+            runtime_textures: placedTextures(runtime_textures, layout),
             components: false,
         })),
-        outputs: catalog.courseOutputs(course),
+        outputs: vec![PlannedOutput {
+            key: courseModelKey(course),
+            object: objectName(course).to_string(),
+            fit: Fit::Native,
+        }],
     })
 }
 
@@ -385,6 +415,7 @@ fn umaJob(source: &'static CdnSource, uma: &UmaOutfit, listing: &Listing) -> Opt
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
         lookups: listing.materialLookups()?,
+        links: BTreeMap::new(),
         model: Some(ArtModel::Uma(UmaOutfit {
             tail_textures,
             ..uma.clone()
@@ -423,6 +454,7 @@ fn chibiJob(source: &'static CdnSource, chibi: &ChibiOutfit, listing: &Listing) 
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
         lookups: listing.materialLookups()?,
+        links: BTreeMap::new(),
         model: Some(ArtModel::Character(model)),
         outputs: vec![PlannedOutput {
             key: chibi.key.clone(),
@@ -438,8 +470,10 @@ fn motionJob(
     source: &'static CdnSource,
     entry: &ManifestEntry,
     listing: &Listing,
+    layout: &Layout,
 ) -> Option<ArtJob> {
     let motion = raceMotion(&entry.name)?;
+    let key = layout.key(&entry.name)?;
     let skeleton: Vec<String> = MOTION_SKELETON
         .iter()
         .map(|prefab| prefab.to_string())
@@ -452,23 +486,30 @@ fn motionJob(
         entry: entry.clone(),
         dependencies,
         lookups: Vec::new(),
+        links: BTreeMap::new(),
         model: Some(ArtModel::Motion(MotionModel {
             title: motion.title,
             skeleton,
             moves_root: false,
         })),
         outputs: vec![PlannedOutput {
-            key: motion.key,
+            key,
             object: objectName(&entry.name).to_string(),
             fit: Fit::Native,
         }],
     })
 }
 
-/// The job publishing one chibi or cut-in clip at its game path, by what it moves. A clip on a
-/// skeleton is rebuilt when the skeleton's prefabs change too.
-fn clipJob(source: &'static CdnSource, entry: &ManifestEntry, listing: &Listing) -> Option<ArtJob> {
+/// The job publishing one chibi or cut-in clip by what it moves. A clip on a skeleton is rebuilt
+/// when the skeleton's prefabs change too.
+fn clipJob(
+    source: &'static CdnSource,
+    entry: &ManifestEntry,
+    listing: &Listing,
+    layout: &Layout,
+) -> Option<ArtJob> {
     let clip = gameClip(&entry.name)?;
+    let key = layout.key(&entry.name)?;
     let title = objectName(&entry.name).to_string();
     let (model, dependencies) = match clip.kind {
         ClipKind::Skeleton(prefabs) => {
@@ -493,41 +534,50 @@ fn clipJob(source: &'static CdnSource, entry: &ManifestEntry, listing: &Listing)
         entry: entry.clone(),
         dependencies,
         lookups: Vec::new(),
+        links: BTreeMap::new(),
         model: Some(model),
         outputs: vec![PlannedOutput {
-            key: clip.key,
+            key,
             object: objectName(&entry.name).to_string(),
             fit: Fit::Native,
         }],
     })
 }
 
-/// The job publishing a cut-in timeline's scripts as JSON at its game path. It loads the bundles
-/// the timeline plays, its clips, effects and set, only to name them, so a change to them does not
-/// rebuild it.
+/// The job publishing a cut-in timeline's scripts as JSON. It loads the bundles the timeline
+/// plays, its clips, effects and set, only to name and link them, so a change to them does not
+/// rebuild it; a move of one does.
 fn timelineJob(
     source: &'static CdnSource,
     entry: &ManifestEntry,
     listing: &Listing,
+    layout: &Layout,
 ) -> Option<ArtJob> {
     if !isCutinTimeline(&entry.name) {
         return None;
     }
+    let key = layout.key(&entry.name)?;
     let played = entry
         .dependencies
         .iter()
         .map(String::as_str)
         .filter(|name| *name != SHADER_BUNDLE);
+    let lookups = listing.entries(played)?;
+    let links = lookups
+        .iter()
+        .filter_map(|lookup| Some((lookup.name.clone(), layout.key(&lookup.name)?)))
+        .collect();
 
     Some(ArtJob {
         source,
         name: entry.name.clone(),
         entry: entry.clone(),
         dependencies: Vec::new(),
-        lookups: listing.entries(played)?,
+        lookups,
+        links,
         model: Some(ArtModel::Scripts),
         outputs: vec![PlannedOutput {
-            key: format!("game-assets/{}.json", entry.name),
+            key,
             object: objectName(&entry.name).to_string(),
             fit: Fit::Native,
         }],
@@ -549,6 +599,7 @@ fn shaderJob(source: &'static CdnSource, listing: &Listing) -> Option<ArtJob> {
         entry: entry.clone(),
         dependencies: Vec::new(),
         lookups: Vec::new(),
+        links: BTreeMap::new(),
         model: Some(ArtModel::Shaders),
         outputs: vec![PlannedOutput {
             key: SHADER_INDEX_KEY.to_string(),
@@ -564,6 +615,23 @@ fn isCurrent(record: &PublishedArt, job: &ArtJob) -> bool {
         && record.dependency_checksums == checksums(&job.dependencies)
         && record.converter == converterRevision(&job.name)
         && record.outputs == outputKeys(&job.outputs)
+        && record.links == linksDigest(&job.links)
+}
+
+/// MD5 of a timeline's links, `None` for a job that links nothing.
+fn linksDigest(links: &BTreeMap<String, String>) -> Option<String> {
+    if links.is_empty() {
+        return None;
+    }
+
+    let mut context = md5::Context::new();
+    for (name, key) in links {
+        context.consume(name.as_bytes());
+        context.consume(b"\t");
+        context.consume(key.as_bytes());
+        context.consume(b"\n");
+    }
+    Some(format!("{:x}", context.compute()))
 }
 
 fn checksums(entries: &[ManifestEntry]) -> Vec<u64> {
@@ -583,6 +651,7 @@ mod tests {
     };
     use crate::game_cdn::ANDROID;
     use crate::game_cdn::GLOBAL_CDN;
+    use std::collections::BTreeMap;
 
     static JAPAN_CDN: CdnSource = CdnSource {
         region: "jp",
@@ -601,6 +670,23 @@ mod tests {
         Catalog::fromOutfits(&[])
     }
 
+    fn plan(
+        sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
+        catalog: &Catalog,
+        state: &ArtState,
+    ) -> Vec<ArtJob> {
+        planJobs(sources, catalog, &Layout::new(catalog, sources), state)
+    }
+
+    /// Special Week's first card, whose outfit has a folder of its own.
+    fn cardCatalog() -> Catalog {
+        Catalog::fromOutfits(&[CardOutfit {
+            chara: 1001,
+            card: 100101,
+            dress: 100101,
+        }])
+    }
+
     fn record(name: &str, region: &str, checksum: u64) -> PublishedArt {
         let outputs = catalog().outputs(name).unwrap();
         PublishedArt {
@@ -612,6 +698,8 @@ mod tests {
             content_outputs: Vec::new(),
             textures: Vec::new(),
             error: None,
+            shaders: Vec::new(),
+            links: None,
         }
     }
 
@@ -628,7 +716,7 @@ mod tests {
             vec![entry(CARD, 1), entry(SKILL, 2), entry("sound/bgm/x", 3)],
         )];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert_eq!(planned(&jobs), vec![(CARD, "global"), (SKILL, "global")]);
     }
@@ -644,7 +732,7 @@ mod tests {
             .files
             .insert(SKILL.to_string(), record(SKILL, "global", 2));
 
-        let jobs = planJobs(&sources, &catalog(), &state);
+        let jobs = plan(&sources, &catalog(), &state);
 
         assert_eq!(planned(&jobs), vec![(SKILL, "global")]);
     }
@@ -658,12 +746,12 @@ mod tests {
         ];
         let mut state = ArtState::default();
 
-        let from_japan = planJobs(&japan_only, &catalog(), &state);
+        let from_japan = plan(&japan_only, &catalog(), &state);
         state.files.insert(
             CARD.to_string(),
-            publishedRecord(&from_japan[0], None, Vec::new()),
+            publishedRecord(&from_japan[0], None, ConvertedArt::default()),
         );
-        let from_global = planJobs(&both, &catalog(), &state);
+        let from_global = plan(&both, &catalog(), &state);
 
         assert_eq!(planned(&from_japan), vec![(CARD, "jp")]);
         assert_eq!(planned(&from_global), vec![(CARD, "global")]);
@@ -680,8 +768,8 @@ mod tests {
             },
         );
 
-        let same_file = planJobs(&[(&GLOBAL_CDN, vec![entry(CARD, 1)])], &catalog(), &state);
-        let new_file = planJobs(&[(&GLOBAL_CDN, vec![entry(CARD, 2)])], &catalog(), &state);
+        let same_file = plan(&[(&GLOBAL_CDN, vec![entry(CARD, 1)])], &catalog(), &state);
+        let new_file = plan(&[(&GLOBAL_CDN, vec![entry(CARD, 2)])], &catalog(), &state);
 
         assert!(same_file.is_empty());
         assert_eq!(planned(&new_file), vec![(CARD, "global")]);
@@ -698,7 +786,7 @@ mod tests {
             },
         );
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, vec![entry(CARD, 1)])], &catalog(), &state);
+        let jobs = plan(&[(&GLOBAL_CDN, vec![entry(CARD, 1)])], &catalog(), &state);
 
         assert_eq!(planned(&jobs), vec![(CARD, "global")]);
     }
@@ -712,13 +800,13 @@ mod tests {
         let new_texture = vec![(&GLOBAL_CDN, vec![entry(ATLAS, 1), entry(ATLAS_TEXTURE, 3)])];
         let mut state = ArtState::default();
 
-        let first_run = planJobs(&first, &catalog(), &state);
+        let first_run = plan(&first, &catalog(), &state);
         state.files.insert(
             ATLAS.to_string(),
-            publishedRecord(&first_run[0], None, Vec::new()),
+            publishedRecord(&first_run[0], None, ConvertedArt::default()),
         );
-        let unchanged = planJobs(&first, &catalog(), &state);
-        let rebuilt = planJobs(&new_texture, &catalog(), &state);
+        let unchanged = plan(&first, &catalog(), &state);
+        let rebuilt = plan(&new_texture, &catalog(), &state);
 
         assert_eq!(planned(&first_run), vec![(ATLAS, "global")]);
         assert_eq!(first_run[0].dependencies[0].name, ATLAS_TEXTURE);
@@ -730,7 +818,7 @@ mod tests {
     fn anAtlasWithoutItsTextureWaits() {
         let sources = vec![(&GLOBAL_CDN, vec![entry(ATLAS, 1)])];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
     }
@@ -748,21 +836,21 @@ mod tests {
         };
         let sources = vec![(&GLOBAL_CDN, vec![entry(OUTFIT, 1)])];
         let mut state = ArtState::default();
-        let first_run = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
+        let first_run = plan(&sources, &Catalog::fromOutfits(&[first_card]), &state);
         state.files.insert(
             OUTFIT.to_string(),
-            publishedRecord(&first_run[0], None, Vec::new()),
+            publishedRecord(&first_run[0], None, ConvertedArt::default()),
         );
 
-        let unchanged = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
-        let with_new_card = planJobs(
+        let unchanged = plan(&sources, &Catalog::fromOutfits(&[first_card]), &state);
+        let with_new_card = plan(
             &sources,
             &Catalog::fromOutfits(&[first_card, second_card]),
             &state,
         );
 
         assert!(unchanged.is_empty());
-        assert_eq!(with_new_card[0].outputs.len(), 4);
+        assert_eq!(with_new_card[0].outputs.len(), 2);
     }
 
     const COURSE: &str = "3d/env/race/race10001";
@@ -800,7 +888,7 @@ mod tests {
             ],
         )];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         let needed: Vec<&str> = jobs[0]
             .dependencies
@@ -828,7 +916,7 @@ mod tests {
             ],
         )];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         let prefab = jobs.iter().find(|job| job.name == PREFAB).unwrap();
         let downloaded: Vec<&str> = prefab
@@ -838,7 +926,13 @@ mod tests {
             .collect();
         let scene = scenery(prefab);
         assert_eq!(scene.prefabs, vec![PREFAB]);
-        assert_eq!(scene.runtime_textures, vec![summer]);
+        assert_eq!(
+            scene.runtime_textures,
+            vec![PlacedTexture {
+                name: summer.to_string(),
+                key: "art/racecourses/10001/textures/0000_212_turf00.webp".to_string(),
+            }]
+        );
         assert_eq!(downloaded, vec![summer]);
     }
 
@@ -878,7 +972,7 @@ mod tests {
         catalog.course_names.insert(10001, "Sapporo".to_string());
         let sources = vec![(&GLOBAL_CDN, sapporoFiles(8))];
 
-        let jobs = planJobs(&sources, &catalog, &ArtState::default());
+        let jobs = plan(&sources, &catalog, &ArtState::default());
 
         let course = jobs.iter().find(|job| job.name == COURSE).unwrap();
         let scene = scenery(course);
@@ -892,7 +986,12 @@ mod tests {
             scene.prefabs,
             vec![PREFAB, TURF, SPRING_TREES, STANDS, COURSE_SKY]
         );
-        assert_eq!(scene.runtime_textures, vec![TRACK_TEXTURE, STANDS_TEXTURE]);
+        let textures: Vec<&str> = scene
+            .runtime_textures
+            .iter()
+            .map(|texture| texture.name.as_str())
+            .collect();
+        assert_eq!(textures, vec![TRACK_TEXTURE, STANDS_TEXTURE]);
         assert_eq!(
             downloaded,
             vec![
@@ -907,21 +1006,22 @@ mod tests {
                 TREE_MODEL,
             ]
         );
-        assert_eq!(course.outputs[0].key, "game-assets/racetracks/sapporo.glb");
+        assert_eq!(course.outputs[0].key, "art/racecourses/10001/model.glb");
     }
 
     #[test]
     fn aCourseModelIsRebuiltWhenAnythingItDrawsChanges() {
         let mut state = ArtState::default();
-        let first_run = planJobs(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
+        let first_run = plan(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
         for job in &first_run {
-            state
-                .files
-                .insert(job.name.clone(), publishedRecord(job, None, Vec::new()));
+            state.files.insert(
+                job.name.clone(),
+                publishedRecord(job, None, ConvertedArt::default()),
+            );
         }
 
-        let unchanged = planJobs(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
-        let new_trees = planJobs(&[(&GLOBAL_CDN, sapporoFiles(80))], &catalog(), &state);
+        let unchanged = plan(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
+        let new_trees = plan(&[(&GLOBAL_CDN, sapporoFiles(80))], &catalog(), &state);
 
         assert!(unchanged.is_empty());
         assert_eq!(
@@ -938,7 +1038,7 @@ mod tests {
     fn aTrackPrefabWaitsForEverythingItNeeds() {
         let sources = vec![(&GLOBAL_CDN, vec![entryNeeding(PREFAB, 1, &[MODEL])])];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
     }
@@ -966,7 +1066,7 @@ mod tests {
                 texture("_ToonMap", TAIL_TOON),
             ],
             title: "Special Week: Special Dreamer".to_string(),
-            key: "game-assets/umas/special-week/special-dreamer.glb".to_string(),
+            key: "art/umas/100101/model.glb".to_string(),
             traits: UmaTraits {
                 chara: 1001,
                 dress: 100101,
@@ -1002,15 +1102,15 @@ mod tests {
     #[test]
     fn aUmaLooksItsShadersUpWithoutBeingRebuiltWhenTheyChange() {
         let mut state = ArtState::default();
-        let first_run = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        let first_run = plan(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
         state.files.insert(
             first_run[0].name.clone(),
-            publishedRecord(&first_run[0], None, Vec::new()),
+            publishedRecord(&first_run[0], None, ConvertedArt::default()),
         );
         let mut new_shaders = without(umaFiles(1), SHADER_BUNDLE);
         new_shaders.push(entry(SHADER_BUNDLE, 70));
 
-        let replanned = planJobs(&[(&GLOBAL_CDN, new_shaders)], &umaCatalog(), &state);
+        let replanned = plan(&[(&GLOBAL_CDN, new_shaders)], &umaCatalog(), &state);
 
         assert_eq!(names(&first_run[0].lookups), vec![SHADER_BUNDLE]);
         assert!(replanned.is_empty());
@@ -1020,7 +1120,7 @@ mod tests {
     fn aUmaWaitsForTheShaderBundle() {
         let files = without(umaFiles(1), SHADER_BUNDLE);
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
+        let jobs = plan(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
     }
@@ -1038,7 +1138,7 @@ mod tests {
             vec![entry(SHADER_BUNDLE, 1), androidShaders(2)],
         )];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert_eq!(jobs.len(), 1);
         let shaders = &jobs[0];
@@ -1055,7 +1155,7 @@ mod tests {
     fn theShadersAreBuiltBeforeEverythingElse() {
         let sources = vec![(&GLOBAL_CDN, vec![entry(CARD, 1), androidShaders(2)])];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert_eq!(
             planned(&jobs),
@@ -1080,7 +1180,7 @@ mod tests {
     fn aUmaIsBuiltFromItsPrefabsWhatTheyDrawAndItsListedTailTextures() {
         let sources = vec![(&GLOBAL_CDN, umaFiles(1))];
 
-        let jobs = planJobs(&sources, &umaCatalog(), &ArtState::default());
+        let jobs = plan(&sources, &umaCatalog(), &ArtState::default());
 
         let uma = &jobs[0];
         let Some(ArtModel::Uma(outfit)) = &uma.model else {
@@ -1098,23 +1198,20 @@ mod tests {
             vec![HEAD, TAIL, TAIL_DIFFUSE, BODY_MATERIAL, HEAD_MATERIAL]
         );
         assert_eq!(kept_textures, vec![TAIL_DIFFUSE]);
-        assert_eq!(
-            uma.outputs[0].key,
-            "game-assets/umas/special-week/special-dreamer.glb"
-        );
+        assert_eq!(uma.outputs[0].key, "art/umas/100101/model.glb");
     }
 
     #[test]
     fn aUmaIsRebuiltWhenItsBodyChanges() {
         let mut state = ArtState::default();
-        let first_run = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        let first_run = plan(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
         state.files.insert(
             first_run[0].name.clone(),
-            publishedRecord(&first_run[0], None, Vec::new()),
+            publishedRecord(&first_run[0], None, ConvertedArt::default()),
         );
 
-        let unchanged = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
-        let new_body = planJobs(&[(&GLOBAL_CDN, umaFiles(10))], &umaCatalog(), &state);
+        let unchanged = plan(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        let new_body = plan(&[(&GLOBAL_CDN, umaFiles(10))], &umaCatalog(), &state);
 
         assert_eq!(
             state.files[&first_run[0].name].converter,
@@ -1134,7 +1231,7 @@ mod tests {
             .filter(|entry| entry.name != HEAD)
             .collect();
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
+        let jobs = plan(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
     }
@@ -1146,7 +1243,7 @@ mod tests {
             vec![entry(RUN_CLIP, 1), entry(BODY, 2), entry(TAIL, 3)],
         )];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         let Some(ArtModel::Motion(motion)) = &jobs[0].model else {
             panic!("the job should build a motion");
@@ -1157,7 +1254,7 @@ mod tests {
         assert_eq!(motion.title, "Bright: Fast run, standard form");
         assert_eq!(
             jobs[0].outputs[0].key,
-            "game-assets/uma-motions/race/bright/run-fast-standard.glb"
+            "art/motions/race/bright/run-fast-standard.glb"
         );
     }
 
@@ -1165,7 +1262,7 @@ mod tests {
     fn aRaceClipWaitsForTheSkeleton() {
         let sources = vec![(&GLOBAL_CDN, vec![entry(RUN_CLIP, 1), entry(BODY, 2)])];
 
-        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+        let jobs = plan(&sources, &catalog(), &ArtState::default());
 
         assert!(jobs.is_empty());
     }
@@ -1184,6 +1281,8 @@ mod tests {
                 content_outputs: Vec::new(),
                 textures: Vec::new(),
                 error: None,
+                shaders: Vec::new(),
+                links: None,
             };
             state.files.insert(name.to_string(), record);
         }
@@ -1273,7 +1372,7 @@ mod tests {
         let mut catalog = catalog();
         catalog.chibis = vec![ChibiOutfit {
             record: "3d/chara/mini/body/mbdy1001_00".to_string(),
-            key: "game-assets/chibis/special-week/special-dreamer.glb".to_string(),
+            key: "art/umas/100101/chibi.glb".to_string(),
             model: CharacterModel {
                 title: "Special Week: Special Dreamer".to_string(),
                 prefabs: vec![CHIBI_BODY.to_string(), CHIBI_HAIR.to_string()],
@@ -1296,7 +1395,7 @@ mod tests {
             entry(SHADER_BUNDLE, 4),
         ];
 
-        let jobs = planJobs(
+        let jobs = plan(
             &[(&GLOBAL_CDN, files)],
             &chibiCatalog(),
             &ArtState::default(),
@@ -1317,10 +1416,7 @@ mod tests {
         assert_eq!(names(&jobs[0].dependencies), vec![CHIBI_HAIR, CHIBI_EYE]);
         assert_eq!(names(&jobs[0].lookups), vec![SHADER_BUNDLE]);
         assert_eq!(filled, vec!["mtl_mchr0001_00_eye"]);
-        assert_eq!(
-            jobs[0].outputs[0].key,
-            "game-assets/chibis/special-week/special-dreamer.glb"
-        );
+        assert_eq!(jobs[0].outputs[0].key, "art/umas/100101/chibi.glb");
     }
 
     const CUTIN_BODY_CLIP: &str =
@@ -1338,7 +1434,11 @@ mod tests {
         files.push(entry(CUTIN_BODY_CLIP, 10));
         files.push(entry(CUTIN_CAMERA_CLIP, 11));
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &catalog(), &ArtState::default());
+        let jobs = plan(
+            &[(&GLOBAL_CDN, files)],
+            &cardCatalog(),
+            &ArtState::default(),
+        );
 
         let body = jobs.iter().find(|job| job.name == CUTIN_BODY_CLIP).unwrap();
         let camera = jobs
@@ -1357,7 +1457,7 @@ mod tests {
         assert!(matches!(camera.model, Some(ArtModel::NodeMotion { .. })));
         assert_eq!(
             camera.outputs[0].key,
-            format!("game-assets/{CUTIN_CAMERA_CLIP}.glb")
+            "art/umas/100101/cutin/camera/01_cam.glb"
         );
     }
 
@@ -1369,10 +1469,14 @@ mod tests {
         let complete = vec![timeline.clone(), entry(CUTIN_CAMERA_CLIP, 2)];
         let missing_clip = vec![timeline];
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, complete)], &catalog(), &ArtState::default());
-        let waiting = planJobs(
+        let jobs = plan(
+            &[(&GLOBAL_CDN, complete)],
+            &cardCatalog(),
+            &ArtState::default(),
+        );
+        let waiting = plan(
             &[(&GLOBAL_CDN, missing_clip)],
-            &catalog(),
+            &cardCatalog(),
             &ArtState::default(),
         );
 
@@ -1381,9 +1485,46 @@ mod tests {
         assert_eq!(names(&timeline_job.lookups), vec![CUTIN_CAMERA_CLIP]);
         assert_eq!(
             timeline_job.outputs[0].key,
-            format!("game-assets/{TIMELINE}.json")
+            "art/umas/100101/cutin/timeline.json"
+        );
+        assert_eq!(
+            timeline_job.links,
+            BTreeMap::from([(
+                CUTIN_CAMERA_CLIP.to_string(),
+                "art/umas/100101/cutin/camera/01_cam.glb".to_string()
+            )])
         );
         assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn aTimelineIsRebuiltWhenAFileItLinksMoves() {
+        let files = vec![
+            entryNeeding(TIMELINE, 1, &[CUTIN_CAMERA_CLIP]),
+            entry(CUTIN_CAMERA_CLIP, 2),
+        ];
+        let sources = vec![(&GLOBAL_CDN, files)];
+        let mut state = ArtState::default();
+        for job in plan(&sources, &cardCatalog(), &state) {
+            state.files.insert(
+                job.name.clone(),
+                publishedRecord(&job, None, ConvertedArt::default()),
+            );
+        }
+
+        let unchanged = plan(&sources, &cardCatalog(), &state);
+        let card_gone = plan(&sources, &catalog(), &state);
+
+        assert!(unchanged.is_empty());
+        let rebuilt: Vec<&str> = card_gone.iter().map(|job| job.name.as_str()).collect();
+        assert!(rebuilt.contains(&TIMELINE));
+        assert_eq!(
+            card_gone
+                .iter()
+                .find(|job| job.name == TIMELINE)
+                .map(|job| job.outputs[0].key.as_str()),
+            Some("art/cutins/crd100101_001/timeline.json")
+        );
     }
 
     #[test]
@@ -1392,13 +1533,13 @@ mod tests {
         let prop = "3d/chara/prop/prop0001/pfb_prop0001";
         let files = vec![entry(effect, 1), entry(prop, 2), entry(SHADER_BUNDLE, 3)];
 
-        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &catalog(), &ArtState::default());
+        let jobs = plan(&[(&GLOBAL_CDN, files)], &catalog(), &ArtState::default());
 
         let effect_job = jobs.iter().find(|job| job.name == effect).unwrap();
         let prop_job = jobs.iter().find(|job| job.name == prop).unwrap();
         assert!(scenery(effect_job).components);
         assert!(scenery(effect_job).runtime_textures.is_empty());
         assert!(matches!(prop_job.model, Some(ArtModel::Character(_))));
-        assert_eq!(prop_job.outputs[0].key, format!("game-assets/{prop}.glb"));
+        assert_eq!(prop_job.outputs[0].key, "art/props/0001.glb");
     }
 }
