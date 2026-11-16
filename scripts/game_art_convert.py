@@ -2,7 +2,7 @@
 
 The resources service decrypts each bundle and sends a job list as JSON on stdin:
 {"jobs": [{"bundle": "<path>", "dependencies": ["<path>"], "outputs": [{"object": "<name>", "key": "<bucket key>", "path": "<path>",
-"format": "webp" | "png" | "glb", "size": [width, height] | null,
+"format": "webp" | "png" | "glb" | "json", "size": [width, height] | null,
 "art_size": [width, height] | null}]}]}
 `dependencies` are loaded with the bundle, such as the texture an atlas's sprites draw from or
 the meshes, materials and textures a track prefab draws.
@@ -18,7 +18,10 @@ A `glb` output exports the job's `model`, its textures embedded, by its `kind`:
 - "motion", with `game_art_uma`: {"title", "skeleton": prefabs}, the job's own bundle, a race
   clip, on the skeleton every uma shares.
 Each `bundle` is the job's own or one of its `dependencies`.
-It prints {"results": [{"bundle": "<path>", "written": [...], "error": null | "<message>"}]}.
+A `json` output is the index of the shaders in the job's bundle, its model {"kind": "shaders"}, with
+`game_art_shader`: each shader goes in a file of its own beside the index, at a key named after it.
+It prints {"results": [{"bundle": "<path>", "written": [...], "files": [{"key", "path"}],
+"error": null | "<message>"}]}, where `files` are the files a job named after its bundle's contents.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
 """
 
@@ -30,7 +33,8 @@ from typing import Any, TextIO
 import UnityPy
 from PIL import Image
 
-from game_art_model import export_model
+from game_art_model import bundle_objects, export_model
+from game_art_shader import export_shaders
 from game_art_uma import export_motion, export_uma
 
 WEBP_QUALITY = 90
@@ -105,6 +109,13 @@ def export_glb(environment: Any, job: dict[str, Any], output: dict[str, Any]) ->
         raise ValueError(f"unknown model kind {kind!r}")
 
 
+def export_json(environment: Any, job: dict[str, Any], output: dict[str, Any]) -> list[dict[str, str]]:
+    kind = job.get("model", {}).get("kind")
+    if kind != "shaders":
+        raise ValueError(f"no JSON output for model kind {kind!r}")
+    return export_shaders(bundle_objects(environment, job["bundle"], "Shader"), output)
+
+
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
     try:
         bundle_paths = [job["bundle"], *job.get("dependencies", [])]
@@ -112,16 +123,19 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
 
         images = None
         written = []
+        files = []
         for output in job["outputs"]:
             if output["format"] == "glb":
                 export_glb(environment, job, output)
+            elif output["format"] == "json":
+                files.extend(export_json(environment, job, output))
             else:
                 images = images or read_images(environment)
                 save_image(pick_image(*images, output["object"]), output)
             written.append(output["path"])
-        return {"bundle": job["bundle"], "written": written, "error": None}
+        return {"bundle": job["bundle"], "written": written, "files": files, "error": None}
     except Exception as error:
-        return {"bundle": job["bundle"], "written": [], "error": f"{type(error).__name__}: {error}"}
+        return {"bundle": job["bundle"], "written": [], "files": [], "error": f"{type(error).__name__}: {error}"}
 
 
 def inspect_bundle(bundle_path: str) -> dict[str, Any]:

@@ -26,6 +26,7 @@ COPY --from=builder /app/target/release/umamoe-resources /usr/local/bin/umamoe-r
 COPY scripts/game_art_convert.py /app/scripts/game_art_convert.py
 COPY scripts/game_art_model.py /app/scripts/game_art_model.py
 COPY scripts/game_art_face.py /app/scripts/game_art_face.py
+COPY scripts/game_art_shader.py /app/scripts/game_art_shader.py
 COPY scripts/game_art_uma.py /app/scripts/game_art_uma.py
 
 USER appuser

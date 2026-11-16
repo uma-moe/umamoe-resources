@@ -11,9 +11,9 @@ use std::io::Read;
 mod types;
 use types::{
     BsvParser, BsvValue, ASSET_BUNDLE_HEADER_SIZE, BSV_FORMAT_ANONYMOUS, BSV_FORMAT_VERSION,
-    BSV_MAGIC, BSV_RAW_U64, LZ4_FRAME_MAGIC, PLATFORM, USER_AGENT,
+    BSV_MAGIC, BSV_RAW_U64, LZ4_FRAME_MAGIC, USER_AGENT,
 };
-pub use types::{CdnSource, ManifestEntry, GLOBAL_CDN};
+pub use types::{CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
 
 impl BsvValue {
     fn asStr(&self) -> Result<&str> {
@@ -169,7 +169,7 @@ fn calcHname(checksum: u64, size: u64, name: &[u8]) -> String {
 }
 
 impl ManifestEntry {
-    /// An entry as the CDN lists it; its download name derives from checksum, size and path.
+    /// A Windows entry as the CDN lists it; its download name derives from checksum, size and path.
     pub fn new(name: &str, size: u64, checksum: u64, key: u64) -> Self {
         Self {
             name: name.to_string(),
@@ -177,6 +177,7 @@ impl ManifestEntry {
             checksum,
             key,
             dependencies: Vec::new(),
+            platform: WINDOWS,
             hname: calcHname(checksum, size, name.as_bytes()),
         }
     }
@@ -291,6 +292,7 @@ async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
     Ok(resp.bytes().await?.to_vec())
 }
 
+/// The entries a manifest lists, of the same platform as the manifest.
 async fn fetchManifest(
     client: &reqwest::Client,
     source: &CdnSource,
@@ -302,23 +304,33 @@ async fn fetchManifest(
     } else {
         data
     };
-    parseContentManifest(&data).with_context(|| format!("invalid manifest {}", entry.name))
+    let mut entries =
+        parseContentManifest(&data).with_context(|| format!("invalid manifest {}", entry.name))?;
+    for listed in &mut entries {
+        listed.platform = entry.platform;
+    }
+    Ok(entries)
 }
 
 /// The platform's category manifests for one resource version: master, chara, outgame and so on.
 pub async fn fetchCategories(
     client: &reqwest::Client,
     source: &CdnSource,
+    platform: &'static str,
     resource_version: &str,
 ) -> Result<Vec<ManifestEntry>> {
     let root_data = download(client, &rootManifestUrl(source, resource_version)).await?;
     let root_entries = parseRootManifest(&decompressLz4(&root_data)?)?;
     let platform_entry = root_entries
         .iter()
-        .find(|entry| entry.name.eq_ignore_ascii_case(PLATFORM))
-        .with_context(|| format!("{PLATFORM} platform not found in root manifest"))?;
+        .find(|entry| entry.name.eq_ignore_ascii_case(platform))
+        .with_context(|| format!("{platform} platform not found in root manifest"))?;
 
-    fetchManifest(client, source, platform_entry).await
+    let platform_entry = ManifestEntry {
+        platform,
+        ..platform_entry.clone()
+    };
+    fetchManifest(client, source, &platform_entry).await
 }
 
 /// Every file the CDN lists in the named categories.
@@ -348,13 +360,13 @@ pub async fn downloadGeneric(
     download(client, &resourceUrl(source, "Generic", &entry.hname)).await
 }
 
-/// An asset bundle exactly as the CDN serves it, still encrypted.
+/// An asset bundle exactly as the CDN serves it for its platform, still encrypted.
 pub async fn downloadAssetBundle(
     client: &reqwest::Client,
     source: &CdnSource,
     entry: &ManifestEntry,
 ) -> Result<Vec<u8>> {
-    let folder = format!("{PLATFORM}/assetbundles");
+    let folder = format!("{}/assetbundles", entry.platform);
     let bundle = download(client, &resourceUrl(source, &folder, &entry.hname)).await?;
     if bundle.len() as u64 != entry.size {
         bail!(

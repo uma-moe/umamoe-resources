@@ -7,7 +7,8 @@ bottom-left corner and glTF's the top-left, so V is flipped.
 Every texture is embedded as WebP (EXT_texture_webp), so the one file opens on its own, in
 Blender for one. The game's shaders have no glTF equivalent, so a material's `_MainTex` becomes
 its base colour texture, and every Unity texture slot (baked light in `_LightTex`, for one),
-number and colour is kept in `extras.unity`, each slot naming its glTF texture. Course
+number and colour is kept in `extras.unity`, each slot naming its glTF texture, beside the
+material's shader (its name and its file among the published shaders) and keywords. Course
 materials (turf, dirt, base) are left empty in the game files and filled at runtime with one
 season and weather variant of their part's textures: the first variant is embedded in those
 slots, and every variant is listed in `extras.unity.variants` as links to the separately
@@ -28,6 +29,8 @@ from typing import Any
 from urllib.parse import quote
 
 from UnityPy.helpers.MeshHelper import MeshHandler
+
+from game_art_shader import serialized_shader_files
 
 FLOAT = 5126
 UNSIGNED_BYTE = 5121
@@ -177,6 +180,7 @@ class PrefabExporter:
         self.attributes: dict[tuple[str, int], dict[str, int] | None] = {}
         self.meshes: dict[tuple[Any, ...], int | None] = {}
         self.materials: dict[tuple[str, int], int] = {}
+        self.shader_files: dict[str, dict[int, dict[str, str]]] = {}
         self.images: dict[tuple[str, int], int] = {}
         self.gltf_textures: dict[tuple[int, tuple[int, int]], int] = {}
         self.samplers: dict[tuple[int, int], int] = {}
@@ -366,6 +370,8 @@ class PrefabExporter:
             cutoff = floats.get("_Cutoff", 0)
             entry["alphaCutoff"] = cutoff if cutoff > 0 else DEFAULT_ALPHA_CUTOFF
         unity: dict[str, Any] = {
+            "shader": self.shader(material.m_Shader),
+            "keywords": list(material.m_ValidKeywords),
             "textures": slots,
             "floats": floats,
             "colors": colors,
@@ -382,6 +388,17 @@ class PrefabExporter:
         index = self.gltf.add("materials", entry)
         self.materials[key] = index
         return index
+
+    def shader(self, pointer: Any) -> dict[str, str] | None:
+        """The material's shader by name and published file, from the shader bundle loaded with
+        the model."""
+        if pointer.m_PathID == 0:
+            return None
+        reader = pointer.deref()
+        serialized = reader.assets_file
+        if serialized.name not in self.shader_files:
+            self.shader_files[serialized.name] = serialized_shader_files(serialized)
+        return self.shader_files[serialized.name][reader.path_id]
 
     def runtime_variants(self, material_name: str) -> dict[str, dict[str, dict[str, str]]]:
         """The textures the game puts in this material's `_MainTex` and `_SubTex`, by variant:

@@ -10,7 +10,21 @@ use std::collections::{BTreeSet, HashSet};
 
 /// Every key a record put in the bucket.
 pub(super) fn recordKeys(record: &PublishedArt) -> impl Iterator<Item = &String> {
-    record.outputs.iter().chain(&record.textures)
+    record
+        .outputs
+        .iter()
+        .chain(&record.content_outputs)
+        .chain(&record.textures)
+}
+
+/// The keys a file's record lists as named after its contents, which are only known once it is
+/// converted again.
+pub(super) fn keptContentOutputs(state: &ArtState, name: &str) -> Vec<String> {
+    state
+        .files
+        .get(name)
+        .map(|record| record.content_outputs.clone())
+        .unwrap_or_default()
 }
 
 /// The candidates no record in `state` lists any more, so they can be deleted.
@@ -53,10 +67,9 @@ pub(super) fn plannedDeletions(
     let mut after = state.clone();
     let mut stale_keys = removeRecords(&mut after, orphans);
     for job in jobs {
-        if let Some(replaced) = after
-            .files
-            .insert(job.name.clone(), publishedRecord(job, None))
-        {
+        // A dry run does not convert, so it cannot tell which content outputs would go.
+        let record = publishedRecord(job, None, keptContentOutputs(&after, &job.name));
+        if let Some(replaced) = after.files.insert(job.name.clone(), record) {
             stale_keys.extend(recordKeys(&replaced).cloned());
         }
     }
@@ -87,6 +100,7 @@ mod tests {
             converter: 1,
             outputs: outputs.iter().map(|key| key.to_string()).collect(),
             dependency_checksums: Vec::new(),
+            content_outputs: Vec::new(),
             textures: textures.iter().map(|key| key.to_string()).collect(),
             error: None,
         }
@@ -98,6 +112,7 @@ mod tests {
             name: name.to_string(),
             entry: ManifestEntry::new(name, 1, 2, 1),
             dependencies: Vec::new(),
+            lookups: Vec::new(),
             model: None,
             outputs: keys
                 .iter()
@@ -108,6 +123,46 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    fn shaderRecord(files: &[&str]) -> PublishedArt {
+        PublishedArt {
+            content_outputs: files
+                .iter()
+                .map(|file| format!("game-assets/shaders/{file}"))
+                .collect(),
+            ..record(&["game-assets/shaders/index.json"], &[])
+        }
+    }
+
+    #[test]
+    fn aShaderTheBundleNoLongerHoldsIsDeleted() {
+        let mut state = ArtState::default();
+        state.files.insert(
+            "android/shader".to_string(),
+            shaderRecord(&["kept.json", "gone.json"]),
+        );
+
+        let replaced = state
+            .files
+            .insert("android/shader".to_string(), shaderRecord(&["kept.json"]))
+            .unwrap();
+        let deletable = unlistedKeys(&state, recordKeys(&replaced).cloned().collect());
+
+        assert_eq!(deletable, vec!["game-assets/shaders/gone.json"]);
+    }
+
+    #[test]
+    fn aDryRunKeepsTheShadersItCannotKnowAbout() {
+        let mut state = ArtState::default();
+        state
+            .files
+            .insert("android/shader".to_string(), shaderRecord(&["kept.json"]));
+        let rebuilt = job("android/shader", &["game-assets/shaders/index.json"]);
+
+        let deletions = plannedDeletions(&state, &[rebuilt], &[]);
+
+        assert!(deletions.is_empty());
     }
 
     #[test]

@@ -5,14 +5,15 @@ use super::catalog::{
 use super::race_motions::raceMotion;
 use super::types::{
     ArtJob, ArtModel, ArtState, Catalog, Dependencies, Fit, MotionModel, PlannedOutput,
-    PublishedArt, SceneryModel, SlotTexture, UmaOutfit, MOTION_SKELETON,
+    PublishedArt, SceneryModel, SlotTexture, UmaOutfit, MOTION_SKELETON, SHADER_BUNDLE,
+    SHADER_INDEX_KEY, SHADER_RECORD,
 };
-use crate::game_cdn::{CdnSource, ManifestEntry};
+use crate::game_cdn::{CdnSource, ManifestEntry, ANDROID, WINDOWS};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Picks every catalogued file, every racecourse to combine into one model and every outfit to
-/// build a uma of from the first source that lists it, so a Global file replaces the JP one as
-/// soon as Global has it, and keeps those whose published copy is missing or stale.
+/// Picks every catalogued file, every racecourse to combine into one model, every outfit to
+/// build a uma of and the shaders from the first source that lists them, so a Global file replaces
+/// the JP one as soon as Global has it, and keeps those whose published copy is missing or stale.
 pub(super) fn planJobs(
     sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
     catalog: &Catalog,
@@ -52,6 +53,13 @@ pub(super) fn planJobs(
                 jobs.push(job);
             }
         }
+
+        if !claimed.contains(SHADER_RECORD) {
+            if let Some(job) = shaderJob(source, &listing) {
+                claimed.insert(SHADER_RECORD);
+                jobs.push(job);
+            }
+        }
     }
 
     jobs.retain(|job| {
@@ -83,6 +91,10 @@ pub(super) fn orphanedRecords(
                 built.insert(uma.record.as_str());
             }
         }
+
+        if files.iter().any(isShaderPrograms) {
+            built.insert(SHADER_RECORD);
+        }
     }
 
     state
@@ -93,13 +105,20 @@ pub(super) fn orphanedRecords(
         .collect()
 }
 
-pub(super) fn publishedRecord(job: &ArtJob, error: Option<String>) -> PublishedArt {
+/// The record of a built job; `content_outputs` are the keys its converter named after the file's
+/// contents.
+pub(super) fn publishedRecord(
+    job: &ArtJob,
+    error: Option<String>,
+    content_outputs: Vec<String>,
+) -> PublishedArt {
     PublishedArt {
         region: job.source.region.to_string(),
         checksum: job.entry.checksum,
         converter: converterRevision(&job.name),
         outputs: outputKeys(&job.outputs),
         dependency_checksums: checksums(&job.dependencies),
+        content_outputs,
         textures: Vec::new(),
         error,
     }
@@ -107,17 +126,22 @@ pub(super) fn publishedRecord(job: &ArtJob, error: Option<String>) -> PublishedA
 
 /// One source's file list, looked up by name.
 struct Listing<'a> {
+    /// The Windows files, which models and pictures are built from.
     by_name: HashMap<&'a str, &'a ManifestEntry>,
     /// Track textures by the folder that holds them, in file list order.
     track_textures: HashMap<&'a str, Vec<String>>,
+    /// The Android shader bundle, which is published.
+    shader_programs: Option<&'a ManifestEntry>,
 }
 
 impl<'a> Listing<'a> {
     fn new(files: &'a [ManifestEntry]) -> Self {
         let by_name = files
             .iter()
+            .filter(|entry| entry.platform == WINDOWS)
             .map(|entry| (entry.name.as_str(), entry))
             .collect();
+        let shader_programs = files.iter().find(|entry| isShaderPrograms(entry));
 
         let mut track_textures: HashMap<&str, Vec<String>> = HashMap::new();
         for entry in files.iter().filter(|entry| isTrackTexture(&entry.name)) {
@@ -132,7 +156,14 @@ impl<'a> Listing<'a> {
         Self {
             by_name,
             track_textures,
+            shader_programs,
         }
+    }
+
+    /// What a model loads to name its materials' shaders: the Windows shader bundle, as the
+    /// materials are Windows ones. `None` while the file list lacks it.
+    fn materialLookups(&self) -> Option<Vec<ManifestEntry>> {
+        Some(vec![(*self.by_name.get(SHADER_BUNDLE)?).clone()])
     }
 
     /// The textures the game puts on a track prefab's materials at runtime.
@@ -203,6 +234,11 @@ fn fileJob(
         prefabs: vec![entry.name.clone()],
         runtime_textures: listing.runtimeTextures(&entry.name),
     });
+    let lookups = if model.is_some() {
+        listing.materialLookups()?
+    } else {
+        Vec::new()
+    };
     if let Some(scene) = &model {
         // The model embeds a set of them, so it is rebuilt when one changes.
         dependencies.extend(
@@ -219,6 +255,7 @@ fn fileJob(
         name: entry.name.clone(),
         entry: entry.clone(),
         dependencies,
+        lookups,
         model: model.map(ArtModel::Scenery),
         outputs,
     })
@@ -256,6 +293,7 @@ fn courseJob(
         name: course.to_string(),
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
+        lookups: listing.materialLookups()?,
         model: Some(ArtModel::Scenery(SceneryModel {
             prefabs,
             runtime_textures,
@@ -286,6 +324,7 @@ fn umaJob(source: &'static CdnSource, uma: &UmaOutfit, listing: &Listing) -> Opt
         name: uma.record.clone(),
         entry: entry.clone(),
         dependencies: needed.into_values().collect(),
+        lookups: listing.materialLookups()?,
         model: Some(ArtModel::Uma(UmaOutfit {
             tail_textures,
             ..uma.clone()
@@ -325,6 +364,7 @@ fn motionJob(
         name: entry.name.clone(),
         entry: entry.clone(),
         dependencies,
+        lookups: Vec::new(),
         model: Some(ArtModel::Motion(MotionModel {
             title: motion.title,
             skeleton,
@@ -332,6 +372,30 @@ fn motionJob(
         outputs: vec![PlannedOutput {
             key: motion.key,
             object: objectName(&entry.name).to_string(),
+            fit: Fit::Native,
+        }],
+    })
+}
+
+/// The Android shader bundle, whose shaders are published.
+fn isShaderPrograms(entry: &ManifestEntry) -> bool {
+    entry.platform == ANDROID && entry.name == SHADER_BUNDLE
+}
+
+/// The job publishing every shader of the Android shader bundle, each in a file of its own
+/// below the shader index.
+fn shaderJob(source: &'static CdnSource, listing: &Listing) -> Option<ArtJob> {
+    let entry = listing.shader_programs?;
+    Some(ArtJob {
+        source,
+        name: SHADER_RECORD.to_string(),
+        entry: entry.clone(),
+        dependencies: Vec::new(),
+        lookups: Vec::new(),
+        model: Some(ArtModel::Shaders),
+        outputs: vec![PlannedOutput {
+            key: SHADER_INDEX_KEY.to_string(),
+            object: SHADER_BUNDLE.to_string(),
             fit: Fit::Native,
         }],
     })
@@ -359,6 +423,7 @@ mod tests {
     use crate::assets::game_art::types::{
         CardOutfit, UmaTraits, CONVERTER_REVISION, COURSE_SKY, UMA_CONVERTER_REVISION,
     };
+    use crate::game_cdn::ANDROID;
     use crate::game_cdn::GLOBAL_CDN;
 
     static JAPAN_CDN: CdnSource = CdnSource {
@@ -386,6 +451,7 @@ mod tests {
             converter: CONVERTER_REVISION,
             outputs: outputKeys(&outputs),
             dependency_checksums: Vec::new(),
+            content_outputs: Vec::new(),
             textures: Vec::new(),
             error: None,
         }
@@ -435,9 +501,10 @@ mod tests {
         let mut state = ArtState::default();
 
         let from_japan = planJobs(&japan_only, &catalog(), &state);
-        state
-            .files
-            .insert(CARD.to_string(), publishedRecord(&from_japan[0], None));
+        state.files.insert(
+            CARD.to_string(),
+            publishedRecord(&from_japan[0], None, Vec::new()),
+        );
         let from_global = planJobs(&both, &catalog(), &state);
 
         assert_eq!(planned(&from_japan), vec![(CARD, "jp")]);
@@ -488,9 +555,10 @@ mod tests {
         let mut state = ArtState::default();
 
         let first_run = planJobs(&first, &catalog(), &state);
-        state
-            .files
-            .insert(ATLAS.to_string(), publishedRecord(&first_run[0], None));
+        state.files.insert(
+            ATLAS.to_string(),
+            publishedRecord(&first_run[0], None, Vec::new()),
+        );
         let unchanged = planJobs(&first, &catalog(), &state);
         let rebuilt = planJobs(&new_texture, &catalog(), &state);
 
@@ -523,9 +591,10 @@ mod tests {
         let sources = vec![(&GLOBAL_CDN, vec![entry(OUTFIT, 1)])];
         let mut state = ArtState::default();
         let first_run = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
-        state
-            .files
-            .insert(OUTFIT.to_string(), publishedRecord(&first_run[0], None));
+        state.files.insert(
+            OUTFIT.to_string(),
+            publishedRecord(&first_run[0], None, Vec::new()),
+        );
 
         let unchanged = planJobs(&sources, &Catalog::fromOutfits(&[first_card]), &state);
         let with_new_card = planJobs(
@@ -562,13 +631,14 @@ mod tests {
     }
 
     #[test]
-    fn trackPrefabsNeedEverythingTheyDrawButNotShadersOrAnimations() {
+    fn trackPrefabsNeedEverythingTheyDrawAndLookTheirShadersUp() {
         let sources = vec![(
             &GLOBAL_CDN,
             vec![
                 entryNeeding(PREFAB, 1, &[MODEL, "shader", "3d/motion/racemain/gate"]),
                 entryNeeding(MODEL, 2, &[MATERIAL]),
                 entryNeeding(MATERIAL, 3, &["shader"]),
+                entry(SHADER_BUNDLE, 4),
             ],
         )];
 
@@ -581,6 +651,7 @@ mod tests {
             .collect();
         assert_eq!(planned(&jobs), vec![(PREFAB, "global"), (COURSE, "global")]);
         assert_eq!(needed, vec![MODEL, MATERIAL]);
+        assert_eq!(names(&jobs[0].lookups), vec![SHADER_BUNDLE]);
     }
 
     #[test]
@@ -595,6 +666,7 @@ mod tests {
                 entryNeeding(PREFAB, 1, &[]),
                 entry(summer, 2),
                 entry(other_part, 3),
+                entry(SHADER_BUNDLE, 4),
             ],
         )];
 
@@ -638,6 +710,7 @@ mod tests {
             entry(COURSE_SKY, 10),
             entry(TRACK_TEXTURE, 11),
             entry(STANDS_TEXTURE, 12),
+            entry(SHADER_BUNDLE, 13),
         ]
     }
 
@@ -686,7 +759,7 @@ mod tests {
         for job in &first_run {
             state
                 .files
-                .insert(job.name.clone(), publishedRecord(job, None));
+                .insert(job.name.clone(), publishedRecord(job, None, Vec::new()));
         }
 
         let unchanged = planJobs(&[(&GLOBAL_CDN, sapporoFiles(8))], &catalog(), &state);
@@ -764,7 +837,73 @@ mod tests {
             entry(HEAD_MATERIAL, 4),
             entry(TAIL, 5),
             entry(TAIL_DIFFUSE, 6),
+            entry(SHADER_BUNDLE, 7),
         ]
+    }
+
+    #[test]
+    fn aUmaLooksItsShadersUpWithoutBeingRebuiltWhenTheyChange() {
+        let mut state = ArtState::default();
+        let first_run = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
+        state.files.insert(
+            first_run[0].name.clone(),
+            publishedRecord(&first_run[0], None, Vec::new()),
+        );
+        let mut new_shaders = without(umaFiles(1), SHADER_BUNDLE);
+        new_shaders.push(entry(SHADER_BUNDLE, 70));
+
+        let replanned = planJobs(&[(&GLOBAL_CDN, new_shaders)], &umaCatalog(), &state);
+
+        assert_eq!(names(&first_run[0].lookups), vec![SHADER_BUNDLE]);
+        assert!(replanned.is_empty());
+    }
+
+    #[test]
+    fn aUmaWaitsForTheShaderBundle() {
+        let files = without(umaFiles(1), SHADER_BUNDLE);
+
+        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &umaCatalog(), &ArtState::default());
+
+        assert!(jobs.is_empty());
+    }
+
+    fn androidShaders(checksum: u64) -> ManifestEntry {
+        let mut shaders = entry(SHADER_BUNDLE, checksum);
+        shaders.platform = ANDROID;
+        shaders
+    }
+
+    #[test]
+    fn theShadersArePublishedFromTheAndroidBundle() {
+        let sources = vec![(
+            &GLOBAL_CDN,
+            vec![entry(SHADER_BUNDLE, 1), androidShaders(2)],
+        )];
+
+        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+
+        assert_eq!(jobs.len(), 1);
+        let shaders = &jobs[0];
+        assert_eq!(shaders.name, SHADER_RECORD);
+        assert_eq!(
+            (shaders.entry.platform, shaders.entry.checksum),
+            (ANDROID, 2)
+        );
+        assert!(matches!(shaders.model, Some(ArtModel::Shaders)));
+        assert_eq!(outputKeys(&shaders.outputs), vec![SHADER_INDEX_KEY]);
+    }
+
+    #[test]
+    fn thePublishedShadersAreAnOrphanOnceAndroidStopsListingThem() {
+        let state = recordedFiles(&[SHADER_RECORD]);
+        let listed = vec![(&GLOBAL_CDN, vec![androidShaders(1)])];
+        let gone = vec![(&GLOBAL_CDN, vec![entry(SHADER_BUNDLE, 1)])];
+
+        let while_listed = orphanedRecords(&listed, &catalog(), &state);
+        let once_gone = orphanedRecords(&gone, &catalog(), &state);
+
+        assert!(while_listed.is_empty());
+        assert_eq!(once_gone, vec![SHADER_RECORD]);
     }
 
     #[test]
@@ -801,7 +940,7 @@ mod tests {
         let first_run = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
         state.files.insert(
             first_run[0].name.clone(),
-            publishedRecord(&first_run[0], None),
+            publishedRecord(&first_run[0], None, Vec::new()),
         );
 
         let unchanged = planJobs(&[(&GLOBAL_CDN, umaFiles(1))], &umaCatalog(), &state);
@@ -872,6 +1011,7 @@ mod tests {
                 converter: CONVERTER_REVISION,
                 outputs: Vec::new(),
                 dependency_checksums: Vec::new(),
+                content_outputs: Vec::new(),
                 textures: Vec::new(),
                 error: None,
             };

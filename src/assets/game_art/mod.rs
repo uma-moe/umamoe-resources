@@ -12,12 +12,13 @@ mod umas;
 
 use super::types::ObjectChange;
 use super::{publishFile, purgeOverwritten, Bucket};
-use crate::game_cdn::{self, CdnSource, ManifestEntry, GLOBAL_CDN};
+use crate::game_cdn::{self, CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
 use anyhow::{ensure, Context, Result};
 use build::{buildBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use cleanup::{
-    deleteKeys, isSuspiciousOrphanCount, plannedDeletions, recordKeys, removeRecords, unlistedKeys,
+    deleteKeys, isSuspiciousOrphanCount, keptContentOutputs, plannedDeletions, recordKeys,
+    removeRecords, unlistedKeys,
 };
 use plan::{orphanedRecords, planJobs, publishedRecord};
 use state::{loadState, rewriteState, saveState, shardName};
@@ -27,7 +28,8 @@ use std::sync::Arc;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 use types::{
-    ArtDestination, ArtJob, ArtState, Catalog, StateLayout, CONVERT_BATCH_SIZE, UPLOAD_CONCURRENCY,
+    ArtDestination, ArtJob, ArtState, Catalog, StateLayout, CONVERT_BATCH_SIZE, SHADER_BUNDLE,
+    UPLOAD_CONCURRENCY,
 };
 pub use types::{GameArtOptions, GameArtSummary};
 
@@ -165,16 +167,25 @@ pub async fn buildGameArtSample(
     Ok(summary)
 }
 
-/// Every source's file list, in precedence order. JP joins after Global once it has a version
-/// check of its own; Global then wins every file both list.
+/// Every source's file list, in precedence order: its Windows files and its Android shader
+/// bundle, whose programs are GLSL ES. JP joins after Global once it has a version check of its
+/// own; Global then wins every file both list.
 async fn listSources(
     client: &reqwest::Client,
     resource_version: &str,
 ) -> Result<Vec<(&'static CdnSource, Vec<ManifestEntry>)>> {
-    let categories = game_cdn::fetchCategories(client, &GLOBAL_CDN, resource_version).await?;
-    let files =
+    let categories =
+        game_cdn::fetchCategories(client, &GLOBAL_CDN, WINDOWS, resource_version).await?;
+    let mut files =
         game_cdn::fetchCategoryFiles(client, &GLOBAL_CDN, &categories, &catalogCategories())
             .await?;
+
+    let android_categories =
+        game_cdn::fetchCategories(client, &GLOBAL_CDN, ANDROID, resource_version).await?;
+    let shaders =
+        game_cdn::fetchCategoryFiles(client, &GLOBAL_CDN, &android_categories, &[SHADER_BUNDLE])
+            .await?;
+    files.extend(shaders);
     Ok(vec![(&GLOBAL_CDN, files)])
 }
 
@@ -199,7 +210,7 @@ async fn runJobs(
         let mut stale_keys = BTreeSet::new();
 
         for (job, outcome) in batch.iter().zip(outcomes) {
-            let error = match outcome {
+            let (error, content_outputs) = match outcome {
                 JobOutcome::NotDownloaded(error) => {
                     summary.download_failures += 1;
                     warn!(file = job.name, error, "game art download failed");
@@ -208,16 +219,22 @@ async fn runJobs(
                 JobOutcome::Unconvertible(error) => {
                     summary.conversion_failures += 1;
                     warn!(file = job.name, error, "game art does not convert");
-                    Some(error)
+                    (Some(error), None)
                 }
-                JobOutcome::Built { outputs } => {
+                JobOutcome::Built {
+                    outputs,
+                    content_outputs,
+                } => {
                     summary.built += 1;
                     files.extend(outputs);
-                    None
+                    (None, Some(content_outputs))
                 }
             };
             if let Some(state) = state.as_deref_mut() {
-                let record = publishedRecord(job, error);
+                // A file that stopped converting keeps the files it published before.
+                let content_outputs =
+                    content_outputs.unwrap_or_else(|| keptContentOutputs(state, &job.name));
+                let record = publishedRecord(job, error, content_outputs);
                 if let Some(replaced) = state.files.insert(job.name.clone(), record) {
                     stale_keys.extend(recordKeys(&replaced).cloned());
                 }
