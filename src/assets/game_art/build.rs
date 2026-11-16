@@ -3,7 +3,8 @@ use super::layout::rootLink;
 use super::types::{
     ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertResponse, ConvertResult,
     ConvertedArt, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab, SlotBundle,
-    CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY, MAX_CONVERTER_PROCESSES,
+    CONVERTERS_VARIABLE, CONVERTER_PYTHON, CONVERTER_SCRIPT, DEFAULT_CONVERTER_PROCESSES,
+    DOWNLOAD_CONCURRENCY, MAX_CONVERTER_PROCESSES,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -14,6 +15,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
+use tracing::warn;
 
 /// Scratch space for decrypted bundles and converted images. Nothing in it outlives a run.
 pub(super) struct WorkDir {
@@ -404,11 +406,27 @@ struct PreparedJob {
     request: serde_json::Value,
 }
 
-/// Converter processes a batch runs at once: one per available core, up to the limit.
+/// Converter processes a batch runs at once: `GAME_ART_CONVERTERS`, else the default. The server
+/// shares its cores with the site, so this is a fixed count, not one per core.
 pub(super) fn converterProcesses() -> usize {
-    std::thread::available_parallelism()
-        .map_or(1, |cores| cores.get())
-        .min(MAX_CONVERTER_PROCESSES)
+    let configured = std::env::var(CONVERTERS_VARIABLE).ok();
+    converterCount(configured.as_deref())
+}
+
+fn converterCount(configured: Option<&str>) -> usize {
+    let Some(value) = configured else {
+        return DEFAULT_CONVERTER_PROCESSES;
+    };
+    match value.trim().parse::<usize>() {
+        Ok(count) if count > 0 => count.min(MAX_CONVERTER_PROCESSES),
+        _ => {
+            warn!(
+                value,
+                "{CONVERTERS_VARIABLE} is not a positive count; using the default"
+            );
+            DEFAULT_CONVERTER_PROCESSES
+        }
+    }
 }
 
 /// Converts the bundles in several converter processes at once, each taking every n-th job so
@@ -473,8 +491,9 @@ async fn convertGroup(jobs: Vec<PreparedJob>) -> Result<Vec<(usize, Conversion)>
 
 async fn runConverter(jobs: &[&serde_json::Value]) -> Result<ConvertResponse> {
     let input = serde_json::to_vec(&serde_json::json!({ "jobs": jobs }))?;
-    let mut child = tokio::process::Command::new(CONVERTER_PYTHON)
-        .arg(CONVERTER_SCRIPT)
+    // At the lowest priority, so the site's processes on the same server always come first.
+    let mut child = tokio::process::Command::new("nice")
+        .args(["-n", "19", CONVERTER_PYTHON, CONVERTER_SCRIPT])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -708,5 +727,14 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn theConverterCountIsFixedUnlessConfigured() {
+        assert_eq!(converterCount(None), DEFAULT_CONVERTER_PROCESSES);
+        assert_eq!(converterCount(Some("3")), 3);
+        assert_eq!(converterCount(Some("64")), MAX_CONVERTER_PROCESSES);
+        assert_eq!(converterCount(Some("0")), DEFAULT_CONVERTER_PROCESSES);
+        assert_eq!(converterCount(Some("all")), DEFAULT_CONVERTER_PROCESSES);
     }
 }
