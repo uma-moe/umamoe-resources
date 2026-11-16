@@ -570,6 +570,8 @@ Set all three or none. Without them a deploy writes an empty `assets.env` and th
 
 The repository variable `GAME_ASSET_KEY` (the game's asset bundle key as hex, UmaViewer's `ABKeyText`) goes into the same file. UmaViewer publishes it, so it is a variable rather than a secret, shared by beta and production. Production needs it to build game art.
 
+The repository secrets `CLOUDFLARE_API_TOKEN` (a token with Zone, Cache Purge permission on the site's zone) and `CLOUDFLARE_ZONE_ID` go into the same file when both are set. It is read after the manual `env` file, so they replace a token kept there; without them, the manual file's values apply.
+
 Manual remote `env` files should contain the normal application env values only:
 
 - `DATABASE_URL` (legacy compatibility; optional)
@@ -577,8 +579,7 @@ Manual remote `env` files should contain the normal application env values only:
 - `PURGE_ON_REFRESH`
 - `CONFIRMED_BANNER_DATES_URL` if using a remote CSV instead of the mounted `/opt` file
 - `CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS`
-- `CLOUDFLARE_ZONE_ID`
-- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ZONE_ID` and `CLOUDFLARE_API_TOKEN`, unless the repository secrets above set them
 - `PUBLIC_BASE_URL`
 - `RUST_LOG`
 
