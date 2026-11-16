@@ -33,7 +33,7 @@ use state::{loadState, rewriteState, saveState, shardName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 use types::{
@@ -243,6 +243,10 @@ async fn listSources(
     Ok(vec![(&GLOBAL_CDN, files)])
 }
 
+/// A shard holds thousands of records and is rewritten whole, so it is saved this often, not after
+/// every batch.
+const RECORD_SAVE_INTERVAL: Duration = Duration::from_secs(30);
+
 /// Work folder slots a run rotates through: one batch downloads, one converts and one publishes.
 const BATCH_SLOTS: usize = 3;
 
@@ -272,6 +276,8 @@ async fn runJobs(
         state,
         directory,
         summary,
+        unsaved_shards: BTreeSet::new(),
+        last_saved: None,
     };
 
     let mut downloaded = Some(downloadBatch(client, &work, 0, batches[0], &base_key).await?);
@@ -305,7 +311,7 @@ async fn runJobs(
         built = converted?;
     }
 
-    Ok(())
+    publisher.saveRecords().await
 }
 
 /// Takes a converted batch the rest of the way: uploads its files, records them and rewrites the
@@ -317,6 +323,9 @@ struct BatchPublisher<'a, 'd, 'w> {
     state: &'a mut ArtState,
     directory: &'a mut DirectoryWriter<'w>,
     summary: &'a mut GameArtSummary,
+    /// Record shards changed since they were last saved.
+    unsaved_shards: BTreeSet<String>,
+    last_saved: Option<Instant>,
 }
 
 impl BatchPublisher<'_, '_, '_> {
@@ -362,11 +371,14 @@ impl BatchPublisher<'_, '_, '_> {
             deleteKeys(self.client, bucket, &deleted).await?;
             self.summary.deleted += deleted.len();
 
-            let changed = batch
-                .iter()
-                .map(|job| shardName(&job.name).to_string())
-                .collect();
-            saveState(self.client, bucket, self.state, &changed).await?;
+            self.unsaved_shards
+                .extend(batch.iter().map(|job| shardName(&job.name).to_string()));
+            if self
+                .last_saved
+                .is_none_or(|saved| saved.elapsed() >= RECORD_SAVE_INTERVAL)
+            {
+                self.saveRecords().await?;
+            }
             changed_urls.extend(deleted);
             purgeOverwritten(&changed_urls, &self.options.purge_origins).await?;
         }
@@ -390,6 +402,22 @@ impl BatchPublisher<'_, '_, '_> {
             directory_ms = directory_started.elapsed().as_millis(),
             "published a game art batch"
         );
+        Ok(())
+    }
+
+    /// Saves the record shards changed since the last save. A run that stops before the next save
+    /// rebuilds those files, whose unchanged uploads are then skipped.
+    async fn saveRecords(&mut self) -> Result<()> {
+        let ArtDestination::Bucket(bucket) = self.destination else {
+            return Ok(());
+        };
+        if self.unsaved_shards.is_empty() {
+            return Ok(());
+        }
+
+        saveState(self.client, bucket, self.state, &self.unsaved_shards).await?;
+        self.unsaved_shards.clear();
+        self.last_saved = Some(Instant::now());
         Ok(())
     }
 }
