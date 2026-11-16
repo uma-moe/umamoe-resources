@@ -18,8 +18,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub(super) const ART_ROOT: &str = "art";
 
-/// The shader folder's index; each shader's file lies below it, named after the shader, with an
-/// `index.json` in every folder.
+/// The index of every shader; each shader's file lies below it, named after the shader.
 pub(super) const SHADER_INDEX_KEY: &str = "art/shaders/index.json";
 
 /// The cut-in number every card and character has one timeline of.

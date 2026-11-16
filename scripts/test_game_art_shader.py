@@ -10,25 +10,23 @@ sys.path.insert(0, str(Path(__file__).parent))
 import game_art_shader as shader  # noqa: E402
 
 
-class FolderIndexTests(unittest.TestCase):
-    def test_each_folder_lists_its_folders_and_shaders_by_their_own_names(self):
+class ShaderIndexTests(unittest.TestCase):
+    def test_the_index_links_every_shader_from_the_bucket_root(self):
         listed = [
-            {"name": "Gallop/3D/Chara/ToonMayu", "file": "gallop/3d/chara/toonmayu.json"},
-            {"name": "Gallop/3D/Chara/ToonMayu/TSER", "file": "gallop/3d/chara/toonmayu/tser.json"},
             {"name": "Gallop/UI/Default", "file": "gallop/ui/default.json"},
+            {"name": "Gallop/3D/Chara/ToonMayu", "file": "gallop/3d/chara/toonmayu.json"},
         ]
 
-        indexes = shader.folder_indexes(listed)
+        index = shader.shader_index(listed)
 
-        self.assertEqual(sorted(indexes), ["", "gallop", "gallop/3d", "gallop/3d/chara", "gallop/3d/chara/toonmayu", "gallop/ui"])
-        self.assertEqual(indexes[""], {"schema": 1, "folders": ["gallop"]})
-        self.assertEqual(indexes["gallop"], {"schema": 1, "folders": ["3d", "ui"]})
         self.assertEqual(
-            indexes["gallop/3d/chara"],
+            index,
             {
                 "schema": 1,
-                "folders": ["toonmayu"],
-                "shaders": [{"name": "Gallop/3D/Chara/ToonMayu", "file": "toonmayu.json"}],
+                "shaders": [
+                    {"name": "Gallop/3D/Chara/ToonMayu", "file": "/art/shaders/gallop/3d/chara/toonmayu.json"},
+                    {"name": "Gallop/UI/Default", "file": "/art/shaders/gallop/ui/default.json"},
+                ],
             },
         )
 

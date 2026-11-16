@@ -15,7 +15,7 @@ pub(super) const MODEL_CONVERTER_REVISION: u32 = 3;
 pub(super) const UMA_CONVERTER_REVISION: u32 = 4;
 
 /// Raise when the shader files change, so they are written again.
-pub(super) const SHADER_CONVERTER_REVISION: u32 = 1;
+pub(super) const SHADER_CONVERTER_REVISION: u32 = 2;
 
 /// Raise when chibi or chibi clip output changes, so every one is rebuilt once.
 pub(super) const CHIBI_CONVERTER_REVISION: u32 = 1;
