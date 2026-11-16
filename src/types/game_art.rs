@@ -54,10 +54,13 @@ pub(super) const CONVERTER_PYTHON: &str = "/opt/game-art/bin/python";
 
 pub(super) const CONVERTER_SCRIPT: &str = "/app/scripts/game_art_convert.py";
 
-/// Bundles per converter process; Python and UnityPy take about a second to start.
-pub(super) const CONVERT_BATCH_SIZE: usize = 32;
+/// Bundles per converter process in a batch; Python and UnityPy take about a second to start.
+pub(super) const JOBS_PER_CONVERTER: usize = 8;
 
-pub(super) const DOWNLOAD_CONCURRENCY: usize = 8;
+/// Converter processes run at once at most; each holds its bundles' decoded textures in memory.
+pub(super) const MAX_CONVERTER_PROCESSES: usize = 8;
+
+pub(super) const DOWNLOAD_CONCURRENCY: usize = 16;
 
 pub(super) const UPLOAD_CONCURRENCY: usize = 16;
 
@@ -864,11 +867,6 @@ pub struct GameArtSummary {
     pub download_failures: usize,
     /// Objects it had published that no record lists any more.
     pub deleted: usize,
-}
-
-#[derive(Serialize)]
-pub(super) struct ConvertRequest<'a> {
-    pub(super) jobs: Vec<ConvertJob<'a>>,
 }
 
 #[derive(Serialize)]

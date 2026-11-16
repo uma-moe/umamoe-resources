@@ -1,9 +1,9 @@
 use super::catalog::objectName;
 use super::layout::rootLink;
 use super::types::{
-    ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
-    ConvertResult, ConvertedArt, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab,
-    SlotBundle, CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertResponse, ConvertResult,
+    ConvertedArt, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab, SlotBundle,
+    CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY, MAX_CONVERTER_PROCESSES,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::task::JoinSet;
 
@@ -29,9 +30,9 @@ impl WorkDir {
         Ok(Self { root })
     }
 
-    /// An empty folder for one batch; the previous batch's files are removed.
-    fn batchDir(&self) -> Result<PathBuf> {
-        let dir = self.root.join("batch");
+    /// An empty folder for one batch; the files of the batch that last used the slot are removed.
+    fn batchDir(&self, slot: usize) -> Result<PathBuf> {
+        let dir = self.root.join(format!("batch-{slot}"));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir)
             .with_context(|| format!("failed to create {}", dir.display()))?;
@@ -58,16 +59,44 @@ pub(super) enum JobOutcome {
     NotDownloaded(String),
 }
 
-/// Downloads, decrypts and converts one batch, reporting an outcome per job in order.
-pub(super) async fn buildBatch(
+/// A batch's bundles as each job's files, or why they did not download.
+pub(super) struct DownloadedBatch {
+    dir: PathBuf,
+    bundles: Vec<Result<Vec<PathBuf>>>,
+    took: Duration,
+}
+
+/// A batch's outcome per job in order, and how long its stages took.
+pub(super) struct BuiltBatch {
+    pub(super) outcomes: Vec<JobOutcome>,
+    pub(super) download: Duration,
+    pub(super) convert: Duration,
+}
+
+/// Downloads and decrypts one batch's bundles into the work folder's `slot`.
+pub(super) async fn downloadBatch(
     client: &reqwest::Client,
     work: &WorkDir,
+    slot: usize,
     jobs: &[ArtJob],
     base_key: &Arc<Vec<u8>>,
-) -> Result<Vec<JobOutcome>> {
-    let dir = work.batchDir()?;
+) -> Result<DownloadedBatch> {
+    let dir = work.batchDir(slot)?;
+    let started = Instant::now();
     let bundles = downloadBundles(client, &dir, jobs, base_key).await;
+    Ok(DownloadedBatch {
+        dir,
+        bundles,
+        took: started.elapsed(),
+    })
+}
 
+/// Converts a downloaded batch; the converted files stay in its folder until the slot is reused.
+pub(super) async fn convertBatch(
+    jobs: &[ArtJob],
+    downloaded: DownloadedBatch,
+) -> Result<BuiltBatch> {
+    let DownloadedBatch { dir, bundles, took } = downloaded;
     let mut outcomes: Vec<Option<JobOutcome>> = (0..jobs.len()).map(|_| None).collect();
     let mut conversions: Vec<(usize, ConvertJob)> = Vec::new();
     for (index, (job, files)) in jobs.iter().zip(bundles).enumerate() {
@@ -77,7 +106,11 @@ pub(super) async fn buildBatch(
         }
     }
 
-    for (index, conversion) in convertAll(conversions).await? {
+    let convert_started = Instant::now();
+    let converted = convertAll(conversions).await?;
+    let convert = convert_started.elapsed();
+
+    for (index, conversion) in converted {
         outcomes[index] = Some(match conversion {
             Err(error) => JobOutcome::Unconvertible(error),
             Ok(reported) => {
@@ -100,7 +133,11 @@ pub(super) async fn buildBatch(
             })
         })
         .collect();
-    Ok(outcomes)
+    Ok(BuiltBatch {
+        outcomes,
+        download: took,
+        convert,
+    })
 }
 
 /// Each job's bundle followed by the bundles it needs beside it and those it looks things up in.
@@ -359,52 +396,83 @@ fn conversion(result: ConvertResult) -> Conversion {
     })
 }
 
-/// Converts the bundles in one converter process. If the process itself fails, each bundle gets
-/// its own process, so one bundle that crashes the decoder cannot hold back the others.
+/// One job ready for a converter process: its place in the batch, its bundle (which names its
+/// result) and its request.
+struct PreparedJob {
+    index: usize,
+    bundle: String,
+    request: serde_json::Value,
+}
+
+/// Converter processes a batch runs at once: one per available core, up to the limit.
+pub(super) fn converterProcesses() -> usize {
+    std::thread::available_parallelism()
+        .map_or(1, |cores| cores.get())
+        .min(MAX_CONVERTER_PROCESSES)
+}
+
+/// Converts the bundles in several converter processes at once, each taking every n-th job so
+/// the heavy files of a shard spread over all of them.
 async fn convertAll(conversions: Vec<(usize, ConvertJob<'_>)>) -> Result<Vec<(usize, Conversion)>> {
-    if conversions.is_empty() {
-        return Ok(Vec::new());
+    let processes = converterProcesses().min(conversions.len()).max(1);
+    let mut groups: Vec<Vec<PreparedJob>> = (0..processes).map(|_| Vec::new()).collect();
+    for (position, (index, job)) in conversions.into_iter().enumerate() {
+        groups[position % processes].push(PreparedJob {
+            index,
+            bundle: job.bundle.clone(),
+            request: serde_json::to_value(&job)?,
+        });
     }
 
-    let indexes: HashMap<String, usize> = conversions
-        .iter()
-        .map(|(index, job)| (job.bundle.clone(), *index))
-        .collect();
-    let (positions, jobs): (Vec<usize>, Vec<ConvertJob>) = conversions.into_iter().unzip();
-    let request = ConvertRequest { jobs };
+    let mut tasks = JoinSet::new();
+    for group in groups.into_iter().filter(|group| !group.is_empty()) {
+        tasks.spawn(convertGroup(group));
+    }
+    let mut results = Vec::new();
+    while let Some(joined) = tasks.join_next().await {
+        results.extend(joined.context("a converter task stopped unexpectedly")??);
+    }
+    Ok(results)
+}
 
-    match runConverter(&request).await {
+/// Converts the jobs in one converter process. If the process itself fails, each job gets its
+/// own process, so one bundle that crashes the decoder cannot hold back the others.
+async fn convertGroup(jobs: Vec<PreparedJob>) -> Result<Vec<(usize, Conversion)>> {
+    let requests: Vec<&serde_json::Value> = jobs.iter().map(|job| &job.request).collect();
+    let indexes: HashMap<&str, usize> = jobs
+        .iter()
+        .map(|job| (job.bundle.as_str(), job.index))
+        .collect();
+
+    match runConverter(&requests).await {
         Ok(response) => Ok(response
             .results
             .into_iter()
             .filter_map(|result| {
-                let index = *indexes.get(&result.bundle)?;
+                let index = *indexes.get(result.bundle.as_str())?;
                 Some((index, conversion(result)))
             })
             .collect()),
-        Err(error) if request.jobs.len() == 1 => {
-            Ok(vec![(positions[0], Err(format!("{error:#}")))])
-        }
+        Err(error) if jobs.len() == 1 => Ok(vec![(jobs[0].index, Err(format!("{error:#}")))]),
         Err(_) => {
-            let mut results = Vec::with_capacity(request.jobs.len());
-            for (index, job) in positions.into_iter().zip(request.jobs) {
-                let single = ConvertRequest { jobs: vec![job] };
-                let outcome = match runConverter(&single).await {
+            let mut results = Vec::with_capacity(jobs.len());
+            for job in &jobs {
+                let outcome = match runConverter(&[&job.request]).await {
                     Ok(response) => response.results.into_iter().next().map_or_else(
                         || Err("the converter did not report this bundle".to_string()),
                         conversion,
                     ),
                     Err(error) => Err(format!("{error:#}")),
                 };
-                results.push((index, outcome));
+                results.push((job.index, outcome));
             }
             Ok(results)
         }
     }
 }
 
-async fn runConverter(request: &ConvertRequest<'_>) -> Result<ConvertResponse> {
-    let input = serde_json::to_vec(request)?;
+async fn runConverter(jobs: &[&serde_json::Value]) -> Result<ConvertResponse> {
+    let input = serde_json::to_vec(&serde_json::json!({ "jobs": jobs }))?;
     let mut child = tokio::process::Command::new(CONVERTER_PYTHON)
         .arg(CONVERTER_SCRIPT)
         .stdin(Stdio::piped())

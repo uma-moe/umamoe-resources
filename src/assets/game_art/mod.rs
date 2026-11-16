@@ -19,7 +19,7 @@ use super::types::ObjectChange;
 use super::{publishFile, purgeOverwritten, Bucket};
 use crate::game_cdn::{self, CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
 use anyhow::{ensure, Context, Result};
-use build::{buildBatch, JobOutcome, WorkDir};
+use build::{convertBatch, converterProcesses, downloadBatch, BuiltBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
 use cleanup::{
     deleteKeys, isSuspiciousOrphanCount, keptConversion, plannedRun, recordKeys, removeRecords,
@@ -33,10 +33,11 @@ use state::{loadState, rewriteState, saveState, shardName};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 use types::{
-    ArtDestination, ArtJob, ArtState, Catalog, StateLayout, CONVERT_BATCH_SIZE, SHADER_BUNDLE,
+    ArtDestination, ArtJob, ArtState, Catalog, StateLayout, JOBS_PER_CONVERTER, SHADER_BUNDLE,
     UPLOAD_CONCURRENCY,
 };
 pub use types::{GameArtOptions, GameArtSummary};
@@ -242,8 +243,11 @@ async fn listSources(
     Ok(vec![(&GLOBAL_CDN, files)])
 }
 
-/// Builds the jobs batch by batch; after each batch, records what it published and rewrites the
-/// directory documents when they are due.
+/// Work folder slots a run rotates through: one batch downloads, one converts and one publishes.
+const BATCH_SLOTS: usize = 3;
+
+/// Builds the jobs batch by batch as a pipeline: while one batch converts, the next downloads and
+/// the previous one is published, recorded and listed in the directory documents.
 async fn runJobs(
     client: &reqwest::Client,
     jobs: &[ArtJob],
@@ -259,60 +263,135 @@ async fn runJobs(
 
     let work = WorkDir::create()?;
     let base_key = Arc::new(options.base_key.clone());
+    let batch_size = converterProcesses() * JOBS_PER_CONVERTER;
+    let batches: Vec<&[ArtJob]> = jobs.chunks(batch_size).collect();
+    let mut publisher = BatchPublisher {
+        client,
+        destination,
+        options,
+        state,
+        directory,
+        summary,
+    };
 
-    for batch in jobs.chunks(CONVERT_BATCH_SIZE) {
-        let outcomes = buildBatch(client, &work, batch, &base_key).await?;
+    let mut downloaded = Some(downloadBatch(client, &work, 0, batches[0], &base_key).await?);
+    let mut built: Option<BuiltBatch> = None;
+    for step in 0..=batches.len() {
+        let next = step + 1;
+        let download = async {
+            match batches.get(next) {
+                Some(batch) => downloadBatch(client, &work, next % BATCH_SLOTS, batch, &base_key)
+                    .await
+                    .map(Some),
+                None => Ok(None),
+            }
+        };
+        let convert = async {
+            match downloaded.take() {
+                Some(batch) => convertBatch(batches[step], batch).await.map(Some),
+                None => Ok(None),
+            }
+        };
+        let publish = async {
+            match built.take() {
+                Some(batch) => publisher.publish(batches[step - 1], batch).await,
+                None => Ok(()),
+            }
+        };
+
+        let (next_downloaded, converted, published) = tokio::join!(download, convert, publish);
+        published?;
+        downloaded = next_downloaded?;
+        built = converted?;
+    }
+
+    Ok(())
+}
+
+/// Takes a converted batch the rest of the way: uploads its files, records them and rewrites the
+/// directory documents when they are due.
+struct BatchPublisher<'a, 'd, 'w> {
+    client: &'a reqwest::Client,
+    destination: &'a ArtDestination<'d>,
+    options: &'a GameArtOptions,
+    state: &'a mut ArtState,
+    directory: &'a mut DirectoryWriter<'w>,
+    summary: &'a mut GameArtSummary,
+}
+
+impl BatchPublisher<'_, '_, '_> {
+    async fn publish(&mut self, batch: &[ArtJob], built: BuiltBatch) -> Result<()> {
         let mut files = BTreeMap::new();
         let mut stale_keys = BTreeSet::new();
 
-        for (job, outcome) in batch.iter().zip(outcomes) {
+        for (job, outcome) in batch.iter().zip(built.outcomes) {
             let (error, converted) = match outcome {
                 JobOutcome::NotDownloaded(error) => {
-                    summary.download_failures += 1;
+                    self.summary.download_failures += 1;
                     warn!(file = job.name, error, "game art download failed");
                     continue;
                 }
                 JobOutcome::Unconvertible(error) => {
-                    summary.conversion_failures += 1;
+                    self.summary.conversion_failures += 1;
                     warn!(file = job.name, error, "game art does not convert");
                     (Some(error), None)
                 }
                 JobOutcome::Built { outputs, converted } => {
-                    summary.built += 1;
+                    self.summary.built += 1;
                     files.extend(outputs);
                     (None, Some(converted))
                 }
             };
             // A file that stopped converting keeps the files it published before.
-            let converted = converted.unwrap_or_else(|| keptConversion(state, &job.name));
+            let converted = converted.unwrap_or_else(|| keptConversion(self.state, &job.name));
             let record = publishedRecord(job, error, converted);
-            if let Some(replaced) = state.files.insert(job.name.clone(), record) {
+            if let Some(replaced) = self.state.files.insert(job.name.clone(), record) {
                 stale_keys.extend(recordKeys(&replaced).cloned());
             }
         }
 
-        summary.uploaded += files.len();
-        let mut changed_urls = deliver(client, destination, files).await?;
-        if let ArtDestination::Bucket(bucket) = destination {
+        self.summary.uploaded += files.len();
+        let upload_started = Instant::now();
+        let mut changed_urls = deliver(self.client, self.destination, files).await?;
+        let upload = upload_started.elapsed();
+
+        let records_started = Instant::now();
+        if let ArtDestination::Bucket(bucket) = self.destination {
             // Deleted before the state is saved, so a failed run deletes them again next time.
-            let deleted = unlistedKeys(state, stale_keys);
-            deleteKeys(client, bucket, &deleted).await?;
-            summary.deleted += deleted.len();
+            let deleted = unlistedKeys(self.state, stale_keys);
+            deleteKeys(self.client, bucket, &deleted).await?;
+            self.summary.deleted += deleted.len();
 
             let changed = batch
                 .iter()
                 .map(|job| shardName(&job.name).to_string())
                 .collect();
-            saveState(client, bucket, state, &changed).await?;
+            saveState(self.client, bucket, self.state, &changed).await?;
             changed_urls.extend(deleted);
-            purgeOverwritten(&changed_urls, &options.purge_origins).await?;
+            purgeOverwritten(&changed_urls, &self.options.purge_origins).await?;
         }
-        directory
-            .writeWhenDue(client, destination, state, &options.purge_origins)
-            .await?;
-    }
+        let records = records_started.elapsed();
 
-    Ok(())
+        let directory_started = Instant::now();
+        self.directory
+            .writeWhenDue(
+                self.client,
+                self.destination,
+                self.state,
+                &self.options.purge_origins,
+            )
+            .await?;
+        info!(
+            jobs = batch.len(),
+            download_ms = built.download.as_millis(),
+            convert_ms = built.convert.as_millis(),
+            upload_ms = upload.as_millis(),
+            records_ms = records.as_millis(),
+            directory_ms = directory_started.elapsed().as_millis(),
+            "published a game art batch"
+        );
+        Ok(())
+    }
 }
 
 /// Copies or uploads the files; a file the bucket already holds byte for byte is skipped. Returns
