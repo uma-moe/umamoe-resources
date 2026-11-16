@@ -10,16 +10,25 @@ the meshes, materials and textures a track prefab draws.
 on a larger served canvas.
 A `glb` output exports the job's `model`, its textures embedded, by its `kind`:
 - "scenery", with `game_art_model`: {"prefabs": [{"object", "bundle"}], "runtime_textures":
-  [{"name", "key", "bundle"}]}. The prefabs are drawn side by side, such as a racecourse's track,
-  trees, stands and sky. The runtime textures are the season and weather textures the game puts
-  on their course materials.
+  [{"name", "key", "bundle"}], "components": bool}. The prefabs are drawn side by side, such as a
+  racecourse's track, trees, stands and sky. The runtime textures are the season and weather
+  textures the game puts on their course materials. With `components`, as for an effect or a
+  cut-in set, each object's particle systems, scripts and other components are kept.
 - "uma", with `game_art_uma`: {"title", "prefabs", "tail_textures": [{"slot", "bundle"}],
   "traits"}, an outfit's body, head and tail joined in a T-pose.
-- "motion", with `game_art_uma`: {"title", "skeleton": prefabs}, the job's own bundle, a race
-  clip, on the skeleton every uma shares.
+- "character", with `game_art_uma`: {"title", "prefabs", "material_textures": [{"material",
+  "slot", "bundle"}], "traits"?}, a chibi or a prop.
+- "motion", with `game_art_uma`: {"title", "skeleton": prefabs, "moves_root": bool}, the job's
+  own bundle, a clip, on the skeleton of its family.
+- "node_motion", with `game_art_uma`: {"title"}, the job's own clip, which moves a camera or a
+  position.
 Each `bundle` is the job's own or one of its `dependencies`.
-A `json` output is the index of the shaders in the job's bundle, its model {"kind": "shaders"}, with
-`game_art_shader`: each shader goes in a file of its own beside the index, at a key named after it.
+A `json` output is written by the model's `kind`:
+- "shaders", with `game_art_shader`: the index of the shaders in the job's bundle; each shader
+  goes in a file of its own beside the index, at a key named after it.
+- "clip_curves", with `game_art_unity`: every curve of the job's own clip.
+- "scripts", with `game_art_unity`: {"bundles": [{"name", "bundle"}]}, every object of the first
+  bundle, such as a cut-in timeline, the others named so its references can be.
 It prints {"results": [{"bundle": "<path>", "written": [...], "files": [{"key", "path"}],
 "error": null | "<message>"}]}, where `files` are the files a job named after its bundle's contents.
 `--inspect` lists the textures and sprites in the bundles named on the command line instead.
@@ -33,9 +42,10 @@ from typing import Any, TextIO
 import UnityPy
 from PIL import Image
 
+import game_art_unity as unity
 from game_art_model import bundle_objects, export_model
 from game_art_shader import export_shaders
-from game_art_uma import export_motion, export_uma
+from game_art_uma import export_character, export_motion, export_node_motion, export_uma
 
 WEBP_QUALITY = 90
 
@@ -100,20 +110,39 @@ def export_glb(environment: Any, job: dict[str, Any], output: dict[str, Any]) ->
     model = job["model"]
     kind = model["kind"]
     if kind == "scenery":
-        export_model(environment, model["prefabs"], model["runtime_textures"], output)
+        components = model.get("components", False)
+        export_model(environment, model["prefabs"], model["runtime_textures"], output, components)
     elif kind == "uma":
         export_uma(environment, model, output)
+    elif kind == "character":
+        export_character(environment, model, output)
     elif kind == "motion":
         export_motion(environment, job["bundle"], model, output)
+    elif kind == "node_motion":
+        export_node_motion(environment, job["bundle"], model, output)
     else:
         raise ValueError(f"unknown model kind {kind!r}")
 
 
 def export_json(environment: Any, job: dict[str, Any], output: dict[str, Any]) -> list[dict[str, str]]:
-    kind = job.get("model", {}).get("kind")
-    if kind != "shaders":
+    """Writes the output and returns the further files it names, if any."""
+    model = job.get("model", {})
+    kind = model.get("kind")
+    if kind == "shaders":
+        return export_shaders(bundle_objects(environment, job["bundle"], "Shader"), output)
+    if kind == "clip_curves":
+        clips = bundle_objects(environment, job["bundle"], "AnimationClip")
+        if not clips:
+            raise ValueError("the bundle holds no animation clip")
+        content = unity.clip_data(clips[0], unity.names_in(clips[0].assets_file))
+    elif kind == "scripts":
+        content = unity.bundle_dump(environment, model["bundles"])
+    else:
         raise ValueError(f"no JSON output for model kind {kind!r}")
-    return export_shaders(bundle_objects(environment, job["bundle"], "Shader"), output)
+
+    with open(output["path"], "w", encoding="utf-8") as file:
+        json.dump(content, file, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    return []
 
 
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:

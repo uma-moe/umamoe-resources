@@ -17,6 +17,16 @@ pub(super) const UMA_CONVERTER_REVISION: u32 = 4;
 /// Raise when the shader files change, so they are written again.
 pub(super) const SHADER_CONVERTER_REVISION: u32 = 1;
 
+/// Raise when chibi or chibi clip output changes, so every one is rebuilt once.
+pub(super) const CHIBI_CONVERTER_REVISION: u32 = 1;
+
+/// Raise when the output of cut-in timelines, clips, sets or props changes, so every one is
+/// rebuilt once.
+pub(super) const CUTIN_CONVERTER_REVISION: u32 = 1;
+
+/// Raise when effect output changes, so every effect is rebuilt once.
+pub(super) const EFFECT_CONVERTER_REVISION: u32 = 1;
+
 /// The bundle of every shader the game draws with, named so in each platform's file list and
 /// category. Models load the Windows one to name their materials' shaders; the Android one, whose
 /// programs are GLSL ES, is published.
@@ -106,6 +116,72 @@ pub(super) const TAIL_TEXTURES: &[(&str, &str)] = &[
     ("_TripleMaskMap", "0000_base"),
     ("_OptionMaskMap", "0000_ctrl"),
 ];
+
+/// Chibi bodies, one folder per outfit: `3d/chara/mini/body/mbdy1001_00`, which names the
+/// chibi's record.
+pub(super) const CHIBI_BODY_FOLDER: &str = "3d/chara/mini/body/";
+
+/// Where each outfit's chibi is served, at its uma's path:
+/// `game-assets/chibis/special-week/special-dreamer.glb`.
+pub(super) const CHIBI_MODEL_FOLDER: &str = "game-assets/chibis";
+
+/// The face every chibi shares, the only one the file list holds; its materials are empty until
+/// the game loads the character's sheets into them.
+pub(super) const CHIBI_FACE_FOLDER: &str = "3d/chara/mini/head/mchr0001_00";
+pub(super) const CHIBI_FACE_PREFAB: &str = "3d/chara/mini/head/mchr0001_00/pfb_mchr0001_00_face0";
+
+/// The face materials the game fills from the character's head (`MINI_EYE_TEXTURE_PATH`,
+/// `MINI_MAYU_TEXTURE_PATH`, `MINI_MOUTH_TEXTURE_PATH`), with `tex_mchr1001_00_{suffix}` from the
+/// head's `textures` folder.
+pub(super) const CHIBI_FACE_SHEETS: &[(&str, &str)] = &[
+    ("mtl_mchr0001_00_eye", "eye_diff"),
+    ("mtl_mchr0001_00_mayu_l", "mayu_diff"),
+    ("mtl_mchr0001_00_mayu_r", "mayu_diff"),
+    ("mtl_mchr0001_00_mouth", "mouth_diff"),
+];
+
+/// The face materials the game fills by the character's skin colour (`MINI_FACE_TEXTURE_PATH`,
+/// `MINI_CHEEK_TEXTURE_PATH`), with `tex_mchr0001_00_face0_{skin}_{suffix}`.
+pub(super) const CHIBI_SKIN_SHEETS: &[(&str, &str)] = &[
+    ("mtl_mchr0001_00_face0", "diff"),
+    ("mtl_mchr0001_00_cheek", "cheek0"),
+];
+
+/// Chibi clips, served at their game paths.
+pub(super) const CHIBI_CLIP_FOLDER: &str = "3d/motion/mini/";
+
+/// The skeleton chibi body and face clips are exported on: Special Week's racewear chibi, her
+/// hair and the common tail.
+pub(super) const CHIBI_SKELETON: &[&str] = &[
+    "3d/chara/mini/body/mbdy1001_00/pfb_mbdy1001_00",
+    "3d/chara/mini/head/mchr1001_00/pfb_mchr1001_00_hair",
+    "3d/chara/mini/tail/mtail0001_00/pfb_mtail0001_00",
+];
+
+/// Cut-in clips, served at their game paths: per shot the uma's body, face, ears and position,
+/// the camera, and the props and sets in it.
+pub(super) const CUTIN_CLIP_FOLDER: &str = "3d/motion/cutin/";
+
+/// The skeleton cut-in body and face clips are exported on: `MOTION_SKELETON` with Special Week's
+/// head, whose face and ear bones the face clips move.
+pub(super) const CUTIN_SKELETON: &[&str] = &[
+    "3d/chara/body/bdy1001_00/pfb_bdy1001_00",
+    "3d/chara/head/chr1001_00/pfb_chr1001_00",
+    "3d/chara/tail/tail0001_00/pfb_tail0001_00",
+];
+
+/// Skill cut-in timelines, the umas' ults among them, each in a folder of its name:
+/// `cutt/cutin/skill/crd100101_001/crd100101_001`.
+pub(super) const CUTIN_TIMELINE_FOLDER: &str = "cutt/cutin/skill/";
+
+/// The sets cut-ins play in, served like track prefabs at their game paths.
+pub(super) const CUTIN_SET_FOLDER: &str = "3d/env/cutin/";
+
+/// The props umas hold in cut-ins, one folder each: `3d/chara/prop/prop1001_00`.
+pub(super) const PROP_FOLDER: &str = "3d/chara/prop/";
+
+/// The game's visual effects; every `pfb_` bundle below it is one effect.
+pub(super) const EFFECT_FOLDER: &str = "3d/effect/";
 
 /// Game files of one kind and where the site serves each. A `{name}` segment matches digits, and
 /// a name used twice must match the same digits both times.
@@ -477,6 +553,8 @@ pub(super) struct Catalog {
     pub(super) course_names: HashMap<u32, String>,
     /// Every outfit with a body of its own; those whose files are listed become umas.
     pub(super) umas: Vec<UmaOutfit>,
+    /// Every such outfit with a chibi; those whose files are listed become chibis.
+    pub(super) chibis: Vec<ChibiOutfit>,
 }
 
 /// An outfit with a body of its own, as master.mdb describes it with its character.
@@ -484,12 +562,16 @@ pub(super) struct Catalog {
 pub(super) struct OutfitRow {
     pub(super) dress: u32,
     pub(super) chara: u32,
+    /// Whether the outfit has a chibi (`have_mini`).
+    pub(super) has_chibi: bool,
     pub(super) body_sub: i64,
     pub(super) head_sub: i64,
     /// The outfit's own tail model and variant; model -1 when it wears its character's.
     pub(super) dress_tail: (i64, i64),
     /// The character's tail model, -1 for none.
     pub(super) chara_tail: i64,
+    /// The character's skin colour, which picks its face textures.
+    pub(super) skin: i64,
     /// `RaceRunningType`: 1 standard, 2 pitch, 3 stride.
     pub(super) running_type: i64,
     /// `RacePersonalityType` of its runs and gate starts, and of its finish reactions.
@@ -533,6 +615,74 @@ pub(super) struct UmaTraits {
 pub(super) struct SlotTexture {
     pub(super) slot: &'static str,
     pub(super) name: String,
+}
+
+/// An outfit's chibi, built from its own body like its uma.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ChibiOutfit {
+    /// The record it is published under: its body's folder, `3d/chara/mini/body/mbdy1001_00`.
+    pub(super) record: String,
+    pub(super) key: String,
+    /// Body, hair and tail prefabs and their runtime textures. A chibi job keeps the textures the
+    /// file list has.
+    pub(super) model: CharacterModel,
+}
+
+/// A skinned model: an outfit's chibi, whose prefabs are merged on one skeleton in this order, or
+/// a prop.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct CharacterModel {
+    /// What Blender names the armature: `Special Week: Special Dreamer`.
+    pub(super) title: String,
+    pub(super) prefabs: Vec<String>,
+    /// Textures the game puts in a material's slot at runtime, such as a chibi's face sheets and
+    /// its tail's colour.
+    pub(super) material_textures: Vec<MaterialTexture>,
+    /// The outfit, shown in Blender as the armature's custom properties.
+    pub(super) traits: Option<OutfitTraits>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub(super) struct OutfitTraits {
+    pub(super) chara: u32,
+    pub(super) dress: u32,
+}
+
+/// A texture the game puts in one material's slot at runtime: `mtl_mtail0001_00`'s `_MainTex`.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct MaterialTexture {
+    pub(super) material: String,
+    pub(super) slot: &'static str,
+    pub(super) name: String,
+}
+
+/// How a chibi or cut-in clip is published, by what it moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum ClipKind {
+    /// A uma's or chibi's own bones, on this skeleton.
+    Skeleton(&'static [&'static str]),
+    /// The one object it is bound to, such as a camera or a uma's position.
+    Node,
+    /// Bones of a prop or set, whose models are published apart: its curves as JSON.
+    Curves,
+    /// The script driving a face's expressions over a clip, as JSON.
+    Script,
+}
+
+/// A chibi or cut-in clip and where it is served.
+#[derive(Debug, PartialEq)]
+pub(super) struct GameClip {
+    pub(super) key: String,
+    pub(super) kind: ClipKind,
+}
+
+/// The prefab families built into one model each, at their game paths except a course's parts.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum PrefabFamily {
+    Track,
+    Effect,
+    CutinSet,
+    Prop,
 }
 
 /// A race clip and where it is served, named after what it shows.
@@ -664,37 +814,51 @@ pub(super) struct ArtJob {
     pub(super) dependencies: Vec<ManifestEntry>,
     /// Bundles loaded only so references into them resolve; unlike `dependencies`, a change to
     /// them does not rebuild the job. A model looks its materials' shader names up in the shader
-    /// bundle.
+    /// bundle, and a cut-in timeline names the clips, effects and sets it plays.
     pub(super) lookups: Vec<ManifestEntry>,
     /// What a model draws; `None` for pictures.
     pub(super) model: Option<ArtModel>,
     pub(super) outputs: Vec<PlannedOutput>,
 }
 
-/// What a `.glb` output holds.
+/// What a `.glb` or `.json` output holds.
 pub(super) enum ArtModel {
     Scenery(SceneryModel),
     /// An outfit's body, head and tail joined on one skeleton in its rest pose, a T-pose.
     Uma(UmaOutfit),
-    /// The job's race clip on the skeleton every uma shares, without meshes.
+    /// An outfit's chibi or a prop, skinned on its own bones in its rest pose.
+    Character(CharacterModel),
+    /// The job's clip on a skeleton, without meshes.
     Motion(MotionModel),
+    /// The job's clip on the one object it moves, without a skeleton.
+    NodeMotion {
+        title: String,
+    },
+    /// The job's clip as JSON curves by bone path hash, for a model published apart.
+    ClipCurves,
+    /// The scripts of the job's bundle as JSON, references into its `lookups` named.
+    Scripts,
     /// Every shader of the job's bundle, each in a file of its own, listed in the job's output.
     Shaders,
 }
 
-/// Track prefabs drawn side by side in one model, each in its own coordinates.
+/// Prefabs drawn side by side in one model, each in its own coordinates.
 pub(super) struct SceneryModel {
     pub(super) prefabs: Vec<String>,
     /// Textures the game puts on the prefabs' materials at runtime, one set per season and
     /// weather. They are published on their own and are among the job's `dependencies`, so the
     /// model can embed the first set.
     pub(super) runtime_textures: Vec<String>,
+    /// Whether each object keeps its particle systems and scripts, as effects and cut-in sets do.
+    pub(super) components: bool,
 }
 
 pub(super) struct MotionModel {
     pub(super) title: String,
-    /// `MOTION_SKELETON`, among the job's `dependencies`.
+    /// A skeleton such as `MOTION_SKELETON`, among the job's `dependencies`.
     pub(super) skeleton: Vec<String>,
+    /// Whether the clip's curves on the skeleton's root are kept, as a cut-in's are.
+    pub(super) moves_root: bool,
 }
 
 /// One file built from a game file; its key's extension says whether it is a picture or a
@@ -752,6 +916,8 @@ pub(super) enum ConvertModel<'a> {
     Scenery {
         prefabs: Vec<ScenePrefab<'a>>,
         runtime_textures: Vec<RuntimeTexture<'a>>,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        components: bool,
     },
     Uma {
         title: &'a str,
@@ -759,10 +925,27 @@ pub(super) enum ConvertModel<'a> {
         tail_textures: Vec<SlotBundle<'a>>,
         traits: &'a UmaTraits,
     },
-    /// The clip is the job's own bundle.
+    Character {
+        title: &'a str,
+        prefabs: Vec<ScenePrefab<'a>>,
+        material_textures: Vec<MaterialBundle<'a>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        traits: Option<&'a OutfitTraits>,
+    },
+    /// The clip is the job's own bundle, as for the kinds below.
     Motion {
         title: &'a str,
         skeleton: Vec<ScenePrefab<'a>>,
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        moves_root: bool,
+    },
+    NodeMotion {
+        title: &'a str,
+    },
+    ClipCurves,
+    /// Every downloaded bundle by game name, so references into them can be named.
+    Scripts {
+        bundles: Vec<NamedBundle<'a>>,
     },
     Shaders,
 }
@@ -779,6 +962,21 @@ pub(super) struct ScenePrefab<'a> {
 pub(super) struct SlotBundle<'a> {
     pub(super) slot: &'a str,
     /// The downloaded texture bundle, one of the job's `dependencies`.
+    pub(super) bundle: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct MaterialBundle<'a> {
+    pub(super) material: &'a str,
+    pub(super) slot: &'a str,
+    /// The downloaded texture bundle, one of the job's `dependencies`.
+    pub(super) bundle: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct NamedBundle<'a> {
+    /// The game file, `3d/effect/charaskill/pfb_eff_chr1001_00/pfb_eff_chr1001_00_01`.
+    pub(super) name: &'a str,
     pub(super) bundle: String,
 }
 

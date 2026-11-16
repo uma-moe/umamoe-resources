@@ -22,10 +22,10 @@ pub(super) fn isUmaRecord(name: &str) -> bool {
 /// game falls back to the first personality without one.
 pub(super) fn outfitRows(connection: &Connection) -> Result<Vec<OutfitRow>> {
     let mut statement = connection.prepare(
-        "SELECT dress.id, dress.chara_id, dress.body_type_sub, dress.head_sub_id,
+        "SELECT dress.id, dress.chara_id, dress.have_mini, dress.body_type_sub, dress.head_sub_id,
                 dress.tail_model_id, dress.tail_model_sub_id, chara.tail_model_id,
                 chara.race_running_type, COALESCE(run.value, 1), COALESCE(finish.value, 1),
-                chara_name.text, dress_name.text
+                chara_name.text, dress_name.text, chara.skin
          FROM dress_data dress
          JOIN chara_data chara ON chara.id = dress.chara_id
          LEFT JOIN chara_type run ON run.chara_id = dress.chara_id
@@ -43,15 +43,17 @@ pub(super) fn outfitRows(connection: &Connection) -> Result<Vec<OutfitRow>> {
         Ok(OutfitRow {
             dress: row.get(0)?,
             chara: row.get(1)?,
-            body_sub: row.get(2)?,
-            head_sub: row.get(3)?,
-            dress_tail: (row.get(4)?, row.get(5)?),
-            chara_tail: row.get(6)?,
-            running_type: row.get(7)?,
-            run_personality: row.get(8)?,
-            finish_personality: row.get(9)?,
-            chara_name: row.get(10)?,
-            dress_name: row.get(11)?,
+            has_chibi: row.get::<_, i64>(2)? == 1,
+            body_sub: row.get(3)?,
+            head_sub: row.get(4)?,
+            dress_tail: (row.get(5)?, row.get(6)?),
+            chara_tail: row.get(7)?,
+            running_type: row.get(8)?,
+            run_personality: row.get(9)?,
+            finish_personality: row.get(10)?,
+            chara_name: row.get(11)?,
+            dress_name: row.get(12)?,
+            skin: row.get(13)?,
         })
     })?;
     rows.collect::<rusqlite::Result<Vec<_>>>()
@@ -62,6 +64,15 @@ pub(super) fn outfitRows(connection: &Connection) -> Result<Vec<OutfitRow>> {
 /// `game-assets/umas/special-week/special-dreamer.glb`. Outfits of one character whose names
 /// read alike keep their outfit number as well.
 pub(super) fn umaOutfits(rows: &[OutfitRow]) -> Vec<UmaOutfit> {
+    rows.iter()
+        .zip(outfitPaths(rows))
+        .map(|(row, path)| umaOutfit(row, format!("{UMA_MODEL_FOLDER}/{path}.glb")))
+        .collect()
+}
+
+/// Each outfit's path below a model folder, `special-week/special-dreamer`, in row order.
+/// Outfits of one character whose names read alike keep their outfit number as well.
+pub(super) fn outfitPaths(rows: &[OutfitRow]) -> Vec<String> {
     let names: Vec<String> = rows.iter().map(namedPath).collect();
     let mut uses: HashMap<&str, usize> = HashMap::new();
     for name in &names {
@@ -72,14 +83,18 @@ pub(super) fn umaOutfits(rows: &[OutfitRow]) -> Vec<UmaOutfit> {
         .zip(&names)
         .map(|(row, name)| {
             let is_shared = uses[name.as_str()] > 1;
-            let path = if is_shared {
+            if is_shared {
                 format!("{name}-{}", row.dress)
             } else {
                 name.clone()
-            };
-            umaOutfit(row, format!("{UMA_MODEL_FOLDER}/{path}.glb"))
+            }
         })
         .collect()
+}
+
+/// `Special Week: Special Dreamer`, what Blender names an outfit's armature.
+pub(super) fn outfitTitle(row: &OutfitRow) -> String {
+    umaTitle(&charaName(row), &dressName(row))
 }
 
 fn umaOutfit(row: &OutfitRow, key: String) -> UmaOutfit {
@@ -112,7 +127,7 @@ fn umaOutfit(row: &OutfitRow, key: String) -> UmaOutfit {
         record,
         prefabs,
         tail_textures,
-        title: umaTitle(&charaName(row), &dressName(row)),
+        title: outfitTitle(row),
         key,
         traits: UmaTraits {
             chara,
@@ -124,14 +139,19 @@ fn umaOutfit(row: &OutfitRow, key: String) -> UmaOutfit {
     }
 }
 
-/// The outfit's own tail, else its character's common one; staff have none.
 fn tailFolder(row: &OutfitRow) -> Option<String> {
+    tailModel(row).map(|(model, variant)| format!("tail{model:04}_{variant:02}"))
+}
+
+/// The outfit's own tail model and variant, else its character's common one; staff have none.
+/// Chibis number their tails the same way.
+pub(super) fn tailModel(row: &OutfitRow) -> Option<(i64, i64)> {
     let (dress_tail, dress_variant) = row.dress_tail;
     if dress_tail >= 0 {
-        return Some(format!("tail{dress_tail:04}_{dress_variant:02}"));
+        return Some((dress_tail, dress_variant));
     }
     if row.chara_tail >= 0 {
-        return Some(format!("tail{:04}_00", row.chara_tail));
+        return Some((row.chara_tail, 0));
     }
     None
 }
@@ -188,10 +208,12 @@ mod tests {
         OutfitRow {
             dress: 100101,
             chara: 1001,
+            has_chibi: true,
             body_sub: 0,
             head_sub: 0,
             dress_tail: (-1, 0),
             chara_tail: 1,
+            skin: 1,
             running_type: 1,
             run_personality: 1,
             finish_personality: 1,
@@ -352,16 +374,17 @@ mod tests {
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
-                "CREATE TABLE dress_data (id INTEGER, chara_id INTEGER, body_type_sub INTEGER,
-                   head_sub_id INTEGER, tail_model_id INTEGER, tail_model_sub_id INTEGER);
+                "CREATE TABLE dress_data (id INTEGER, chara_id INTEGER, have_mini INTEGER,
+                   body_type_sub INTEGER, head_sub_id INTEGER, tail_model_id INTEGER,
+                   tail_model_sub_id INTEGER);
                  CREATE TABLE chara_data (id INTEGER, tail_model_id INTEGER,
-                   race_running_type INTEGER);
+                   race_running_type INTEGER, skin INTEGER);
                  CREATE TABLE chara_type (id TEXT, chara_id INTEGER, target_scene INTEGER,
                    target_cut INTEGER, target_type INTEGER, value INTEGER);
                  CREATE TABLE text_data (category INTEGER, \"index\" INTEGER, text TEXT);
-                 INSERT INTO dress_data VALUES (100101, 1001, 0, 0, -1, 0), (1, 0, 0, 0, -1, 0),
-                   (100201, 1002, 0, 0, -1, 0);
-                 INSERT INTO chara_data VALUES (1001, 1, 2), (1002, 2, 1);
+                 INSERT INTO dress_data VALUES (100101, 1001, 1, 0, 0, -1, 0),
+                   (1, 0, 0, 0, 0, -1, 0), (100201, 1002, 0, 0, 0, -1, 0);
+                 INSERT INTO chara_data VALUES (1001, 1, 2, 1), (1002, 2, 1, 0);
                  INSERT INTO chara_type VALUES ('1', 1001, 1, 1, 0, 3), ('2', 1001, 1, 4, 0, 4),
                    ('3', 1001, 1, 2, 0, 2);
                  INSERT INTO text_data VALUES (6, 1001, 'Special Week'),
@@ -371,11 +394,12 @@ mod tests {
 
         let rows = outfitRows(&connection).unwrap();
 
-        let outfits: Vec<(u32, i64, i64, i64, Option<&str>)> = rows
+        let outfits: Vec<(u32, bool, i64, i64, i64, Option<&str>)> = rows
             .iter()
             .map(|row| {
                 (
                     row.dress,
+                    row.has_chibi,
                     row.chara_tail,
                     row.run_personality,
                     row.finish_personality,
@@ -386,8 +410,8 @@ mod tests {
         assert_eq!(
             outfits,
             vec![
-                (100101, 1, 3, 4, Some("Special Dreamer")),
-                (100201, 2, 1, 1, None),
+                (100101, true, 1, 3, 4, Some("Special Dreamer")),
+                (100201, false, 2, 1, 1, None),
             ]
         );
     }

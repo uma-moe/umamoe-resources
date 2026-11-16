@@ -8,11 +8,18 @@ as tears, are left out, and the blush is fully transparent. The face's expressio
 game poses with bones, become blend shapes (`game_art_face.py`).
 
 Every body and every tail share one rest skeleton, so a race motion is exported on Special
-Week's racewear and the common tail, without meshes, and fits any uma.
+Week's racewear and the common tail, without meshes, and fits any uma. Chibi and cut-in clips go
+on their family's skeleton the same way, and may move its root. A camera or position clip moves
+one object, exported as a root with a child per other object it moves, named by the CRC-32 of
+its path. A clip's curves that move no transform, such as a camera's field of view, are kept in
+the root's `extras.unity.curves` (`game_art_unity.clip_bindings`).
+
+A chibi or prop is exported like a uma, without expressions, on its own skeleton, with the
+textures the game loads at runtime, such as a chibi's face sheets, in their materials' slots.
 """
 
 import collections
-import struct
+import math
 import zlib
 from array import array
 from collections.abc import Iterable
@@ -20,14 +27,16 @@ from typing import Any
 
 import game_art_face as face
 import game_art_model as gm
+import game_art_unity as unity
 
 Matrix = list[list[float]]
 # Per expression, the matrix moving a rest position by what the expression adds at each bone.
 ExpressionMoves = list[tuple[str, dict[int, Matrix]]]
 
-TRANSFORM_BINDING = 4
-CURVES_PER_ATTRIBUTE = {1: 3, 2: 4, 3: 3, 4: 3}
-CHANNEL_PATHS = {1: "translation", 2: "rotation", 3: "scale"}
+TRANSFORM_BINDING = unity.TRANSFORM_BINDING
+CURVES_PER_ATTRIBUTE = unity.CURVES_PER_ATTRIBUTE
+EULER = 4
+CHANNEL_PATHS = {1: "translation", 2: "rotation", 3: "scale", EULER: "rotation"}
 SAMPLE_RATE = 30
 BIND_TOLERANCE = 1e-3
 IDENTITY: Matrix = [[1.0 if row == column else 0.0 for column in range(4)] for row in range(4)]
@@ -389,25 +398,37 @@ class CharacterExporter(gm.PrefabExporter):
                 entry["pbrMetallicRoughness"]["baseColorTexture"] = base_color
         return index
 
-    def add_clip(self, clip: Any, name: str) -> int:
-        """Samples the clip's transform curves onto the skeleton; returns how many channels."""
-        node_by_hash = {zlib.crc32(path.encode()): node for node, path in self.node_paths.items() if path}
+    def clip_targets(self, moves_root: bool) -> dict[int, int]:
+        """Nodes by the CRC-32 of their path, as a clip names them; the root's path is empty."""
+        targets = {zlib.crc32(path.encode()): node for node, path in self.node_paths.items() if path}
+        if moves_root:
+            targets[0] = self.root
+        return targets
+
+    def add_clip(self, clip: Any, name: str, targets: dict[int, int]) -> int:
+        """Samples the clip's transform curves onto the nodes it names; returns how many
+        channels."""
         stop = clip.m_MuscleClip.m_StopTime
         frame_count = max(2, round(stop * SAMPLE_RATE) + 1)
         times = [index / SAMPLE_RATE for index in range(frame_count)]
         time_accessor = self.animation_accessor(array("f", times), "SCALAR", frame_count, min=[0.0], max=[times[-1]])
 
+        curves = clip_curves(clip)
+        rotated = {path_hash for path_hash, attribute in curves if attribute == 2}
         channels, samplers = [], []
-        for (path_hash, attribute), components in clip_curves(clip).items():
-            node = node_by_hash.get(path_hash)
+        for (path_hash, attribute), components in curves.items():
+            node = targets.get(path_hash)
             if node is None or attribute not in CHANNEL_PATHS:
+                continue
+            # A quaternion curve of the same object wins over its Euler angles.
+            if attribute == EULER and path_hash in rotated:
                 continue
             values = array("f")
             width = CURVES_PER_ATTRIBUTE[attribute]
             for time in times:
                 vector = [sample(components.get(component), time) for component in range(width)]
                 values.extend(convert(attribute, vector, self.gltf.document["nodes"][node]))
-            kind = "VEC4" if attribute == 2 else "VEC3"
+            kind = "VEC3" if CHANNEL_PATHS[attribute] != "rotation" else "VEC4"
             samplers.append({
                 "input": time_accessor,
                 "output": self.animation_accessor(values, kind, frame_count),
@@ -555,9 +576,22 @@ def pose_to_rest(handler: Any, offsets: list[Matrix], bones: list[tuple[tuple[in
 def rest_value(attribute: int, node: dict[str, Any]) -> list[float]:
     if attribute == 1:
         return node.get("translation", [0.0, 0.0, 0.0])
-    if attribute == 2:
+    if attribute in (2, EULER):
         return node.get("rotation", [0.0, 0.0, 0.0, 1.0])
     return node.get("scale", [1.0, 1.0, 1.0])
+
+
+def euler_quaternion(degrees: list[float]) -> list[float]:
+    """Unity Euler angles in degrees as its quaternion; Unity turns about Z, then X, then Y."""
+    half = [math.radians(angle) / 2 for angle in degrees]
+    sx, sy, sz = (math.sin(angle) for angle in half)
+    cx, cy, cz = (math.cos(angle) for angle in half)
+    return [
+        cy * sx * cz + sy * cx * sz,
+        sy * cx * cz - cy * sx * sz,
+        cy * cx * sz - sy * sx * cz,
+        cy * cx * cz + sy * sx * sz,
+    ]
 
 
 def convert(attribute: int, vector: list[float | None], node: dict[str, Any]) -> list[float]:
@@ -566,6 +600,8 @@ def convert(attribute: int, vector: list[float | None], node: dict[str, Any]) ->
         return rest_value(attribute, node)
     if attribute == 1:
         return [-vector[0], vector[1], vector[2]]
+    if attribute == EULER:
+        return convert(2, euler_quaternion(vector), node)
     if attribute == 2:
         x, y, z, w = vector[0], -vector[1], -vector[2], vector[3]
         length = (x * x + y * y + z * z + w * w) ** 0.5 or 1.0
@@ -587,40 +623,8 @@ def sample(keys: list[tuple[float, float]] | None, time: float) -> float | None:
 
 
 def clip_curves(clip: Any) -> dict[tuple[int, int], dict[int, list[tuple[float, float]]]]:
-    """Keys by (path hash, attribute) and component, from the clip's streamed, dense and
-    constant parts, which number their curves in that order."""
-    data = clip.m_MuscleClip.m_Clip.data
-    streamed, dense, constant = data.m_StreamedClip, data.m_DenseClip, data.m_ConstantClip
-    stop = clip.m_MuscleClip.m_StopTime
-    keys: dict[int, list[tuple[float, float]]] = collections.defaultdict(list)
-
-    raw = struct.pack(f"<{len(streamed.data)}I", *streamed.data)
-    frames = []
-    offset = 0
-    while offset < len(raw):
-        time, count = struct.unpack_from("<fi", raw, offset)
-        offset += 8
-        frame_keys = []
-        for _ in range(count):
-            index, _in_slope, _out_slope, _unused, value = struct.unpack_from("<i4f", raw, offset)
-            offset += 20
-            frame_keys.append((index, value))
-        frames.append((time, frame_keys))
-    # Streamed clips open and close with sentinel frames.
-    for time, frame_keys in frames[1:-1]:
-        for index, value in frame_keys:
-            keys[index].append((time, value))
-
-    stream_count = streamed.curveCount
-    for frame in range(dense.m_FrameCount):
-        time = dense.m_BeginTime + frame / dense.m_SampleRate
-        for curve in range(dense.m_CurveCount):
-            keys[stream_count + curve].append((time, dense.m_SampleArray[frame * dense.m_CurveCount + curve]))
-
-    constant_start = stream_count + dense.m_CurveCount
-    for curve, value in enumerate(constant.data):
-        keys[constant_start + curve] = [(0.0, value), (stop, value)]
-
+    """Transform keys by (path hash, attribute) and component."""
+    keys = unity.curve_keys(clip)
     by_binding: dict[tuple[int, int], dict[int, list[tuple[float, float]]]] = collections.defaultdict(dict)
     index = 0
     for binding in clip.m_ClipBindingConstant.genericBindings:
@@ -699,6 +703,50 @@ def export_uma(environment: Any, model: dict[str, Any], output: dict[str, Any]) 
     exporter.gltf.write(output["path"])
 
 
+def export_character(environment: Any, model: dict[str, Any], output: dict[str, Any]) -> None:
+    """Writes `output["path"]`: a chibi or prop at rest, named after its title, with its traits
+    on the root."""
+    slot_textures: dict[str, dict[str, Any]] = {}
+    for texture in model["material_textures"]:
+        reader = gm.bundle_texture(environment, texture["bundle"])
+        slot_textures.setdefault(texture["material"], {})[texture["slot"]] = reader
+    exporter = CharacterExporter(environment, output["key"], slot_textures, with_renderers=True)
+    for prefab in model["prefabs"]:
+        exporter.add_prefab(prefab)
+    exporter.finish_skins()
+    document = exporter.gltf.document
+    if not document["meshes"]:
+        raise ValueError("the model draws no mesh")
+    hide_blush(document)
+
+    root = document["nodes"][exporter.root]
+    root["name"] = model["title"]
+    if model.get("traits"):
+        root["extras"] = model["traits"]
+    exporter.gltf.write(output["path"])
+
+
+def bundle_clip(environment: Any, clip_bundle: str) -> Any:
+    clips = gm.bundle_objects(environment, clip_bundle, "AnimationClip")
+    if not clips:
+        raise ValueError("the bundle holds no animation clip")
+    return clips[0]
+
+
+def untransformed_curves(clip_reader: Any) -> list[dict[str, Any]]:
+    """The clip's bindings that move no transform, such as a field of view or a switch."""
+    bindings = unity.clip_bindings(clip_reader.read(), unity.names_in(clip_reader.assets_file))
+    return [binding for binding in bindings if binding["typeID"] != TRANSFORM_BINDING]
+
+
+def clip_extras(clip_reader: Any) -> dict[str, Any]:
+    extras: dict[str, Any] = {"gameClip": clip_reader.read().m_Name}
+    curves = untransformed_curves(clip_reader)
+    if curves:
+        extras["unity"] = {"curves": curves}
+    return extras
+
+
 def export_motion(environment: Any, clip_bundle: str, model: dict[str, Any], output: dict[str, Any]) -> None:
     """Writes `output["path"]`: the clip on the shared skeleton. Blender names the armature, the
     action and the slot to pick after the title, and drops animation extras, so the game's clip
@@ -707,15 +755,36 @@ def export_motion(environment: Any, clip_bundle: str, model: dict[str, Any], out
     for prefab in model["skeleton"]:
         exporter.add_prefab(prefab)
 
-    clips = gm.bundle_objects(environment, clip_bundle, "AnimationClip")
-    if not clips:
-        raise ValueError("the bundle holds no animation clip")
-    clip = clips[0].read()
-    if exporter.add_clip(clip, model["title"]) == 0:
+    clip_reader = bundle_clip(environment, clip_bundle)
+    clip = clip_reader.read()
+    targets = exporter.clip_targets(moves_root=model.get("moves_root", False))
+    if exporter.add_clip(clip, model["title"], targets) == 0:
         raise ValueError(f"{clip.m_Name} moves none of the skeleton's bones")
     exporter.skeleton_skin()
 
     root = exporter.gltf.document["nodes"][exporter.root]
     root["name"] = model["title"]
-    root["extras"] = {"gameClip": clip.m_Name}
+    root["extras"] = clip_extras(clip_reader)
+    exporter.gltf.write(output["path"])
+
+
+def export_node_motion(environment: Any, clip_bundle: str, model: dict[str, Any], output: dict[str, Any]) -> None:
+    """Writes `output["path"]`: a camera or position clip on a root and a child per other object
+    it moves, named by the CRC-32 of that object's path."""
+    exporter = CharacterExporter(environment, output["key"], {}, with_renderers=False)
+    document = exporter.gltf.document
+    exporter.root = exporter.gltf.add("nodes", {"name": model["title"]})
+    document["scenes"][0]["nodes"].append(exporter.root)
+
+    clip_reader = bundle_clip(environment, clip_bundle)
+    clip = clip_reader.read()
+    targets = {0: exporter.root}
+    for path_hash, _attribute in clip_curves(clip):
+        if path_hash not in targets:
+            targets[path_hash] = exporter.gltf.add("nodes", {"name": f"{path_hash:08x}"})
+            document["nodes"][exporter.root].setdefault("children", []).append(targets[path_hash])
+    if exporter.add_clip(clip, model["title"], targets) == 0:
+        raise ValueError(f"{clip.m_Name} moves no object")
+
+    document["nodes"][exporter.root]["extras"] = clip_extras(clip_reader)
     exporter.gltf.write(output["path"])

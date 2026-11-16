@@ -13,9 +13,15 @@ materials (turf, dirt, base) are left empty in the game files and filled at runt
 season and weather variant of their part's textures: the first variant is embedded in those
 slots, and every variant is listed in `extras.unity.variants` as links to the separately
 published textures, relative to the model's URL. Several prefabs, such as a racecourse's track,
-trees, stands and sky, are placed side by side in their own coordinates. Vertex colours, which those shaders read in
-their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard viewers do not tint
-the model by them.
+trees, stands and sky, are placed side by side in their own coordinates. Vertex colours, which
+those shaders read in their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard
+viewers do not tint the model by them.
+
+An effect or cut-in set also keeps every other component of each object, such as particle
+systems, trails, lights, animators and scripts, in the node's `extras.unity.components`, read
+with `game_art_unity` and in Unity's units. A reference names its object's type and name and,
+where the model holds it, its index: `material`, `mesh` (meshes no node draws are added for
+particles), `texture`, `node`, or `clip` in the document's `extras.unity.clips`.
 """
 
 import io
@@ -30,6 +36,7 @@ from urllib.parse import quote
 
 from UnityPy.helpers.MeshHelper import MeshHandler
 
+import game_art_unity as unity
 from game_art_shader import serialized_shader_files
 
 FLOAT = 5126
@@ -118,7 +125,7 @@ class Gltf:
         if "EXT_texture_webp" in self.extensions:
             document["extensionsRequired"] = ["EXT_texture_webp"]
 
-        content = json.dumps(document, separators=(",", ":")).encode()
+        content = json.dumps(document, separators=(",", ":"), allow_nan=False).encode()
         content += b" " * (-len(content) % 4)
         chunks = struct.pack("<II", len(content), JSON_CHUNK) + content
         if self.binary:
@@ -172,8 +179,10 @@ class PrefabExporter:
         environment: Any,
         glb_key: str,
         runtime_textures: list[dict[str, str]],
+        components: bool = False,
     ) -> None:
         self.gltf = Gltf()
+        self.components = components
         self.environment = environment
         self.glb_folder = posixpath.dirname(glb_key)
         self.runtime_textures = runtime_textures
@@ -184,21 +193,100 @@ class PrefabExporter:
         self.images: dict[tuple[str, int], int] = {}
         self.gltf_textures: dict[tuple[int, tuple[int, int]], int] = {}
         self.samplers: dict[tuple[int, int], int] = {}
+        self.node_of_object: dict[tuple[str, int], int] = {}
+        self.node_references: list[tuple[dict[str, Any], tuple[str, int]]] = []
+        self.clips: dict[tuple[str, int], int] = {}
 
     def node(self, transform: Any) -> int:
-        game_object = transform.m_GameObject.read()
+        game_object_reader = transform.m_GameObject.deref()
+        game_object = game_object_reader.read()
         node: dict[str, Any] = {"name": game_object.m_Name, **node_transform(transform)}
         if not game_object.m_IsActive:
             node["extras"] = {"active": False}
         mesh = self.renderer_mesh(game_object)
         if mesh is not None:
             node["mesh"] = mesh
+        if self.components:
+            components = self.object_components(game_object, drew_mesh=mesh is not None)
+            if components:
+                node.setdefault("extras", {})["unity"] = {"components": components}
 
         index = self.gltf.add("nodes", node)
+        self.node_of_object[object_key(game_object_reader)] = index
         children = [self.node(child.read()) for child in transform.m_Children]
         if children:
             node["children"] = children
         return index
+
+    def object_components(self, game_object: Any, drew_mesh: bool) -> list[dict[str, Any]]:
+        """The object's components besides its transform, and besides the mesh filter and
+        renderer when they became the node's mesh."""
+        skipped = {"Transform", "RectTransform"}
+        if drew_mesh:
+            skipped |= {"MeshFilter", "MeshRenderer"}
+        components = []
+        for pair in game_object.m_Component:
+            reader = pair.component.deref()
+            if reader.type.name in skipped:
+                continue
+            components.append(unity.component(reader, self.reference_in(reader.assets_file)))
+        return components
+
+    def reference_in(self, assets_file: Any) -> unity.Reference:
+        def reference(file_id: int, path_id: int) -> dict[str, Any] | None:
+            target = unity.resolve(assets_file, file_id, path_id)
+            if target is None:
+                return unity.unresolved(assets_file, file_id, path_id)
+            return self.reference(target)
+
+        return reference
+
+    def reference(self, target: Any) -> dict[str, Any]:
+        """What a component's reference becomes: the object's type and name, with its index
+        where the model holds it."""
+        kind = target.type.name
+        entry: dict[str, Any] = {"type": kind, "name": unity.object_name(target)}
+        if kind == "Material":
+            entry["material"] = self.material_reader(target)
+        elif kind == "Mesh":
+            entry["mesh"] = self.standalone_mesh(target)
+        elif kind == "Texture2D":
+            texture = target.read()
+            entry["texture"] = self.gltf_texture(self.image(target, texture), texture_wrap(texture))
+        elif kind == "AnimationClip":
+            entry["clip"] = self.clip(target)
+        elif kind in ("AnimatorController", "AnimatorOverrideController"):
+            entry["clips"] = [self.clip(reader) for reader in controller_clips(target)]
+        elif kind == "GameObject":
+            self.node_references.append((entry, object_key(target)))
+        else:
+            owner = unity.owner(target)
+            if owner is not None:
+                self.node_references.append((entry, object_key(owner)))
+        return entry
+
+    def standalone_mesh(self, mesh_reader: Any) -> int | None:
+        key = (*object_key(mesh_reader), ())
+        if key not in self.meshes:
+            self.meshes[key] = self.mesh(mesh_reader, ())
+        return self.meshes[key]
+
+    def clip(self, reader: Any) -> int:
+        """The clip's index in the document's `extras.unity.clips`, added once."""
+        key = object_key(reader)
+        if key not in self.clips:
+            data = unity.clip_data(reader, unity.names_in(reader.assets_file))
+            extras = self.gltf.document.setdefault("extras", {})
+            clips = extras.setdefault("unity", {}).setdefault("clips", [])
+            clips.append(data)
+            self.clips[key] = len(clips) - 1
+        return self.clips[key]
+
+    def link_nodes(self) -> None:
+        """Gives each reference to an object of the model the index of its node."""
+        for entry, key in self.node_references:
+            if key in self.node_of_object:
+                entry["node"] = self.node_of_object[key]
 
     def renderer_mesh(self, game_object: Any) -> int | None:
         mesh_filter = None
@@ -212,7 +300,7 @@ class PrefabExporter:
 
         if mesh_filter is None or renderer is None or not renderer.m_Enabled:
             return None
-        if mesh_filter.m_Mesh.m_PathID == 0:
+        if mesh_filter.m_Mesh.m_PathID == 0 or unity.is_builtin(mesh_filter.m_Mesh):
             return None
 
         mesh_reader = mesh_filter.m_Mesh.deref()
@@ -312,9 +400,11 @@ class PrefabExporter:
         return self.gltf.accessor(values, "SCALAR", len(values), ELEMENT_ARRAY_BUFFER)
 
     def material(self, pptr: Any) -> int | None:
-        if pptr.m_PathID == 0:
+        if pptr.m_PathID == 0 or unity.is_builtin(pptr):
             return None
-        reader = pptr.deref()
+        return self.material_reader(pptr.deref())
+
+    def material_reader(self, reader: Any) -> int:
         key = object_key(reader)
         if key in self.materials:
             return self.materials[key]
@@ -333,6 +423,10 @@ class PrefabExporter:
         for slot, texture_slot in properties.m_TexEnvs:
             if texture_slot.m_Texture.m_PathID == 0:
                 empty_slots.add(slot)
+                continue
+            if unity.is_builtin(texture_slot.m_Texture):
+                pointer = texture_slot.m_Texture
+                slots[slot] = unity.builtin(pointer.assetsfile, pointer.m_FileID, pointer.m_PathID)
                 continue
             texture_reader = texture_slot.m_Texture.deref()
             if texture_reader.type.name != "Texture2D":
@@ -369,21 +463,21 @@ class PrefabExporter:
             entry["alphaMode"] = "MASK"
             cutoff = floats.get("_Cutoff", 0)
             entry["alphaCutoff"] = cutoff if cutoff > 0 else DEFAULT_ALPHA_CUTOFF
-        unity: dict[str, Any] = {
+        unity_extras: dict[str, Any] = {
             "shader": self.shader(material.m_Shader),
             "keywords": list(material.m_ValidKeywords),
             "textures": slots,
-            "floats": floats,
-            "colors": colors,
+            "floats": unity.plain(floats, unity.no_references),
+            "colors": unity.plain(colors, unity.no_references),
             "renderQueue": material.m_CustomRenderQueue,
         }
         if variants:
-            unity["variants"] = {
+            unity_extras["variants"] = {
                 variant: {slot: self.link(texture["key"]) for slot, texture in textures.items()}
                 for variant, textures in variants.items()
             }
-            unity["defaultVariant"] = default_variant
-        entry["extras"] = {"unity": unity}
+            unity_extras["defaultVariant"] = default_variant
+        entry["extras"] = {"unity": unity_extras}
 
         index = self.gltf.add("materials", entry)
         self.materials[key] = index
@@ -394,6 +488,8 @@ class PrefabExporter:
         the model."""
         if pointer.m_PathID == 0:
             return None
+        if unity.is_builtin(pointer):
+            return unity.builtin(pointer.assetsfile, pointer.m_FileID, pointer.m_PathID)
         reader = pointer.deref()
         serialized = reader.assets_file
         if serialized.name not in self.shader_files:
@@ -458,6 +554,12 @@ class PrefabExporter:
         return self.samplers[wrap]
 
 
+def controller_clips(controller: Any) -> list[Any]:
+    clips = controller.read_typetree().get("m_AnimationClips", [])
+    readers = [unity.resolve(controller.assets_file, clip["m_FileID"], clip["m_PathID"]) for clip in clips]
+    return [reader for reader in readers if reader is not None]
+
+
 def texture_wrap(texture: Any) -> tuple[int, int]:
     settings = texture.m_TextureSettings
     return WRAP_MODES.get(settings.m_WrapU, REPEAT), WRAP_MODES.get(settings.m_WrapV, REPEAT)
@@ -492,10 +594,11 @@ def export_model(
     prefabs: list[dict[str, str]],
     runtime_textures: list[dict[str, str]],
     output: dict[str, Any],
+    components: bool = False,
 ) -> None:
     """Writes `output["path"]`, a GLB of the prefabs ({"object", "bundle"}) with every texture
-    they draw embedded."""
-    exporter = PrefabExporter(environment, output["key"], runtime_textures)
+    they draw embedded, and with `components` their objects' other components."""
+    exporter = PrefabExporter(environment, output["key"], runtime_textures, components)
     scene_nodes = exporter.gltf.document["scenes"][0]["nodes"]
     for prefab in prefabs:
         roots = prefab_roots(environment, prefab["bundle"])
@@ -506,4 +609,5 @@ def export_model(
         for root in named or roots:
             scene_nodes.append(exporter.node(root))
 
+    exporter.link_nodes()
     exporter.gltf.write(output["path"])

@@ -1,8 +1,8 @@
 use super::catalog::{objectName, trackTextureKey};
 use super::types::{
     ArtJob, ArtModel, ConvertJob, ConvertModel, ConvertOutput, ConvertRequest, ConvertResponse,
-    ConvertResult, Fit, RuntimeTexture, ScenePrefab, SlotBundle, CONVERTER_PYTHON,
-    CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
+    ConvertResult, Fit, MaterialBundle, NamedBundle, RuntimeTexture, ScenePrefab, SlotBundle,
+    CONVERTER_PYTHON, CONVERTER_SCRIPT, DOWNLOAD_CONCURRENCY,
 };
 use crate::game_cdn::{self, CdnSource, ManifestEntry};
 use anyhow::{bail, Context, Result};
@@ -273,6 +273,7 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
                     })
                 })
                 .collect(),
+            components: scene.components,
         },
         ArtModel::Uma(uma) => ConvertModel::Uma {
             title: &uma.title,
@@ -289,9 +290,37 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
                 .collect(),
             traits: &uma.traits,
         },
+        ArtModel::Character(character) => ConvertModel::Character {
+            title: &character.title,
+            prefabs: prefabs(&character.prefabs),
+            material_textures: character
+                .material_textures
+                .iter()
+                .filter_map(|texture| {
+                    Some(MaterialBundle {
+                        material: &texture.material,
+                        slot: texture.slot,
+                        bundle: downloaded(&texture.name)?,
+                    })
+                })
+                .collect(),
+            traits: character.traits.as_ref(),
+        },
         ArtModel::Motion(motion) => ConvertModel::Motion {
             title: &motion.title,
             skeleton: prefabs(&motion.skeleton),
+            moves_root: motion.moves_root,
+        },
+        ArtModel::NodeMotion { title } => ConvertModel::NodeMotion { title },
+        ArtModel::ClipCurves => ConvertModel::ClipCurves,
+        ArtModel::Scripts => ConvertModel::Scripts {
+            bundles: jobBundles(job)
+                .zip(files)
+                .map(|(entry, file)| NamedBundle {
+                    name: &entry.name,
+                    bundle: path(file),
+                })
+                .collect(),
         },
         ArtModel::Shaders => ConvertModel::Shaders,
     });
@@ -434,6 +463,7 @@ mod tests {
             model: Some(ArtModel::Scenery(SceneryModel {
                 prefabs: vec![TRACK.to_string(), TREES.to_string()],
                 runtime_textures: vec![TURF_TEXTURE.to_string()],
+                components: false,
             })),
             outputs: vec![PlannedOutput {
                 key: "game-assets/racetracks/tokyo.glb".to_string(),
