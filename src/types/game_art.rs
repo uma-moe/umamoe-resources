@@ -11,7 +11,7 @@ pub(super) const CONVERTER_REVISION: u32 = 1;
 pub(super) const MODEL_CONVERTER_REVISION: u32 = 2;
 
 /// Raise when uma or race motion output changes, so every one is rebuilt once.
-pub(super) const UMA_CONVERTER_REVISION: u32 = 2;
+pub(super) const UMA_CONVERTER_REVISION: u32 = 3;
 
 /// The publisher's record in the bucket, outside every path the site routes there: an
 /// `index.json` linking the shards, and one JSON file of records per top-level game folder.
