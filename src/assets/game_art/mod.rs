@@ -269,8 +269,15 @@ async fn runJobs(
     let base_key = Arc::new(options.base_key.clone());
     let batch_size = converterProcesses() * JOBS_PER_CONVERTER;
     let batches: Vec<&[ArtJob]> = jobs.chunks(batch_size).collect();
+    // Files with a record that this run does not rebuild are already published.
+    let new_files = jobs
+        .iter()
+        .filter(|job| !state.files.contains_key(&job.name))
+        .count();
+    let progress = Progress::new(state.files.len() + new_files, jobs.len());
     info!(
         files = jobs.len(),
+        published = progress.done,
         batches = batches.len(),
         converters = converterProcesses(),
         "building game art"
@@ -284,7 +291,7 @@ async fn runJobs(
         summary,
         unsaved_shards: BTreeSet::new(),
         last_saved: None,
-        progress: Progress::new(jobs.len()),
+        progress,
     };
 
     let mut downloaded = Some(downloadBatch(client, &work, 0, batches[0], &base_key).await?);
@@ -336,24 +343,28 @@ struct BatchPublisher<'a, 'd, 'w> {
     progress: Progress,
 }
 
-/// How far a run has got, for the batch log.
+/// How much of all game art is published, for the batch log; it counts the files earlier runs
+/// published, so a restarted run carries on from where the last one stopped.
 struct Progress {
     total: usize,
     done: usize,
+    built_this_run: usize,
     started: Instant,
 }
 
 impl Progress {
-    fn new(total: usize) -> Self {
+    fn new(total: usize, to_build: usize) -> Self {
         Self {
             total,
-            done: 0,
+            done: total.saturating_sub(to_build),
+            built_this_run: 0,
             started: Instant::now(),
         }
     }
 
     fn advance(&mut self, files: usize) {
         self.done += files;
+        self.built_this_run += files;
     }
 
     fn percent(&self) -> String {
@@ -363,13 +374,13 @@ impl Progress {
         )
     }
 
-    /// Time left at the pace of the run so far, to the nearest minute.
+    /// Time left at the pace of this run so far, to the nearest minute.
     fn minutesLeft(&self) -> u64 {
-        if self.done == 0 {
+        if self.built_this_run == 0 {
             return 0;
         }
         let remaining = self.total.saturating_sub(self.done) as f64;
-        let seconds_per_file = self.started.elapsed().as_secs_f64() / self.done as f64;
+        let seconds_per_file = self.started.elapsed().as_secs_f64() / self.built_this_run as f64;
         (remaining * seconds_per_file / 60.0).round() as u64
     }
 }
@@ -588,17 +599,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn progressEstimatesTheRestAtThePaceSoFar() {
-        let mut progress = Progress {
-            total: 400,
-            done: 0,
-            started: Instant::now() - Duration::from_secs(120),
-        };
+    fn progressCountsEarlierRunsAndEstimatesAtThisRunsPace() {
+        let mut progress = Progress::new(1000, 400);
+        progress.started = Instant::now() - Duration::from_secs(120);
+        assert_eq!(progress.percent(), "60.0%");
         assert_eq!(progress.minutesLeft(), 0);
 
         progress.advance(100);
 
-        assert_eq!(progress.percent(), "25.0%");
+        assert_eq!(progress.percent(), "70.0%");
         assert_eq!(progress.minutesLeft(), 6);
     }
 }

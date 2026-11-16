@@ -60,7 +60,7 @@ pub(super) const JOBS_PER_CONVERTER: usize = 8;
 /// Sets how many converter processes run at once.
 pub(super) const CONVERTERS_VARIABLE: &str = "GAME_ART_CONVERTERS";
 
-pub(super) const DEFAULT_CONVERTER_PROCESSES: usize = 2;
+pub(super) const DEFAULT_CONVERTER_PROCESSES: usize = 4;
 
 /// Each converter holds its bundles' decoded textures in memory.
 pub(super) const MAX_CONVERTER_PROCESSES: usize = 8;
