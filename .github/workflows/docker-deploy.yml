@@ -245,6 +245,7 @@ jobs:
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
           PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
         run: |
           set -euo pipefail
@@ -310,6 +311,9 @@ jobs:
           # One server writes game art, so two never race on the bucket's record of it.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            if [ -n "$GAME_ART_CONVERTERS" ]; then
+              env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
 
@@ -544,6 +548,7 @@ jobs:
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
           PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
         run: |
           set -euo pipefail
@@ -609,6 +614,9 @@ jobs:
           # One server writes game art, so two never race on the bucket's record of it.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            if [ -n "$GAME_ART_CONVERTERS" ]; then
+              env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
 
