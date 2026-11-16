@@ -269,6 +269,12 @@ async fn runJobs(
     let base_key = Arc::new(options.base_key.clone());
     let batch_size = converterProcesses() * JOBS_PER_CONVERTER;
     let batches: Vec<&[ArtJob]> = jobs.chunks(batch_size).collect();
+    info!(
+        files = jobs.len(),
+        batches = batches.len(),
+        converters = converterProcesses(),
+        "building game art"
+    );
     let mut publisher = BatchPublisher {
         client,
         destination,
@@ -278,6 +284,7 @@ async fn runJobs(
         summary,
         unsaved_shards: BTreeSet::new(),
         last_saved: None,
+        progress: Progress::new(jobs.len()),
     };
 
     let mut downloaded = Some(downloadBatch(client, &work, 0, batches[0], &base_key).await?);
@@ -326,6 +333,45 @@ struct BatchPublisher<'a, 'd, 'w> {
     /// Record shards changed since they were last saved.
     unsaved_shards: BTreeSet<String>,
     last_saved: Option<Instant>,
+    progress: Progress,
+}
+
+/// How far a run has got, for the batch log.
+struct Progress {
+    total: usize,
+    done: usize,
+    started: Instant,
+}
+
+impl Progress {
+    fn new(total: usize) -> Self {
+        Self {
+            total,
+            done: 0,
+            started: Instant::now(),
+        }
+    }
+
+    fn advance(&mut self, files: usize) {
+        self.done += files;
+    }
+
+    fn percent(&self) -> String {
+        format!(
+            "{:.1}%",
+            self.done as f64 * 100.0 / self.total.max(1) as f64
+        )
+    }
+
+    /// Time left at the pace of the run so far, to the nearest minute.
+    fn minutesLeft(&self) -> u64 {
+        if self.done == 0 {
+            return 0;
+        }
+        let remaining = self.total.saturating_sub(self.done) as f64;
+        let seconds_per_file = self.started.elapsed().as_secs_f64() / self.done as f64;
+        (remaining * seconds_per_file / 60.0).round() as u64
+    }
 }
 
 impl BatchPublisher<'_, '_, '_> {
@@ -393,7 +439,12 @@ impl BatchPublisher<'_, '_, '_> {
                 &self.options.purge_origins,
             )
             .await?;
+        self.progress.advance(batch.len());
         info!(
+            done = self.progress.done,
+            total = self.progress.total,
+            progress = self.progress.percent(),
+            minutes_left = self.progress.minutesLeft(),
             jobs = batch.len(),
             download_ms = built.download.as_millis(),
             convert_ms = built.convert.as_millis(),
@@ -530,4 +581,24 @@ fn countByShard(jobs: &[ArtJob]) -> BTreeMap<&str, usize> {
         *counts.entry(shardName(&job.name)).or_default() += 1;
     }
     counts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn progressEstimatesTheRestAtThePaceSoFar() {
+        let mut progress = Progress {
+            total: 400,
+            done: 0,
+            started: Instant::now() - Duration::from_secs(120),
+        };
+        assert_eq!(progress.minutesLeft(), 0);
+
+        progress.advance(100);
+
+        assert_eq!(progress.percent(), "25.0%");
+        assert_eq!(progress.minutesLeft(), 6);
+    }
 }
