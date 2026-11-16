@@ -850,7 +850,8 @@ mod tests {
         );
 
         assert!(unchanged.is_empty());
-        assert_eq!(with_new_card[0].outputs.len(), 2);
+        // The portrait and the full stand art, for each of the two cards.
+        assert_eq!(with_new_card[0].outputs.len(), 4);
     }
 
     const COURSE: &str = "3d/env/race/race10001";

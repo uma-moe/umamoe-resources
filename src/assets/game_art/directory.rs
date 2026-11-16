@@ -269,6 +269,7 @@ impl<'a> Directory<'a> {
             character: self.characterLink(uma.chara),
             outfit: uma.dress,
             portrait: self.published.link(&umaKey(uma.folder, "portrait.webp")),
+            stand: self.published.link(&umaKey(uma.folder, "stand.webp")),
             model,
             chibi,
             cutins: own_cutins
@@ -680,8 +681,12 @@ struct UmaDocument<'a> {
     character: CharacterLink<'a>,
     /// The game's outfit id, which NPC race rows and outfit changes give.
     outfit: u32,
+    /// The stand art at 128 px, for lists.
     #[serde(skip_serializing_if = "Option::is_none")]
     portrait: Option<String>,
+    /// The same stand art at the game's full 512 px.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stand: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<ModelEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
