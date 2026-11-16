@@ -291,10 +291,10 @@ pub(super) struct SpriteSource {
 /// the card that wears it, so the outfit of every card comes from master.mdb.
 pub(super) const PORTRAIT_SOURCE: &str = "chara/chr{chara}/chara_stand_{chara}_{dress}";
 
-pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[ArtOutput::resized(
-    "art/umas/{card}/portrait.webp",
-    (128, 128),
-)];
+pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[
+    ArtOutput::resized("art/umas/{card}/portrait.webp", (128, 128)),
+    ArtOutput::resized("art/umas/{card}/stand.webp", (512, 512)),
+];
 
 /// Sprites cut from one of the game's atlases. The sprites name their pictures in a second
 /// bundle, so both are loaded together.

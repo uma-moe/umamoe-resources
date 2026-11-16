@@ -543,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn portraitsAreServedUnderTheCardThatWearsTheOutfit() {
+    fn standArtIsServedUnderTheCardThatWearsTheOutfit() {
         let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
 
         let ruler_of_japan = keys(&catalog, "chara/chr1001/chara_stand_1001_100102");
@@ -551,11 +551,17 @@ mod tests {
 
         assert_eq!(
             ruler_of_japan,
-            Some(vec!["art/umas/100103/portrait.webp".to_string()])
+            Some(vec![
+                "art/umas/100103/portrait.webp".to_string(),
+                "art/umas/100103/stand.webp".to_string()
+            ])
         );
         assert_eq!(
             happy_heart,
-            Some(vec!["art/umas/100102/portrait.webp".to_string()])
+            Some(vec![
+                "art/umas/100102/portrait.webp".to_string(),
+                "art/umas/100102/stand.webp".to_string()
+            ])
         );
     }
 
