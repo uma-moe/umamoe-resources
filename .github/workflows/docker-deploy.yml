@@ -298,7 +298,7 @@ jobs:
           # One server writes game art, so two never race on the bucket's record of it.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
-            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://uma.moe,https://beta.uma.moe"
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
 
           printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
@@ -585,7 +585,7 @@ jobs:
           # One server writes game art, so two never race on the bucket's record of it.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
-            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://uma.moe,https://beta.uma.moe"
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
 
           printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \

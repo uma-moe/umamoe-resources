@@ -66,8 +66,8 @@ pub async fn publishAssets(bucket: &Bucket, options: PublishOptions) -> Result<P
     Ok(summary)
 }
 
-/// Purges the site URLs of replaced files on every origin. New files need no purge: nothing
-/// served them before.
+/// Purges the site URLs of replaced files on every origin, logging a failure instead of failing
+/// the publish. New files need no purge: nothing served them before.
 pub async fn purgeOverwritten(keys: &[String], origins: &[String]) -> Result<()> {
     if keys.is_empty() {
         return Ok(());
@@ -80,7 +80,15 @@ pub async fn purgeOverwritten(keys: &[String], origins: &[String]) -> Result<()>
         return Ok(());
     }
 
-    cache::purge_asset_urls(siteUrls(keys, origins)).await
+    // Best effort: the files are already published, and cached copies expire on their own.
+    if let Err(error) = cache::purge_asset_urls(siteUrls(keys, origins)).await {
+        warn!(
+            count = keys.len(),
+            error = format!("{error:#}"),
+            "replaced assets were not purged"
+        );
+    }
+    Ok(())
 }
 
 async fn publishFile(
