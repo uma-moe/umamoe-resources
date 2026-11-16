@@ -403,7 +403,7 @@ cargo run -- assets-publish --dir <web root>/game-assets --prefix game-assets --
 - A file is uploaded only when the bucket has no object at its key or holds different bytes, so a second run over the same folder uploads nothing.
 - Nothing is ever deleted from the bucket.
 - `--dry-run` compares against the bucket and reports what would change.
-- Replaced files are purged from Cloudflare on every `--purge-origin` (or `ASSETS_PURGE_ORIGINS`, comma separated). New files need no purge.
+- Replaced files are purged from Cloudflare on every `--purge-origin` (or `ASSETS_PURGE_ORIGINS`, comma separated; the deploy sets `https://assets.uma.moe`, where the bucket is served). New files need no purge. A failed purge is logged and the publish goes on, since cached copies expire on their own.
 
 Files go to the `umamoe-assets` bucket at `ASSETS_S3_ENDPOINT`, signed with `ASSETS_S3_REGION` (default `auto`), `ASSETS_S3_ACCESS_KEY_ID` and `ASSETS_S3_SECRET_ACCESS_KEY`. Use an R2 token with Object Read & Write on that bucket only. In production the deploy writes these from GitHub secrets (see [Docker Deployment](#docker-deployment)).
 
