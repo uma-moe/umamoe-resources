@@ -243,6 +243,8 @@ jobs:
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
         run: |
           set -euo pipefail
@@ -293,6 +295,16 @@ jobs:
             exit 1
           else
             env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # Written after the host's env file, so these replace a purge token kept there.
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+            if [[ "$CLOUDFLARE_API_TOKEN$CLOUDFLARE_ZONE_ID" =~ [[:space:]] ]]; then
+              echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
+            env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
           # One server writes game art, so two never race on the bucket's record of it.
@@ -530,6 +542,8 @@ jobs:
           R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
           R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
           GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
         run: |
           set -euo pipefail
@@ -580,6 +594,16 @@ jobs:
             exit 1
           else
             env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # Written after the host's env file, so these replace a purge token kept there.
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+            if [[ "$CLOUDFLARE_API_TOKEN$CLOUDFLARE_ZONE_ID" =~ [[:space:]] ]]; then
+              echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
+            env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
           # One server writes game art, so two never race on the bucket's record of it.
