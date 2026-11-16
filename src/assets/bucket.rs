@@ -1,5 +1,7 @@
-use super::types::{Bucket, SignedRequest, ASSET_BUCKET, ASSET_CACHE_CONTROL, PUT_ATTEMPTS};
-use anyhow::{bail, Context, Result};
+use super::types::{
+    Bucket, ListedObject, SignedRequest, ASSET_BUCKET, ASSET_CACHE_CONTROL, PUT_ATTEMPTS,
+};
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, ETAG};
@@ -99,8 +101,7 @@ impl Bucket {
         Ok(())
     }
 
-    /// Writes the object, waiting 1, 2, 4 and 8 seconds before retrying a write the bucket
-    /// refused for load.
+    /// Writes the object with the artwork cache lifetime.
     pub(super) async fn putObject(
         &self,
         client: &reqwest::Client,
@@ -108,13 +109,27 @@ impl Bucket {
         body: Vec<u8>,
         content_type: &str,
     ) -> Result<()> {
+        self.putObjectWithCache(client, key, body, content_type, ASSET_CACHE_CONTROL)
+            .await
+    }
+
+    /// Writes the object, waiting 1, 2, 4 and 8 seconds before retrying a write the bucket
+    /// refused for load.
+    pub(super) async fn putObjectWithCache(
+        &self,
+        client: &reqwest::Client,
+        key: &str,
+        body: Vec<u8>,
+        content_type: &str,
+        cache_control: &str,
+    ) -> Result<()> {
         for attempt in 1..=PUT_ATTEMPTS {
             let request = self.signedRequest("PUT", key, &body)?;
             let response = client
                 .put(&request.url)
                 .headers(request.headers)
                 .header("content-type", content_type)
-                .header("cache-control", ASSET_CACHE_CONTROL)
+                .header("cache-control", cache_control)
                 .body(body.clone())
                 .send()
                 .await
@@ -135,9 +150,63 @@ impl Bucket {
         unreachable!("the last attempt returns or fails")
     }
 
+    /// Every object whose key starts with `prefix`, a page of up to 1000 at a time. Errors leave
+    /// out the request URL, which names the account.
+    pub(super) async fn listObjects(
+        &self,
+        client: &reqwest::Client,
+        prefix: &str,
+    ) -> Result<Vec<ListedObject>> {
+        let mut objects = Vec::new();
+        let mut continuation: Option<String> = None;
+        loop {
+            let mut query = vec![
+                ("list-type", "2".to_string()),
+                ("prefix", prefix.to_string()),
+            ];
+            if let Some(token) = &continuation {
+                query.push(("continuation-token", token.clone()));
+            }
+            let request = self.signedPath("GET", &format!("/{}", self.name), &query, &[])?;
+            let response = client
+                .get(&request.url)
+                .headers(request.headers)
+                .send()
+                .await
+                .map_err(|error| anyhow!("listing the bucket failed: {}", error.without_url()))?;
+
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            if !status.is_success() {
+                bail!("listing the bucket returned HTTP {status}");
+            }
+            let page = listingPage(&body)?;
+            objects.extend(page.objects);
+            match page.continuation {
+                Some(token) => continuation = Some(token),
+                None => return Ok(objects),
+            }
+        }
+    }
+
+    fn signedRequest(&self, method: &str, key: &str, body: &[u8]) -> Result<SignedRequest> {
+        self.signedPath(
+            method,
+            &format!("/{}/{}", self.name, encodeKey(key)),
+            &[],
+            body,
+        )
+    }
+
     /// Signs the minimum set S3 requires: `host`, `x-amz-content-sha256` and `x-amz-date`. Content
     /// type and cache control are not `x-amz-` headers, so they stay unsigned.
-    fn signedRequest(&self, method: &str, key: &str, body: &[u8]) -> Result<SignedRequest> {
+    fn signedPath(
+        &self,
+        method: &str,
+        path: &str,
+        query: &[(&str, String)],
+        body: &[u8],
+    ) -> Result<SignedRequest> {
         let endpoint = reqwest::Url::parse(&self.endpoint)
             .with_context(|| format!("invalid ASSETS_S3_ENDPOINT: {}", self.endpoint))?;
         let host = endpoint
@@ -148,7 +217,12 @@ impl Bucket {
             None => host.to_string(),
         };
 
-        let path = format!("/{}/{}", self.name, encodeKey(key));
+        let mut query_pairs: Vec<String> = query
+            .iter()
+            .map(|(name, value)| format!("{}={}", encodeQueryPart(name), encodeQueryPart(value)))
+            .collect();
+        query_pairs.sort_unstable();
+        let canonical_query = query_pairs.join("&");
         let payload_hash = hex::encode(Sha256::digest(body));
         let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
         let date = &amz_date[..8];
@@ -165,7 +239,7 @@ impl Bucket {
             .collect::<String>();
         let signed_headers = "host;x-amz-content-sha256;x-amz-date";
         let canonical_request =
-            format!("{method}\n{path}\n\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
+            format!("{method}\n{path}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
 
         let scope = format!("{date}/{}/s3/aws4_request", self.region);
         let string_to_sign = format!(
@@ -198,8 +272,12 @@ impl Bucket {
             .context("invalid authorization header")?,
         );
 
+        let url = match canonical_query.is_empty() {
+            true => format!("{}{path}", self.endpoint),
+            false => format!("{}{path}?{canonical_query}", self.endpoint),
+        };
         Ok(SignedRequest {
-            url: format!("{}{path}", self.endpoint),
+            url,
             headers: header_map,
         })
     }
@@ -219,14 +297,138 @@ fn hmacSha256(key: &[u8], data: &[u8]) -> Vec<u8> {
 
 /// Percent-encodes everything but the unreserved set, keeping `/` so keys stay path-shaped.
 pub(super) fn encodeKey(key: &str) -> String {
-    let mut encoded = String::with_capacity(key.len());
-    for byte in key.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' => {
-                encoded.push(byte as char)
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
+    percentEncode(key, |byte| byte == b'/')
+}
+
+/// A query name or value as SigV4 wants it: everything but the unreserved set encoded.
+fn encodeQueryPart(text: &str) -> String {
+    percentEncode(text, |_| false)
+}
+
+fn percentEncode(text: &str, keeps: impl Fn(u8) -> bool) -> String {
+    let mut encoded = String::with_capacity(text.len());
+    for byte in text.bytes() {
+        let is_unreserved =
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~');
+        if is_unreserved || keeps(byte) {
+            encoded.push(byte as char);
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
         }
     }
     encoded
+}
+
+/// One ListObjectsV2 answer: its objects, and the token for the next page when it is cut short.
+#[derive(Debug, PartialEq)]
+struct ListingPage {
+    objects: Vec<ListedObject>,
+    continuation: Option<String>,
+}
+
+fn listingPage(xml: &str) -> Result<ListingPage> {
+    let mut objects = Vec::new();
+    for entry in xml.split("<Contents>").skip(1) {
+        let key = xmlElement(entry, "Key").context("a listed object has no key")?;
+        let size = xmlElement(entry, "Size")
+            .and_then(|size| size.parse().ok())
+            .context("a listed object has no size")?;
+        objects.push(ListedObject {
+            key: xmlText(key),
+            size,
+        });
+    }
+
+    let is_truncated = xmlElement(xml, "IsTruncated") == Some("true");
+    let continuation = match is_truncated {
+        true => Some(xmlText(
+            xmlElement(xml, "NextContinuationToken").context("a cut-short listing has no token")?,
+        )),
+        false => None,
+    };
+    Ok(ListingPage {
+        objects,
+        continuation,
+    })
+}
+
+fn xmlElement<'a>(xml: &'a str, name: &str) -> Option<&'a str> {
+    let start = xml.find(&format!("<{name}>"))? + name.len() + 2;
+    let length = xml[start..].find(&format!("</{name}>"))?;
+    Some(&xml[start..start + length])
+}
+
+/// Undoes the escapes XML text uses; `&amp;` last, so an escaped escape stays as written.
+fn xmlText(escaped: &str) -> String {
+    escaped
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bucket() -> Bucket {
+        Bucket {
+            endpoint: "https://bucket.example".to_string(),
+            region: "auto".to_string(),
+            name: "assets".to_string(),
+            access_key: "key".to_string(),
+            secret_key: "secret".to_string(),
+        }
+    }
+
+    #[test]
+    fn aListingPageGivesItsObjectsAndTheNextToken() {
+        let xml = "<ListBucketResult><IsTruncated>true</IsTruncated>            <Contents><Key>art/a&amp;b.json</Key><Size>12</Size></Contents>            <Contents><Key>art/c.glb</Key><Size>3</Size></Contents>            <NextContinuationToken>next/page=</NextContinuationToken></ListBucketResult>";
+
+        let page = listingPage(xml).unwrap();
+
+        assert_eq!(
+            page,
+            ListingPage {
+                objects: vec![
+                    ListedObject {
+                        key: "art/a&b.json".to_string(),
+                        size: 12
+                    },
+                    ListedObject {
+                        key: "art/c.glb".to_string(),
+                        size: 3
+                    },
+                ],
+                continuation: Some("next/page=".to_string()),
+            }
+        );
+    }
+
+    #[test]
+    fn theLastListingPageHasNoToken() {
+        let xml = "<ListBucketResult><IsTruncated>false</IsTruncated></ListBucketResult>";
+
+        let page = listingPage(xml).unwrap();
+
+        assert_eq!(page.continuation, None);
+        assert!(page.objects.is_empty());
+    }
+
+    #[test]
+    fn aQueryIsSortedAndEncodedInTheUrlItSigns() {
+        let query = [
+            ("prefix", "art/".to_string()),
+            ("list-type", "2".to_string()),
+            ("continuation-token", "a+b=".to_string()),
+        ];
+
+        let request = bucket().signedPath("GET", "/assets", &query, &[]).unwrap();
+
+        assert_eq!(
+            request.url,
+            "https://bucket.example/assets?continuation-token=a%2Bb%3D&list-type=2&prefix=art%2F"
+        );
+    }
 }

@@ -3,10 +3,27 @@ use std::path::PathBuf;
 /// Browsers revalidate artwork daily; the CDN keeps it longer and is purged when a file changes.
 pub(super) const ASSET_CACHE_CONTROL: &str = "public, max-age=86400";
 
+/// Directory documents change whenever art is added, so they are revalidated after five minutes.
+pub(super) const DOCUMENT_CACHE_CONTROL: &str = "public, max-age=300";
+
 /// The public R2 bucket that the site's image paths are routed to.
 pub(super) const ASSET_BUCKET: &str = "umamoe-assets";
 
 pub(super) const PUT_ATTEMPTS: u32 = 5;
+
+/// An object a bucket listing names.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) struct ListedObject {
+    pub(super) key: String,
+    pub(super) size: u64,
+}
+
+/// How many objects and bytes the bucket holds below one folder.
+#[derive(Debug, Default, PartialEq)]
+pub(super) struct FolderTotals {
+    pub(super) objects: usize,
+    pub(super) bytes: u64,
+}
 
 /// An S3-compatible bucket (Cloudflare R2 in production) and the key that may write to it.
 #[derive(Clone)]

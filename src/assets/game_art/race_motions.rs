@@ -4,7 +4,7 @@
 //! `GetOverRunFinishOrderCategoryMotion` and finish sides from the course's direction.
 
 use super::catalog::objectName;
-use super::types::{RaceMotion, RACE_MOTION_FOLDER, RACE_MOTION_SOURCE};
+use super::types::{RaceMotion, RACE_MOTION_SOURCE};
 
 /// A clip's file name and title within its motion set.
 #[derive(Debug, PartialEq)]
@@ -13,9 +13,9 @@ struct MotionName {
     title: String,
 }
 
-/// Where a race clip such as `3d/motion/racemain/body/type01/anm_rac_type01_run03_base` is served
-/// and what it is called, or `None` for files that are not race clips or whose meaning the game
-/// code does not give.
+/// The motion set, file name and title of a race clip such as
+/// `3d/motion/racemain/body/type01/anm_rac_type01_run03_base`, or `None` for files that are not
+/// race clips or whose meaning the game code does not give.
 pub(super) fn raceMotion(name: &str) -> Option<RaceMotion> {
     let set_and_clip = name.strip_prefix(RACE_MOTION_SOURCE)?;
     let clip = objectName(set_and_clip).strip_prefix("anm_rac_type")?;
@@ -24,11 +24,8 @@ pub(super) fn raceMotion(name: &str) -> Option<RaceMotion> {
     let motion = motionName(rest.strip_prefix('_')?)?;
 
     Some(RaceMotion {
-        key: format!(
-            "{RACE_MOTION_FOLDER}/{}/{}.glb",
-            folderName(&personality),
-            motion.stem
-        ),
+        set: folderName(&personality),
+        stem: motion.stem,
         title: format!("{personality}: {}", motion.title),
     })
 }
@@ -180,9 +177,10 @@ mod tests {
         format!("{RACE_MOTION_SOURCE}{set}/anm_rac_{clip}")
     }
 
+    /// The clip's place in its set, `bright/run-fast-standard`, and its title.
     fn named(set: &str, name: &str) -> Option<(String, String)> {
         let motion = raceMotion(&clip(set, name))?;
-        Some((motion.key, motion.title))
+        Some((format!("{}/{}", motion.set, motion.stem), motion.title))
     }
 
     #[test]
@@ -194,21 +192,21 @@ mod tests {
         assert_eq!(
             fast,
             Some((
-                "game-assets/uma-motions/race/bright/run-fast-standard.glb".to_string(),
+                "bright/run-fast-standard".to_string(),
                 "Bright: Fast run, standard form".to_string()
             ))
         );
         assert_eq!(
             tired,
             Some((
-                "game-assets/uma-motions/race/mature/run-normal-sweating-stride.glb".to_string(),
+                "mature/run-normal-sweating-stride".to_string(),
                 "Mature: Normal run, sweating, stride form".to_string()
             ))
         );
         assert_eq!(
             blocked,
             Some((
-                "game-assets/uma-motions/race/sporty/run-blocked.glb".to_string(),
+                "sporty/run-blocked".to_string(),
                 "Sporty: Blocked run".to_string()
             ))
         );
@@ -221,7 +219,7 @@ mod tests {
         assert_eq!(
             start,
             Some((
-                "game-assets/uma-motions/race/cute/gate-break-right-foot.glb".to_string(),
+                "cute/gate-break-right-foot".to_string(),
                 "Cute: Breaking from the gate, right foot first".to_string()
             ))
         );
@@ -235,15 +233,14 @@ mod tests {
         assert_eq!(
             winner,
             Some((
-                "game-assets/uma-motions/race/bright/finish-best-begin-left-handed-course.glb"
-                    .to_string(),
+                "bright/finish-best-begin-left-handed-course".to_string(),
                 "Bright: Finish, best placing, begin, left-handed course".to_string()
             ))
         );
         assert_eq!(
             placeholder,
             Some((
-                "game-assets/uma-motions/race/default/finish-reaction-loop.glb".to_string(),
+                "default/finish-reaction-loop".to_string(),
                 "Default: Finish placeholder, loop".to_string()
             ))
         );
@@ -255,7 +252,7 @@ mod tests {
 
         assert_eq!(
             special.map(|(key, _)| key),
-            Some("game-assets/uma-motions/race/special-12/run-fast-pitch.glb".to_string())
+            Some("special-12/run-fast-pitch".to_string())
         );
     }
 

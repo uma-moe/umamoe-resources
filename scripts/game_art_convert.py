@@ -36,6 +36,7 @@ It prints {"results": [{"bundle": "<path>", "written": [...], "files": [{"key", 
 
 import json
 import os
+import struct
 import sys
 from typing import Any, TextIO
 
@@ -48,6 +49,7 @@ from game_art_shader import export_shaders
 from game_art_uma import export_character, export_motion, export_node_motion, export_uma
 
 WEBP_QUALITY = 90
+GLB_JSON_CHUNK = 0x4E4F534A
 
 
 def read_images(environment: Any) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -145,6 +147,23 @@ def export_json(environment: Any, job: dict[str, Any], output: dict[str, Any]) -
     return []
 
 
+def glb_shaders(path: str) -> set[str]:
+    """The published shader files the model's materials name, as paths from the bucket root."""
+    with open(path, "rb") as file:
+        magic, _version, _length = struct.unpack("<4sII", file.read(12))
+        chunk_length, chunk_type = struct.unpack("<II", file.read(8))
+        if magic != b"glTF" or chunk_type != GLB_JSON_CHUNK:
+            raise ValueError(f"{path} is not a binary glTF")
+        document = json.loads(file.read(chunk_length))
+
+    shaders = set()
+    for material in document.get("materials", []):
+        shader = material.get("extras", {}).get("unity", {}).get("shader")
+        if isinstance(shader, dict) and "file" in shader:
+            shaders.add(shader["file"])
+    return shaders
+
+
 def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
     try:
         bundle_paths = [job["bundle"], *job.get("dependencies", [])]
@@ -153,16 +172,24 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
         images = None
         written = []
         files = []
+        shaders: set[str] = set()
         for output in job["outputs"]:
             if output["format"] == "glb":
                 export_glb(environment, job, output)
+                shaders |= glb_shaders(output["path"])
             elif output["format"] == "json":
                 files.extend(export_json(environment, job, output))
             else:
                 images = images or read_images(environment)
                 save_image(pick_image(*images, output["object"]), output)
             written.append(output["path"])
-        return {"bundle": job["bundle"], "written": written, "files": files, "error": None}
+        return {
+            "bundle": job["bundle"],
+            "written": written,
+            "files": files,
+            "shaders": sorted(shaders),
+            "error": None,
+        }
     except Exception as error:
         return {"bundle": job["bundle"], "written": [], "files": [], "error": f"{type(error).__name__}: {error}"}
 

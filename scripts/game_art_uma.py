@@ -97,11 +97,10 @@ class CharacterExporter(gm.PrefabExporter):
     def __init__(
         self,
         environment: Any,
-        glb_key: str,
         slot_textures: dict[str, dict[str, Any]],
         with_renderers: bool,
     ) -> None:
-        super().__init__(environment, glb_key, [])
+        super().__init__(environment, [])
         self.gltf.document["skins"] = []
         self.gltf.document["animations"] = []
         self.slot_textures = slot_textures
@@ -684,9 +683,7 @@ def hide_blush(document: dict[str, Any]) -> None:
 def export_uma(environment: Any, model: dict[str, Any], output: dict[str, Any]) -> None:
     """Writes `output["path"]`: the uma in its T-pose, named for Blender after its title, with
     its traits as the armature's custom properties."""
-    exporter = CharacterExporter(
-        environment, output["key"], tail_slot_textures(environment, model), with_renderers=True
-    )
+    exporter = CharacterExporter(environment, tail_slot_textures(environment, model), with_renderers=True)
     for prefab in model["prefabs"]:
         exporter.add_prefab(prefab)
     target = facial_target(environment, model)
@@ -710,7 +707,7 @@ def export_character(environment: Any, model: dict[str, Any], output: dict[str, 
     for texture in model["material_textures"]:
         reader = gm.bundle_texture(environment, texture["bundle"])
         slot_textures.setdefault(texture["material"], {})[texture["slot"]] = reader
-    exporter = CharacterExporter(environment, output["key"], slot_textures, with_renderers=True)
+    exporter = CharacterExporter(environment, slot_textures, with_renderers=True)
     for prefab in model["prefabs"]:
         exporter.add_prefab(prefab)
     exporter.finish_skins()
@@ -751,7 +748,7 @@ def export_motion(environment: Any, clip_bundle: str, model: dict[str, Any], out
     """Writes `output["path"]`: the clip on the shared skeleton. Blender names the armature, the
     action and the slot to pick after the title, and drops animation extras, so the game's clip
     name is kept on the root."""
-    exporter = CharacterExporter(environment, output["key"], {}, with_renderers=False)
+    exporter = CharacterExporter(environment, {}, with_renderers=False)
     for prefab in model["skeleton"]:
         exporter.add_prefab(prefab)
 
@@ -771,7 +768,7 @@ def export_motion(environment: Any, clip_bundle: str, model: dict[str, Any], out
 def export_node_motion(environment: Any, clip_bundle: str, model: dict[str, Any], output: dict[str, Any]) -> None:
     """Writes `output["path"]`: a camera or position clip on a root and a child per other object
     it moves, named by the CRC-32 of that object's path."""
-    exporter = CharacterExporter(environment, output["key"], {}, with_renderers=False)
+    exporter = CharacterExporter(environment, {}, with_renderers=False)
     document = exporter.gltf.document
     exporter.root = exporter.gltf.add("nodes", {"name": model["title"]})
     document["scenes"][0]["nodes"].append(exporter.root)

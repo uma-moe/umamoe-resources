@@ -1,11 +1,11 @@
 //! The umas built from master.mdb's outfits: every outfit with a body of its own becomes one
 //! model of its body, head and tail.
 
-use super::catalog::fileSlug;
+use super::layout::{npcUmaFolder, umaKey};
 use super::race_motions::personalityFolder;
 use super::types::{
     OutfitRow, SlotTexture, UmaOutfit, UmaTraits, CHARA_NAME_CATEGORY, DRESS_NAME_CATEGORY,
-    TAIL_TEXTURES, UMA_BODY_FOLDER, UMA_MODEL_FOLDER,
+    TAIL_TEXTURES, UMA_BODY_FOLDER,
 };
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -60,36 +60,19 @@ pub(super) fn outfitRows(connection: &Connection) -> Result<Vec<OutfitRow>> {
         .context("failed to read outfits from master.mdb")
 }
 
-/// The uma of every outfit, served under its character and outfit names:
-/// `game-assets/umas/special-week/special-dreamer.glb`. Outfits of one character whose names
-/// read alike keep their outfit number as well.
-pub(super) fn umaOutfits(rows: &[OutfitRow]) -> Vec<UmaOutfit> {
+/// The uma of every outfit, served as `model.glb` in its uma folder: `art/umas/100101/model.glb`.
+pub(super) fn umaOutfits(rows: &[OutfitRow], folders: &HashMap<u32, String>) -> Vec<UmaOutfit> {
     rows.iter()
-        .zip(outfitPaths(rows))
-        .map(|(row, path)| umaOutfit(row, format!("{UMA_MODEL_FOLDER}/{path}.glb")))
+        .map(|row| umaOutfit(row, umaKey(&outfitFolder(row, folders), "model.glb")))
         .collect()
 }
 
-/// Each outfit's path below a model folder, `special-week/special-dreamer`, in row order.
-/// Outfits of one character whose names read alike keep their outfit number as well.
-pub(super) fn outfitPaths(rows: &[OutfitRow]) -> Vec<String> {
-    let names: Vec<String> = rows.iter().map(namedPath).collect();
-    let mut uses: HashMap<&str, usize> = HashMap::new();
-    for name in &names {
-        *uses.entry(name.as_str()).or_default() += 1;
-    }
-
-    rows.iter()
-        .zip(&names)
-        .map(|(row, name)| {
-            let is_shared = uses[name.as_str()] > 1;
-            if is_shared {
-                format!("{name}-{}", row.dress)
-            } else {
-                name.clone()
-            }
-        })
-        .collect()
+/// The outfit's folder below `art/umas/`.
+pub(super) fn outfitFolder(row: &OutfitRow, folders: &HashMap<u32, String>) -> String {
+    folders
+        .get(&row.dress)
+        .cloned()
+        .unwrap_or_else(|| npcUmaFolder(row.chara, row.dress))
 }
 
 /// `Special Week: Special Dreamer`, what Blender names an outfit's armature.
@@ -156,15 +139,6 @@ pub(super) fn tailModel(row: &OutfitRow) -> Option<(i64, i64)> {
     None
 }
 
-/// `special-week/special-dreamer`, without the outfit number that tells alike names apart.
-fn namedPath(row: &OutfitRow) -> String {
-    format!(
-        "{}/{}",
-        fileSlug(&charaName(row)),
-        fileSlug(&dressName(row))
-    )
-}
-
 fn charaName(row: &OutfitRow) -> String {
     row.chara_name
         .clone()
@@ -222,9 +196,13 @@ mod tests {
         }
     }
 
+    fn folders() -> HashMap<u32, String> {
+        HashMap::from([(100101, "100101".to_string())])
+    }
+
     #[test]
     fn anOutfitJoinsItsBodyHeadAndItsCharactersTail() {
-        let uma = &umaOutfits(&[specialWeek()])[0];
+        let uma = &umaOutfits(&[specialWeek()], &folders())[0];
 
         assert_eq!(uma.record, "3d/chara/body/bdy1001_00");
         assert_eq!(
@@ -235,13 +213,13 @@ mod tests {
                 "3d/chara/tail/tail0001_00/pfb_tail0001_00",
             ]
         );
-        assert_eq!(uma.key, "game-assets/umas/special-week/special-dreamer.glb");
+        assert_eq!(uma.key, "art/umas/100101/model.glb");
         assert_eq!(uma.title, "Special Week: Special Dreamer");
     }
 
     #[test]
     fn theTailIsColouredForItsCharacter() {
-        let uma = &umaOutfits(&[specialWeek()])[0];
+        let uma = &umaOutfits(&[specialWeek()], &folders())[0];
 
         let textures: Vec<(&str, &str)> = uma
             .tail_textures
@@ -283,7 +261,7 @@ mod tests {
             ..specialWeek()
         };
 
-        let uma = &umaOutfits(&[row])[0];
+        let uma = &umaOutfits(&[row], &folders())[0];
 
         assert_eq!(uma.prefabs[2], "3d/chara/tail/tail1013_30/pfb_tail1013_30");
         assert_eq!(
@@ -300,7 +278,7 @@ mod tests {
             ..specialWeek()
         };
 
-        let uma = &umaOutfits(&[row])[0];
+        let uma = &umaOutfits(&[row], &folders())[0];
 
         assert_eq!(uma.prefabs.len(), 2);
         assert!(uma.tail_textures.is_empty());
@@ -317,40 +295,10 @@ mod tests {
             ..specialWeek()
         };
 
-        let uma = &umaOutfits(&[row])[0];
+        let uma = &umaOutfits(&[row], &folders())[0];
 
         assert_eq!(uma.title, "Mejiro Palmer's Casual Wear");
-        assert_eq!(
-            uma.key,
-            "game-assets/umas/mejiro-palmer/mejiro-palmers-casual-wear.glb"
-        );
-    }
-
-    #[test]
-    fn alikeOutfitNamesKeepTheirNumbers() {
-        let summer = OutfitRow {
-            dress: 100140,
-            body_sub: 40,
-            dress_name: Some("Summer!".to_string()),
-            ..specialWeek()
-        };
-        let other_summer = OutfitRow {
-            dress: 100150,
-            body_sub: 50,
-            dress_name: Some("Summer?".to_string()),
-            ..specialWeek()
-        };
-
-        let umas = umaOutfits(&[summer, other_summer]);
-
-        let keys: Vec<&str> = umas.iter().map(|uma| uma.key.as_str()).collect();
-        assert_eq!(
-            keys,
-            vec![
-                "game-assets/umas/special-week/summer-100140.glb",
-                "game-assets/umas/special-week/summer-100150.glb",
-            ]
-        );
+        assert_eq!(uma.key, "art/umas/1064-901064/model.glb");
     }
 
     #[test]
@@ -362,7 +310,7 @@ mod tests {
             ..specialWeek()
         };
 
-        let traits = umaOutfits(&[row])[0].traits.clone();
+        let traits = umaOutfits(&[row], &folders())[0].traits.clone();
 
         assert_eq!(traits.run_motions, "sporty");
         assert_eq!(traits.finish_motions, "mature");

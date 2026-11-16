@@ -191,15 +191,17 @@ def object_entry(reader: Any, reference: Reference) -> dict[str, Any]:
 
 
 def bundle_dump(environment: Any, bundles: list[dict[str, str]]) -> dict[str, Any]:
-    """Every object of the first bundle ({"name", "bundle"}): art and binary objects by name,
-    clips with their curves, everything else with its fields. A reference names its object's
-    type, name and `pathId`, and the game `bundle` it is in when that is another one; path IDs
+    """Every object of the first bundle ({"name", "bundle", "file"?}): art and binary objects by
+    name, clips with their curves, everything else with its fields. A reference names its object's
+    type, name and `pathId`, and the game `bundle` it is in when that is another one, with the
+    published `file` that bundle became (a path from the bucket root) when it has one; path IDs
     are strings, since they do not fit a JavaScript number."""
     bundle_of_file = {
         file_name.lower(): bundle["name"]
         for bundle in bundles
         for file_name in environment.files[bundle["bundle"]].files
     }
+    published_file = {bundle["name"]: bundle["file"] for bundle in bundles if "file" in bundle}
     own_bundle = bundles[0]["name"]
 
     def reference_in(assets_file: Any) -> Reference:
@@ -211,6 +213,8 @@ def bundle_dump(environment: Any, bundles: list[dict[str, str]]) -> dict[str, An
             target_bundle = bundle_of_file.get(target.assets_file.name.lower())
             if target_bundle != own_bundle:
                 entry["bundle"] = target_bundle
+                if target_bundle in published_file:
+                    entry["file"] = published_file[target_bundle]
             return entry
 
         return reference

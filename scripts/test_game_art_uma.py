@@ -93,7 +93,7 @@ def transform(name, active=True, children=()):
 
 class DrawnObjectsExporter(uma.CharacterExporter):
     def __init__(self):
-        super().__init__(None, "game-assets/umas/test.glb", {}, with_renderers=True)
+        super().__init__(None, {}, with_renderers=True)
         self.drawn = []
         self.root = self.gltf.add("nodes", {"name": "root"})
         self.node_paths[self.root] = ""
