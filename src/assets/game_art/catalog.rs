@@ -1,9 +1,13 @@
+use super::chibis::{chibiOutfits, isChibiRecord};
+use super::clips::{isChibiClip, isCutinClip};
 use super::race_motions::raceMotion;
 use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
-    Fit, PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, COURSE_ENVIRONMENT,
-    COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, MODEL_CONVERTER_REVISION,
-    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, SHADER_BUNDLE, SHADER_CONVERTER_REVISION, SHADER_RECORD,
+    Fit, PlannedOutput, PrefabFamily, ART_FAMILIES, ATLAS_FAMILIES, CHIBI_CONVERTER_REVISION,
+    CONVERTER_REVISION, COURSE_ENVIRONMENT, COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY,
+    COURSE_PARTS, COURSE_SKY, CUTIN_CONVERTER_REVISION, CUTIN_SET_FOLDER, CUTIN_TIMELINE_FOLDER,
+    EFFECT_CONVERTER_REVISION, EFFECT_FOLDER, MODEL_CONVERTER_REVISION, PORTRAIT_OUTPUTS,
+    PORTRAIT_SOURCE, PROP_FOLDER, SHADER_BUNDLE, SHADER_CONVERTER_REVISION, SHADER_RECORD,
     TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
 };
 use super::umas::{isUmaRecord, outfitRows, umaOutfits};
@@ -14,13 +18,15 @@ use std::path::Path;
 
 impl Catalog {
     /// The fixed families and atlases plus a portrait for every card, a name for every
-    /// racecourse and a uma for every outfit in this master.
+    /// racecourse and a uma and chibi for every outfit in this master.
     pub(super) fn load(master: &Path) -> Result<Self> {
         let connection = Connection::open_with_flags(master, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .with_context(|| format!("failed to open {}", master.display()))?;
         let mut catalog = Self::fromOutfits(&cardOutfits(&connection)?);
         catalog.course_names = courseNames(&connection)?;
-        catalog.umas = umaOutfits(&outfitRows(&connection)?);
+        let outfits = outfitRows(&connection)?;
+        catalog.umas = umaOutfits(&outfits);
+        catalog.chibis = chibiOutfits(&outfits);
         Ok(catalog)
     }
 
@@ -52,6 +58,7 @@ impl Catalog {
             atlases,
             course_names: HashMap::new(),
             umas: Vec::new(),
+            chibis: Vec::new(),
         }
     }
 
@@ -62,7 +69,7 @@ impl Catalog {
             .find_map(|family| familyOutputs(family, name))
             .or_else(|| self.portraits.get(name).cloned())
             .or_else(|| self.atlases.get(name).map(|plan| plan.outputs.clone()))
-            .or_else(|| trackOutputs(name))
+            .or_else(|| prefabOutputs(name))
             .or_else(|| trackTextureOutputs(name))
     }
 
@@ -88,7 +95,7 @@ impl Catalog {
         if let Some(plan) = self.atlases.get(name) {
             return Dependencies::AtlasTexture(plan.texture);
         }
-        if isTrackPrefab(name) {
+        if prefabFamily(name).is_some() {
             return Dependencies::Listed;
         }
         Dependencies::None
@@ -123,10 +130,59 @@ pub(super) fn converterRevision(name: &str) -> u32 {
     if isUmaRecord(name) || raceMotion(name).is_some() {
         return UMA_CONVERTER_REVISION;
     }
-    if isTrackPrefab(name) || isCourse(name) {
-        return MODEL_CONVERTER_REVISION;
+    if isChibiRecord(name) || isChibiClip(name) {
+        return CHIBI_CONVERTER_REVISION;
     }
-    CONVERTER_REVISION
+    if isCutinTimeline(name) || isCutinClip(name) {
+        return CUTIN_CONVERTER_REVISION;
+    }
+    match prefabFamily(name) {
+        Some(PrefabFamily::Effect) => EFFECT_CONVERTER_REVISION,
+        Some(PrefabFamily::CutinSet | PrefabFamily::Prop) => CUTIN_CONVERTER_REVISION,
+        Some(PrefabFamily::Track) => MODEL_CONVERTER_REVISION,
+        None if isCourse(name) => MODEL_CONVERTER_REVISION,
+        None => CONVERTER_REVISION,
+    }
+}
+
+/// The family of a prefab built into a model of its own: a track prefab, an effect, a cut-in set
+/// or a prop such as `3d/chara/prop/prop1001_00/pfb_chr_prop1001_00`. Cloth physics prefabs draw
+/// nothing and are left out.
+pub(super) fn prefabFamily(name: &str) -> Option<PrefabFamily> {
+    if isTrackPrefab(name) {
+        return Some(PrefabFamily::Track);
+    }
+    if !objectName(name).starts_with("pfb_") || name.contains("/clothes/") {
+        return None;
+    }
+    if name.starts_with(EFFECT_FOLDER) {
+        return Some(PrefabFamily::Effect);
+    }
+    if name.starts_with(CUTIN_SET_FOLDER) {
+        return Some(PrefabFamily::CutinSet);
+    }
+    let is_prop = name
+        .strip_prefix(PROP_FOLDER)
+        .is_some_and(|below| below.matches('/').count() == 1);
+    is_prop.then_some(PrefabFamily::Prop)
+}
+
+/// The state shard of an effect, cut-in set or prop.
+pub(super) fn prefabGroup(name: &str) -> Option<&'static str> {
+    match prefabFamily(name)? {
+        PrefabFamily::Effect => Some("effects"),
+        PrefabFamily::CutinSet => Some("cutin-sets"),
+        PrefabFamily::Prop => Some("props"),
+        PrefabFamily::Track => None,
+    }
+}
+
+/// A skill cut-in's timeline, in a folder of its own name:
+/// `cutt/cutin/skill/crd100101_001/crd100101_001`.
+pub(super) fn isCutinTimeline(name: &str) -> bool {
+    name.strip_prefix(CUTIN_TIMELINE_FOLDER)
+        .and_then(|below| below.split_once('/'))
+        .is_some_and(|(folder, file)| folder == file)
 }
 
 /// The kind of track scenery a record below the track folder belongs to: a racecourse's
@@ -286,11 +342,9 @@ fn trackTextureOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
     }])
 }
 
-/// A track prefab becomes one model at its game path.
-fn trackOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
-    if !isTrackPrefab(name) {
-        return None;
-    }
+/// A track prefab, effect, cut-in set or prop becomes one model at its game path.
+fn prefabOutputs(name: &str) -> Option<Vec<PlannedOutput>> {
+    prefabFamily(name)?;
 
     Some(vec![PlannedOutput {
         key: format!("game-assets/{name}.glb"),

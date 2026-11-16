@@ -1,19 +1,21 @@
 use super::catalog::{
-    converterRevision, courseScenes, isTrackPrefab, isTrackTexture, isUnusedDependency, objectName,
-    runtimeTextureFolder,
+    converterRevision, courseScenes, isCutinTimeline, isTrackTexture, isUnusedDependency,
+    objectName, prefabFamily, runtimeTextureFolder,
 };
+use super::clips::gameClip;
 use super::race_motions::raceMotion;
 use super::types::{
-    ArtJob, ArtModel, ArtState, Catalog, Dependencies, Fit, MotionModel, PlannedOutput,
-    PublishedArt, SceneryModel, SlotTexture, UmaOutfit, MOTION_SKELETON, SHADER_BUNDLE,
-    SHADER_INDEX_KEY, SHADER_RECORD,
+    ArtJob, ArtModel, ArtState, Catalog, CharacterModel, ChibiOutfit, ClipKind, Dependencies, Fit,
+    MotionModel, PlannedOutput, PrefabFamily, PublishedArt, SceneryModel, SlotTexture, UmaOutfit,
+    MOTION_SKELETON, SHADER_BUNDLE, SHADER_INDEX_KEY, SHADER_RECORD,
 };
 use crate::game_cdn::{CdnSource, ManifestEntry, ANDROID, WINDOWS};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-/// Picks every catalogued file, every racecourse to combine into one model, every outfit to
-/// build a uma of and the shaders from the first source that lists them, so a Global file replaces
-/// the JP one as soon as Global has it, and keeps those whose published copy is missing or stale.
+/// Picks every catalogued file and clip, every racecourse to combine into one model, every outfit
+/// to build a uma and chibi of and the shaders from the first source that lists them, so a Global
+/// file replaces the JP one as soon as Global has it, and keeps those whose published copy is
+/// missing or stale.
 pub(super) fn planJobs(
     sources: &[(&'static CdnSource, Vec<ManifestEntry>)],
     catalog: &Catalog,
@@ -30,7 +32,9 @@ pub(super) fn planJobs(
                 continue;
             }
             let job = fileJob(source, entry, &listing, catalog)
-                .or_else(|| motionJob(source, entry, &listing));
+                .or_else(|| motionJob(source, entry, &listing))
+                .or_else(|| clipJob(source, entry, &listing))
+                .or_else(|| timelineJob(source, entry, &listing));
             jobs.extend(job);
         }
 
@@ -54,6 +58,16 @@ pub(super) fn planJobs(
             }
         }
 
+        for chibi in &catalog.chibis {
+            if claimed.contains(chibi.record.as_str()) {
+                continue;
+            }
+            if let Some(job) = chibiJob(source, chibi, &listing) {
+                claimed.insert(chibi.record.as_str());
+                jobs.push(job);
+            }
+        }
+
         if !claimed.contains(SHADER_RECORD) {
             if let Some(job) = shaderJob(source, &listing) {
                 claimed.insert(SHADER_RECORD);
@@ -66,6 +80,8 @@ pub(super) fn planJobs(
         let published = state.files.get(&job.name);
         !published.is_some_and(|record| isCurrent(record, job))
     });
+    // One quick job that viewers of every model need; it should not wait behind thousands.
+    jobs.sort_by_key(|job| job.name != SHADER_RECORD);
     jobs
 }
 
@@ -80,15 +96,29 @@ pub(super) fn orphanedRecords(
     let mut built: HashSet<&str> = HashSet::new();
     for (_, files) in sources {
         let names: HashSet<&str> = files.iter().map(|entry| entry.name.as_str()).collect();
-        let is_catalogued =
-            |name: &str| catalog.outputs(name).is_some() || raceMotion(name).is_some();
+        let is_catalogued = |name: &str| {
+            catalog.outputs(name).is_some()
+                || raceMotion(name).is_some()
+                || gameClip(name).is_some()
+                || isCutinTimeline(name)
+        };
         built.extend(names.iter().copied().filter(|name| is_catalogued(name)));
         built.extend(courseScenes(names.iter().copied()).into_keys());
 
-        for uma in &catalog.umas {
-            let body = uma.prefabs.first().map(String::as_str);
+        let outfits = catalog
+            .umas
+            .iter()
+            .map(|uma| (uma.record.as_str(), &uma.prefabs))
+            .chain(
+                catalog
+                    .chibis
+                    .iter()
+                    .map(|chibi| (chibi.record.as_str(), &chibi.model.prefabs)),
+            );
+        for (record, prefabs) in outfits {
+            let body = prefabs.first().map(String::as_str);
             if body.is_some_and(|body| names.contains(body)) {
-                built.insert(uma.record.as_str());
+                built.insert(record);
             }
         }
 
@@ -166,6 +196,14 @@ impl<'a> Listing<'a> {
         Some(vec![(*self.by_name.get(SHADER_BUNDLE)?).clone()])
     }
 
+    /// The Windows entries of these files, or `None` when one is not listed.
+    fn entries<'n>(&self, names: impl IntoIterator<Item = &'n str>) -> Option<Vec<ManifestEntry>> {
+        names
+            .into_iter()
+            .map(|name| self.by_name.get(name).map(|entry| (*entry).clone()))
+            .collect()
+    }
+
     /// The textures the game puts on a track prefab's materials at runtime.
     fn runtimeTextures(&self, prefab: &str) -> Vec<String> {
         runtimeTextureFolder(prefab)
@@ -230,16 +268,13 @@ fn fileJob(
         Dependencies::Listed => listing.listedDependencies(entry)?,
     };
 
-    let model = isTrackPrefab(&entry.name).then(|| SceneryModel {
-        prefabs: vec![entry.name.clone()],
-        runtime_textures: listing.runtimeTextures(&entry.name),
-    });
+    let model = prefabFamily(&entry.name).map(|family| prefabModel(family, entry, listing));
     let lookups = if model.is_some() {
         listing.materialLookups()?
     } else {
         Vec::new()
     };
-    if let Some(scene) = &model {
+    if let Some(ArtModel::Scenery(scene)) = &model {
         // The model embeds a set of them, so it is rebuilt when one changes.
         dependencies.extend(
             scene
@@ -256,9 +291,33 @@ fn fileJob(
         entry: entry.clone(),
         dependencies,
         lookups,
-        model: model.map(ArtModel::Scenery),
+        model,
         outputs,
     })
+}
+
+/// A track prefab with its season textures, an effect or cut-in set with each object's particle
+/// systems and scripts, or a prop on its own bones.
+fn prefabModel(family: PrefabFamily, entry: &ManifestEntry, listing: &Listing) -> ArtModel {
+    let prefabs = vec![entry.name.clone()];
+    match family {
+        PrefabFamily::Track => ArtModel::Scenery(SceneryModel {
+            runtime_textures: listing.runtimeTextures(&entry.name),
+            prefabs,
+            components: false,
+        }),
+        PrefabFamily::Effect | PrefabFamily::CutinSet => ArtModel::Scenery(SceneryModel {
+            prefabs,
+            runtime_textures: Vec::new(),
+            components: true,
+        }),
+        PrefabFamily::Prop => ArtModel::Character(CharacterModel {
+            title: objectName(&entry.name).to_string(),
+            prefabs,
+            material_textures: Vec::new(),
+            traits: None,
+        }),
+    }
 }
 
 /// The job combining a racecourse's scene into one model, published under the course's folder.
@@ -297,6 +356,7 @@ fn courseJob(
         model: Some(ArtModel::Scenery(SceneryModel {
             prefabs,
             runtime_textures,
+            components: false,
         })),
         outputs: catalog.courseOutputs(course),
     })
@@ -337,6 +397,41 @@ fn umaJob(source: &'static CdnSource, uma: &UmaOutfit, listing: &Listing) -> Opt
     })
 }
 
+/// The job joining an outfit's chibi body, the shared face, its hair and tail into one chibi,
+/// published under its body's folder. It is rebuilt when any of its prefabs, anything they draw
+/// or a runtime texture changes.
+fn chibiJob(source: &'static CdnSource, chibi: &ChibiOutfit, listing: &Listing) -> Option<ArtJob> {
+    let body = chibi.model.prefabs.first()?;
+    let entry = *listing.by_name.get(body.as_str())?;
+    let mut needed = listing.sceneDependencies(&chibi.model.prefabs)?;
+
+    // A character added later can lack a tail colour or face sheet; the model then goes without.
+    let mut model = chibi.model.clone();
+    model
+        .material_textures
+        .retain(|texture| match listing.by_name.get(texture.name.as_str()) {
+            Some(texture_entry) => {
+                needed.insert(texture.name.clone(), (*texture_entry).clone());
+                true
+            }
+            None => false,
+        });
+
+    Some(ArtJob {
+        source,
+        name: chibi.record.clone(),
+        entry: entry.clone(),
+        dependencies: needed.into_values().collect(),
+        lookups: listing.materialLookups()?,
+        model: Some(ArtModel::Character(model)),
+        outputs: vec![PlannedOutput {
+            key: chibi.key.clone(),
+            object: objectName(body).to_string(),
+            fit: Fit::Native,
+        }],
+    })
+}
+
 /// The job putting one race clip on the skeleton every uma shares, named after what it shows.
 /// It is rebuilt when the clip or the skeleton's prefabs change.
 fn motionJob(
@@ -349,15 +444,7 @@ fn motionJob(
         .iter()
         .map(|prefab| prefab.to_string())
         .collect();
-    let dependencies = skeleton
-        .iter()
-        .map(|prefab| {
-            listing
-                .by_name
-                .get(prefab.as_str())
-                .map(|found| (*found).clone())
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let dependencies = listing.entries(MOTION_SKELETON.iter().copied())?;
 
     Some(ArtJob {
         source,
@@ -368,9 +455,79 @@ fn motionJob(
         model: Some(ArtModel::Motion(MotionModel {
             title: motion.title,
             skeleton,
+            moves_root: false,
         })),
         outputs: vec![PlannedOutput {
             key: motion.key,
+            object: objectName(&entry.name).to_string(),
+            fit: Fit::Native,
+        }],
+    })
+}
+
+/// The job publishing one chibi or cut-in clip at its game path, by what it moves. A clip on a
+/// skeleton is rebuilt when the skeleton's prefabs change too.
+fn clipJob(source: &'static CdnSource, entry: &ManifestEntry, listing: &Listing) -> Option<ArtJob> {
+    let clip = gameClip(&entry.name)?;
+    let title = objectName(&entry.name).to_string();
+    let (model, dependencies) = match clip.kind {
+        ClipKind::Skeleton(prefabs) => {
+            let motion = MotionModel {
+                title,
+                skeleton: prefabs.iter().map(|prefab| prefab.to_string()).collect(),
+                moves_root: true,
+            };
+            (
+                ArtModel::Motion(motion),
+                listing.entries(prefabs.iter().copied())?,
+            )
+        }
+        ClipKind::Node => (ArtModel::NodeMotion { title }, Vec::new()),
+        ClipKind::Curves => (ArtModel::ClipCurves, Vec::new()),
+        ClipKind::Script => (ArtModel::Scripts, Vec::new()),
+    };
+
+    Some(ArtJob {
+        source,
+        name: entry.name.clone(),
+        entry: entry.clone(),
+        dependencies,
+        lookups: Vec::new(),
+        model: Some(model),
+        outputs: vec![PlannedOutput {
+            key: clip.key,
+            object: objectName(&entry.name).to_string(),
+            fit: Fit::Native,
+        }],
+    })
+}
+
+/// The job publishing a cut-in timeline's scripts as JSON at its game path. It loads the bundles
+/// the timeline plays, its clips, effects and set, only to name them, so a change to them does not
+/// rebuild it.
+fn timelineJob(
+    source: &'static CdnSource,
+    entry: &ManifestEntry,
+    listing: &Listing,
+) -> Option<ArtJob> {
+    if !isCutinTimeline(&entry.name) {
+        return None;
+    }
+    let played = entry
+        .dependencies
+        .iter()
+        .map(String::as_str)
+        .filter(|name| *name != SHADER_BUNDLE);
+
+    Some(ArtJob {
+        source,
+        name: entry.name.clone(),
+        entry: entry.clone(),
+        dependencies: Vec::new(),
+        lookups: listing.entries(played)?,
+        model: Some(ArtModel::Scripts),
+        outputs: vec![PlannedOutput {
+            key: format!("game-assets/{}.json", entry.name),
             object: objectName(&entry.name).to_string(),
             fit: Fit::Native,
         }],
@@ -421,7 +578,8 @@ fn outputKeys(outputs: &[PlannedOutput]) -> Vec<String> {
 mod tests {
     use super::*;
     use crate::assets::game_art::types::{
-        CardOutfit, UmaTraits, CONVERTER_REVISION, COURSE_SKY, UMA_CONVERTER_REVISION,
+        CardOutfit, MaterialTexture, UmaTraits, CONVERTER_REVISION, COURSE_SKY, CUTIN_SKELETON,
+        UMA_CONVERTER_REVISION,
     };
     use crate::game_cdn::ANDROID;
     use crate::game_cdn::GLOBAL_CDN;
@@ -894,6 +1052,18 @@ mod tests {
     }
 
     #[test]
+    fn theShadersAreBuiltBeforeEverythingElse() {
+        let sources = vec![(&GLOBAL_CDN, vec![entry(CARD, 1), androidShaders(2)])];
+
+        let jobs = planJobs(&sources, &catalog(), &ArtState::default());
+
+        assert_eq!(
+            planned(&jobs),
+            vec![(SHADER_RECORD, "global"), (CARD, "global")]
+        );
+    }
+
+    #[test]
     fn thePublishedShadersAreAnOrphanOnceAndroidStopsListingThem() {
         let state = recordedFiles(&[SHADER_RECORD]);
         let listed = vec![(&GLOBAL_CDN, vec![androidShaders(1)])];
@@ -1087,5 +1257,148 @@ mod tests {
 
         assert!(listed.is_empty());
         assert_eq!(track_gone, vec![COURSE]);
+    }
+
+    const CHIBI_BODY: &str = "3d/chara/mini/body/mbdy1001_00/pfb_mbdy1001_00";
+    const CHIBI_HAIR: &str = "3d/chara/mini/head/mchr1001_00/pfb_mchr1001_00_hair";
+    const CHIBI_EYE: &str = "3d/chara/mini/head/mchr1001_00/textures/tex_mchr1001_00_eye_diff";
+    const CHIBI_MOUTH: &str = "3d/chara/mini/head/mchr1001_00/textures/tex_mchr1001_00_mouth_diff";
+
+    fn chibiCatalog() -> Catalog {
+        let sheet = |material: &str, name: &str| MaterialTexture {
+            material: material.to_string(),
+            slot: "_MainTex",
+            name: name.to_string(),
+        };
+        let mut catalog = catalog();
+        catalog.chibis = vec![ChibiOutfit {
+            record: "3d/chara/mini/body/mbdy1001_00".to_string(),
+            key: "game-assets/chibis/special-week/special-dreamer.glb".to_string(),
+            model: CharacterModel {
+                title: "Special Week: Special Dreamer".to_string(),
+                prefabs: vec![CHIBI_BODY.to_string(), CHIBI_HAIR.to_string()],
+                material_textures: vec![
+                    sheet("mtl_mchr0001_00_eye", CHIBI_EYE),
+                    sheet("mtl_mchr0001_00_mouth", CHIBI_MOUTH),
+                ],
+                traits: None,
+            },
+        }];
+        catalog
+    }
+
+    #[test]
+    fn aChibiNeedsItsPrefabsAndFaceSheetsAndGoesWithoutAMissingSheet() {
+        let files = vec![
+            entryNeeding(CHIBI_BODY, 1, &["shader"]),
+            entry(CHIBI_HAIR, 2),
+            entry(CHIBI_EYE, 3),
+            entry(SHADER_BUNDLE, 4),
+        ];
+
+        let jobs = planJobs(
+            &[(&GLOBAL_CDN, files)],
+            &chibiCatalog(),
+            &ArtState::default(),
+        );
+
+        let Some(ArtModel::Character(model)) = &jobs[0].model else {
+            panic!("a chibi is a character model");
+        };
+        let filled: Vec<&str> = model
+            .material_textures
+            .iter()
+            .map(|texture| texture.material.as_str())
+            .collect();
+        assert_eq!(
+            planned(&jobs),
+            vec![("3d/chara/mini/body/mbdy1001_00", "global")]
+        );
+        assert_eq!(names(&jobs[0].dependencies), vec![CHIBI_HAIR, CHIBI_EYE]);
+        assert_eq!(names(&jobs[0].lookups), vec![SHADER_BUNDLE]);
+        assert_eq!(filled, vec!["mtl_mchr0001_00_eye"]);
+        assert_eq!(
+            jobs[0].outputs[0].key,
+            "game-assets/chibis/special-week/special-dreamer.glb"
+        );
+    }
+
+    const CUTIN_BODY_CLIP: &str =
+        "3d/motion/cutin/card/body/crd100101_001/anm_cti_crd100101_001_01";
+    const CUTIN_CAMERA_CLIP: &str =
+        "3d/motion/cutin/card/camera/crd100101_001/anm_cti_crd100101_001_01_cam";
+
+    #[test]
+    fn aBodyClipIsRebuiltWithItsSkeletonAndACameraClipStandsAlone() {
+        let mut files: Vec<ManifestEntry> = CUTIN_SKELETON
+            .iter()
+            .enumerate()
+            .map(|(checksum, prefab)| entry(prefab, checksum as u64))
+            .collect();
+        files.push(entry(CUTIN_BODY_CLIP, 10));
+        files.push(entry(CUTIN_CAMERA_CLIP, 11));
+
+        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &catalog(), &ArtState::default());
+
+        let body = jobs.iter().find(|job| job.name == CUTIN_BODY_CLIP).unwrap();
+        let camera = jobs
+            .iter()
+            .find(|job| job.name == CUTIN_CAMERA_CLIP)
+            .unwrap();
+        assert_eq!(names(&body.dependencies), CUTIN_SKELETON.to_vec());
+        assert!(matches!(
+            &body.model,
+            Some(ArtModel::Motion(MotionModel {
+                moves_root: true,
+                ..
+            }))
+        ));
+        assert!(camera.dependencies.is_empty());
+        assert!(matches!(camera.model, Some(ArtModel::NodeMotion { .. })));
+        assert_eq!(
+            camera.outputs[0].key,
+            format!("game-assets/{CUTIN_CAMERA_CLIP}.glb")
+        );
+    }
+
+    const TIMELINE: &str = "cutt/cutin/skill/crd100101_001/crd100101_001";
+
+    #[test]
+    fn aTimelineLooksUpWhatItPlaysAndWaitsUntilAllOfItIsListed() {
+        let timeline = entryNeeding(TIMELINE, 1, &[CUTIN_CAMERA_CLIP, "shader"]);
+        let complete = vec![timeline.clone(), entry(CUTIN_CAMERA_CLIP, 2)];
+        let missing_clip = vec![timeline];
+
+        let jobs = planJobs(&[(&GLOBAL_CDN, complete)], &catalog(), &ArtState::default());
+        let waiting = planJobs(
+            &[(&GLOBAL_CDN, missing_clip)],
+            &catalog(),
+            &ArtState::default(),
+        );
+
+        let timeline_job = jobs.iter().find(|job| job.name == TIMELINE).unwrap();
+        assert!(timeline_job.dependencies.is_empty());
+        assert_eq!(names(&timeline_job.lookups), vec![CUTIN_CAMERA_CLIP]);
+        assert_eq!(
+            timeline_job.outputs[0].key,
+            format!("game-assets/{TIMELINE}.json")
+        );
+        assert!(waiting.is_empty());
+    }
+
+    #[test]
+    fn effectsKeepTheirComponentsAndPropsStandOnTheirBones() {
+        let effect = "3d/effect/race/skill/pfb_eff_rac_skill_00001";
+        let prop = "3d/chara/prop/prop0001/pfb_prop0001";
+        let files = vec![entry(effect, 1), entry(prop, 2), entry(SHADER_BUNDLE, 3)];
+
+        let jobs = planJobs(&[(&GLOBAL_CDN, files)], &catalog(), &ArtState::default());
+
+        let effect_job = jobs.iter().find(|job| job.name == effect).unwrap();
+        let prop_job = jobs.iter().find(|job| job.name == prop).unwrap();
+        assert!(scenery(effect_job).components);
+        assert!(scenery(effect_job).runtime_textures.is_empty());
+        assert!(matches!(prop_job.model, Some(ArtModel::Character(_))));
+        assert_eq!(prop_job.outputs[0].key, format!("game-assets/{prop}.glb"));
     }
 }

@@ -1,7 +1,9 @@
 //! The publisher's record of what is in the bucket, kept as one JSON shard per kind of game
 //! file and an index linking them.
 
-use super::catalog::trackGroup;
+use super::catalog::{isCutinTimeline, prefabGroup, trackGroup};
+use super::chibis::isChibiRecord;
+use super::clips::{isChibiClip, isCutinClip};
 use super::race_motions::raceMotion;
 use super::types::{
     ArtState, PublishedArt, ShardLink, StateIndex, StateLayout, StateShard, StoredIndex,
@@ -16,10 +18,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// Track scenery by its kind, `racetracks` or `skyboxes`, umas, race motions and shaders apart;
-/// every other file by its top folder, `chara` for `chara/chr1001/chr_icon_1001`.
+/// Track scenery by its kind, `racetracks` or `skyboxes`; umas, chibis, their clips, cut-ins,
+/// effects, props and shaders apart; every other file by its top folder, `chara` for
+/// `chara/chr1001/chr_icon_1001`.
 pub(super) fn shardName(name: &str) -> &str {
-    if let Some(group) = trackGroup(name) {
+    if let Some(group) = trackGroup(name).or_else(|| prefabGroup(name)) {
         return group;
     }
     if isUmaRecord(name) {
@@ -27,6 +30,18 @@ pub(super) fn shardName(name: &str) -> &str {
     }
     if raceMotion(name).is_some() {
         return "uma-motions";
+    }
+    if isChibiRecord(name) {
+        return "chibis";
+    }
+    if isChibiClip(name) {
+        return "chibi-motions";
+    }
+    if isCutinClip(name) {
+        return "cutin-motions";
+    }
+    if isCutinTimeline(name) {
+        return "cutins";
     }
     if name == SHADER_RECORD {
         return "shaders";

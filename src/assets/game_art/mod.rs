@@ -2,7 +2,9 @@
 
 mod build;
 mod catalog;
+mod chibis;
 mod cleanup;
+mod clips;
 mod plan;
 mod race_motions;
 mod state;
