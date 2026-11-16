@@ -3,7 +3,8 @@ use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
     Fit, PlannedOutput, ART_FAMILIES, ATLAS_FAMILIES, CONVERTER_REVISION, COURSE_ENVIRONMENT,
     COURSE_MODEL_FOLDER, COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, MODEL_CONVERTER_REVISION,
-    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
+    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, SHADER_BUNDLE, SHADER_CONVERTER_REVISION, SHADER_RECORD,
+    TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
 };
 use super::umas::{isUmaRecord, outfitRows, umaOutfits};
 use anyhow::{Context, Result};
@@ -95,7 +96,7 @@ impl Catalog {
 }
 
 /// The CDN categories the catalog reads from: the first segment of each picture's game path,
-/// and the category that lists race tracks.
+/// the category that lists race tracks and the shader bundle's, which models look shaders up in.
 pub(super) fn catalogCategories() -> Vec<&'static str> {
     let mut categories: Vec<&str> = ART_FAMILIES
         .iter()
@@ -103,7 +104,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .chain([PORTRAIT_SOURCE])
         .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
-        .chain([TRACK_CATEGORY])
+        .chain([TRACK_CATEGORY, SHADER_BUNDLE])
         .collect();
     categories.sort_unstable();
     categories.dedup();
@@ -116,6 +117,9 @@ pub(super) fn isUnusedDependency(name: &str) -> bool {
 }
 
 pub(super) fn converterRevision(name: &str) -> u32 {
+    if name == SHADER_RECORD {
+        return SHADER_CONVERTER_REVISION;
+    }
     if isUmaRecord(name) || raceMotion(name).is_some() {
         return UMA_CONVERTER_REVISION;
     }
@@ -836,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn categoriesComeFromTheGamePathsAndTheTrackCategory() {
+    fn categoriesComeFromTheGamePathsTheTrackCategoryAndTheShaders() {
         assert_eq!(
             catalogCategories(),
             vec![
@@ -846,6 +850,7 @@ mod tests {
                 "item",
                 "outgame",
                 "race",
+                "shader",
                 "supportcard",
                 "uianimation"
             ]

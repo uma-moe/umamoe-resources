@@ -5,7 +5,7 @@ use super::catalog::trackGroup;
 use super::race_motions::raceMotion;
 use super::types::{
     ArtState, PublishedArt, ShardLink, StateIndex, StateLayout, StateShard, StoredIndex,
-    StoredShards, STATE_FOLDER, UPLOAD_CONCURRENCY,
+    StoredShards, SHADER_RECORD, STATE_FOLDER, UPLOAD_CONCURRENCY,
 };
 use super::umas::isUmaRecord;
 use crate::assets::Bucket;
@@ -16,8 +16,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use tokio::task::JoinSet;
 use tracing::warn;
 
-/// Track scenery by its kind, `racetracks` or `skyboxes`, umas and race motions apart; every
-/// other file by its top folder, `chara` for `chara/chr1001/chr_icon_1001`.
+/// Track scenery by its kind, `racetracks` or `skyboxes`, umas, race motions and shaders apart;
+/// every other file by its top folder, `chara` for `chara/chr1001/chr_icon_1001`.
 pub(super) fn shardName(name: &str) -> &str {
     if let Some(group) = trackGroup(name) {
         return group;
@@ -27,6 +27,9 @@ pub(super) fn shardName(name: &str) -> &str {
     }
     if raceMotion(name).is_some() {
         return "uma-motions";
+    }
+    if name == SHADER_RECORD {
+        return "shaders";
     }
     name.split_once('/').map_or(name, |(top, _)| top)
 }
@@ -229,6 +232,7 @@ mod tests {
             converter: 1,
             outputs: Vec::new(),
             dependency_checksums: Vec::new(),
+            content_outputs: Vec::new(),
             textures: Vec::new(),
             error: None,
         }

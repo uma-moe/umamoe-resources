@@ -45,8 +45,12 @@ impl Drop for WorkDir {
 }
 
 pub(super) enum JobOutcome {
-    /// Converted files as (bucket key, local file).
-    Built { outputs: Vec<(String, PathBuf)> },
+    /// Converted files as (bucket key, local file): the planned outputs, then those the converter
+    /// named after the bundle's contents, whose keys `content_outputs` lists.
+    Built {
+        outputs: Vec<(String, PathBuf)>,
+        content_outputs: Vec<String>,
+    },
     /// The bundle downloaded but does not convert.
     Unconvertible(String),
     /// The bundle could not be fetched; worth retrying on the next run.
@@ -75,9 +79,15 @@ pub(super) async fn buildBatch(
     for (index, conversion) in convertAll(conversions).await? {
         outcomes[index] = Some(match conversion {
             Err(error) => JobOutcome::Unconvertible(error),
-            Ok(()) => JobOutcome::Built {
-                outputs: outputFiles(&jobs[index], &dir, index),
-            },
+            Ok(content_files) => {
+                let content_outputs = content_files.iter().map(|(key, _)| key.clone()).collect();
+                let mut outputs = outputFiles(&jobs[index], &dir, index);
+                outputs.extend(content_files);
+                JobOutcome::Built {
+                    outputs,
+                    content_outputs,
+                }
+            }
         });
     }
 
@@ -92,9 +102,11 @@ pub(super) async fn buildBatch(
     Ok(outcomes)
 }
 
-/// Each job's bundle followed by the bundles it needs beside it.
+/// Each job's bundle followed by the bundles it needs beside it and those it looks things up in.
 fn jobBundles(job: &ArtJob) -> impl Iterator<Item = &ManifestEntry> {
-    std::iter::once(&job.entry).chain(&job.dependencies)
+    std::iter::once(&job.entry)
+        .chain(&job.dependencies)
+        .chain(&job.lookups)
 }
 
 /// Downloads every bundle of every job; a job's files come back in `jobBundles` order.
@@ -188,11 +200,13 @@ fn outputFiles(job: &ArtJob, dir: &Path, index: usize) -> Vec<(String, PathBuf)>
         .collect()
 }
 
-/// Track prefabs become `.glb` models and the site keeps a few PNG paths; every other picture
-/// is WebP.
+/// Track prefabs become `.glb` models, the shader index is JSON and the site keeps a few PNG
+/// paths; every other picture is WebP.
 fn outputFormat(key: &str) -> &'static str {
     if key.ends_with(".glb") {
         "glb"
+    } else if key.ends_with(".json") {
+        "json"
     } else if key.ends_with(".png") {
         "png"
     } else {
@@ -223,7 +237,7 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
         .collect();
 
     let path = |file: &PathBuf| file.to_string_lossy().into_owned();
-    // `files` holds the job's bundle, then its dependencies in order.
+    // `files` holds the job's bundle, then its dependencies and its lookups in order.
     let downloaded = |name: &str| {
         if name == job.entry.name {
             return Some(path(&files[0]));
@@ -279,6 +293,7 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
             title: &motion.title,
             skeleton: prefabs(&motion.skeleton),
         },
+        ArtModel::Shaders => ConvertModel::Shaders,
     });
 
     ConvertJob {
@@ -289,14 +304,19 @@ fn convertJob<'a>(job: &'a ArtJob, files: &[PathBuf], dir: &Path, index: usize) 
     }
 }
 
-/// Why a job did not convert, if it did not.
-type Conversion = std::result::Result<(), String>;
+/// The files a job's converter named after its bundle's contents as (bucket key, local file), or
+/// why it did not convert.
+type Conversion = std::result::Result<Vec<(String, PathBuf)>, String>;
 
 fn conversion(result: ConvertResult) -> Conversion {
-    match result.error {
-        Some(error) => Err(error),
-        None => Ok(()),
+    if let Some(error) = result.error {
+        return Err(error);
     }
+    Ok(result
+        .files
+        .into_iter()
+        .map(|file| (file.key, PathBuf::from(file.path)))
+        .collect())
 }
 
 /// Converts the bundles in one converter process. If the process itself fails, each bundle gets
@@ -383,6 +403,26 @@ mod tests {
         "3d/env/race/race10006/race10006_0000/textures/tex_env_race10006_0000_112_turf00";
 
     #[test]
+    fn filesTheConverterNamedArePublishedBesideThePlannedOnes() {
+        let result: ConvertResult = serde_json::from_value(json!({
+            "bundle": "shader",
+            "files": [{"key": "game-assets/shaders/gallop/ui/default.json", "path": "work/default.json"}],
+            "error": null,
+        }))
+        .unwrap();
+
+        let named = conversion(result);
+
+        assert_eq!(
+            named,
+            Ok(vec![(
+                "game-assets/shaders/gallop/ui/default.json".to_string(),
+                PathBuf::from("work/default.json")
+            )])
+        );
+    }
+
+    #[test]
     fn aCourseModelTellsTheConverterWhereEachPrefabAndTextureWasDownloaded() {
         let entry = |name: &str| ManifestEntry::new(name, 1, 1, 1);
         let job = ArtJob {
@@ -390,6 +430,7 @@ mod tests {
             name: "3d/env/race/race10006".to_string(),
             entry: entry(TRACK),
             dependencies: vec![entry(TURF_TEXTURE), entry(TREES)],
+            lookups: Vec::new(),
             model: Some(ArtModel::Scenery(SceneryModel {
                 prefabs: vec![TRACK.to_string(), TREES.to_string()],
                 runtime_textures: vec![TURF_TEXTURE.to_string()],
@@ -450,6 +491,7 @@ mod tests {
             name: uma.record.clone(),
             entry: entry(body),
             dependencies: vec![entry(diffuse), entry(head)],
+            lookups: Vec::new(),
             outputs: vec![PlannedOutput {
                 key: uma.key.clone(),
                 object: "pfb_bdy1001_00".to_string(),

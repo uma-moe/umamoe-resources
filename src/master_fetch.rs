@@ -13,7 +13,9 @@ pub(crate) async fn fetchMasterMdb(resource_version: &str, output_path: &Path) -
     let client = reqwest::Client::new();
 
     info!("Fetching manifests for version {}...", resource_version);
-    let categories = game_cdn::fetchCategories(&client, &GLOBAL_CDN, resource_version).await?;
+    let categories =
+        game_cdn::fetchCategories(&client, &GLOBAL_CDN, game_cdn::WINDOWS, resource_version)
+            .await?;
     let master_entries =
         game_cdn::fetchCategoryFiles(&client, &GLOBAL_CDN, &categories, &["master"]).await?;
     let mdb_entry = master_entries

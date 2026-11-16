@@ -7,11 +7,27 @@ use std::ops::RangeInclusive;
 pub(super) const CONVERTER_REVISION: u32 = 1;
 
 /// Raise when model output changes, so every track model and course model is rebuilt once.
-/// Revision 2 embeds the textures in the model.
-pub(super) const MODEL_CONVERTER_REVISION: u32 = 2;
+/// Revision 2 embeds the textures in the model; 3 names each material's shader and keywords.
+pub(super) const MODEL_CONVERTER_REVISION: u32 = 3;
 
 /// Raise when uma or race motion output changes, so every one is rebuilt once.
-pub(super) const UMA_CONVERTER_REVISION: u32 = 3;
+/// Revision 4 names each material's shader and keywords.
+pub(super) const UMA_CONVERTER_REVISION: u32 = 4;
+
+/// Raise when the shader files change, so they are written again.
+pub(super) const SHADER_CONVERTER_REVISION: u32 = 1;
+
+/// The bundle of every shader the game draws with, named so in each platform's file list and
+/// category. Models load the Windows one to name their materials' shaders; the Android one, whose
+/// programs are GLSL ES, is published.
+pub(super) const SHADER_BUNDLE: &str = "shader";
+
+/// The published shaders' record, named with its platform since Windows lists a bundle of the same
+/// name.
+pub(super) const SHADER_RECORD: &str = "android/shader";
+
+/// The list of published shaders; each shader's file lies below it, named after the shader.
+pub(super) const SHADER_INDEX_KEY: &str = "game-assets/shaders/index.json";
 
 /// The publisher's record in the bucket, outside every path the site routes there: an
 /// `index.json` linking the shards, and one JSON file of records per top-level game folder.
@@ -622,6 +638,10 @@ pub(super) struct PublishedArt {
     /// Checksums of the bundles it draws from, such as an atlas's texture.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) dependency_checksums: Vec<u64>,
+    /// Keys the converter named after the file's contents, beside `outputs`: one per shader of the
+    /// shader bundle.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(super) content_outputs: Vec<String>,
     /// Textures earlier converters wrote beside a model. Models now embed their textures, so
     /// these are deleted once no record lists them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -642,6 +662,10 @@ pub(super) struct ArtJob {
     pub(super) entry: ManifestEntry,
     /// Bundles loaded with it, such as an atlas's texture.
     pub(super) dependencies: Vec<ManifestEntry>,
+    /// Bundles loaded only so references into them resolve; unlike `dependencies`, a change to
+    /// them does not rebuild the job. A model looks its materials' shader names up in the shader
+    /// bundle.
+    pub(super) lookups: Vec<ManifestEntry>,
     /// What a model draws; `None` for pictures.
     pub(super) model: Option<ArtModel>,
     pub(super) outputs: Vec<PlannedOutput>,
@@ -654,6 +678,8 @@ pub(super) enum ArtModel {
     Uma(UmaOutfit),
     /// The job's race clip on the skeleton every uma shares, without meshes.
     Motion(MotionModel),
+    /// Every shader of the job's bundle, each in a file of its own, listed in the job's output.
+    Shaders,
 }
 
 /// Track prefabs drawn side by side in one model, each in its own coordinates.
@@ -738,6 +764,7 @@ pub(super) enum ConvertModel<'a> {
         title: &'a str,
         skeleton: Vec<ScenePrefab<'a>>,
     },
+    Shaders,
 }
 
 #[derive(Serialize)]
@@ -783,5 +810,14 @@ pub(super) struct ConvertResponse {
 #[derive(Deserialize)]
 pub(super) struct ConvertResult {
     pub(super) bundle: String,
+    /// Files the converter named after the bundle's contents, beside the planned outputs.
+    #[serde(default)]
+    pub(super) files: Vec<ConvertedFile>,
     pub(super) error: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ConvertedFile {
+    pub(super) key: String,
+    pub(super) path: String,
 }
