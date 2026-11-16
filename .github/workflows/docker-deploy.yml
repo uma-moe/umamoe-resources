@@ -377,7 +377,8 @@ jobs:
           history_volume_name="${14}"
           assets_env_file="${15}"
           asset_bucket="${16}"
-          expected_objects="${17}"
+          # ssh joins the arguments into one command line, so an empty count arrives as none.
+          expected_objects="${17:-}"
 
           for required_env_file in "$env_file" "$assets_env_file"; do
             if [ ! -f "$required_env_file" ]; then
