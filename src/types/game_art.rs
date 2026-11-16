@@ -57,7 +57,12 @@ pub(super) const CONVERTER_SCRIPT: &str = "/app/scripts/game_art_convert.py";
 /// Bundles per converter process in a batch; Python and UnityPy take about a second to start.
 pub(super) const JOBS_PER_CONVERTER: usize = 8;
 
-/// Converter processes run at once at most; each holds its bundles' decoded textures in memory.
+/// Sets how many converter processes run at once.
+pub(super) const CONVERTERS_VARIABLE: &str = "GAME_ART_CONVERTERS";
+
+pub(super) const DEFAULT_CONVERTER_PROCESSES: usize = 2;
+
+/// Each converter holds its bundles' decoded textures in memory.
 pub(super) const MAX_CONVERTER_PROCESSES: usize = 8;
 
 pub(super) const DOWNLOAD_CONCURRENCY: usize = 16;
