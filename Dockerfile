@@ -29,6 +29,7 @@ COPY scripts/game_art_face.py /app/scripts/game_art_face.py
 COPY scripts/game_art_shader.py /app/scripts/game_art_shader.py
 COPY scripts/game_art_uma.py /app/scripts/game_art_uma.py
 COPY scripts/game_art_unity.py /app/scripts/game_art_unity.py
+COPY scripts/timeline_art_convert.py /app/scripts/timeline_art_convert.py
 
 USER appuser
 EXPOSE 3000 3204

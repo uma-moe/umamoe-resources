@@ -431,6 +431,7 @@ art/
   effects/<game folders>/    effects, without the pfb_eff_ prefix
   props/  shaders/  racecourses/<course>/{model.glb,parts/,textures/}  racecourses/shared/
   support-cards/<id>/{card,half}.webp  skills/icons/  races/banners/  items/  ui/<family>/
+  timeline/                  the timeline's banners, see Timeline Banners below
 ```
 
 Every folder an uma, character, racecourse or library lives in has an `index.json`. Every path in them, in timelines and in models is a link from the bucket root, `/art/umas/100101/model.glb`, so the asset origin plus the link is the file's URL. An uma's document is the one file to read to load it:
@@ -497,6 +498,37 @@ docker run --rm --entrypoint /opt/game-art/bin/python -v ${PWD}/scripts:/scripts
 `game-art --dry-run` lists what the next run would build and delete and the largest documents; `game-art` runs it once. `game-art --dry-run --out-dir <folder>` writes every directory document there as if every file converted, downloading no bundles.
 
 `asset-bucket inventory` logs the objects and bytes below each top folder of the bucket. `asset-bucket clear --expect <count>` deletes every object, only when the bucket holds exactly that many, so nothing written since the inventory goes unseen. The R2 token only works from the deploy host, so both run there through the deploy workflow: dispatch it on `main` with `asset_bucket` set to `inventory` (lists the bucket and skips the deploy), then `clear` with `expected_objects` from that inventory, which stops the beta container, empties the bucket and deploys beta, whose publisher then builds everything again.
+
+## Timeline Banners
+
+The publishing server (`GAME_ART_PUBLISH=true`) also publishes the picture of every banner the timeline shows, one file per banner below `art/timeline/`: the official English art once it exists, else the official Japanese art, else the site's own file. It reads the current `banner_timeline.json.gz` in the data folder at start and every 30 minutes (`TIMELINE_ART_INTERVAL_SECONDS`, at least 60), which catches new timelines, new news archives and English art uploaded around a release. A run with nothing new downloads nothing.
+
+- A banner keeps the timeline's `image_path` below `art/timeline/`, without its `assets/images/` or `assets/timeline-images/` prefix: `assets/images/character/banner/2021_30002.webp` is `art/timeline/character/banner/2021_30002.webp`, `assets/timeline-images/events/campaign/1001.webp` is `art/timeline/events/campaign/1001.webp`. An event without a picture of its own gets its type's picture for its master id, `assets/timeline-images/events/<category>/<id>.webp`, as the frontend resolves it.
+- `art/timeline/index.json` links each published banner by its `image_path`, from the bucket root: `{"schema": 1, "images": {"assets/images/campaign/100.webp": "/art/timeline/campaign/100.webp"}}`. It lists only published files, is cached for five minutes and is uploaded only when it changes.
+- Sources are picked as the frontend's image sync picked them (`src/generators/timeline_images/`, a port of `scripts/sync_umapyoi_timeline_images.mjs`). Japanese art comes from the Umapyoi archive: the gacha's banner, else the closest titled post of the event's type, campaigns by the phase they belong to. English art comes from the official Global news in the bundled archive: the announcement's picture, else the `_L<release>` header the game uploads for a banner. Only confirmed events get an English source, and a predicted Champions Meeting keeps its Japanese art even where the site has English art for it. English art is only as fresh as the archive, which `Sync News Archives` refreshes.
+- Japanese art is scaled down to at most 512 px wide. English art is fitted into the size of the banner's Japanese art, stretched at most 10% in height rather than cropped. Pictures are WebP at quality 88, lossless when they have alpha, converted by `scripts/timeline_art_convert.py` at the lowest CPU priority. A campaign's thumbnail banner is preferred over its header when it exists.
+- Better art overwrites the same key and its URL is purged; English art is never traded back for Japanese. A missing English header (403/404) is asked for again on every run until a week after its release, then retired.
+- A banner's first run copies the site's file when its own sources fail, so nothing the site shows is lost: the synced copy the site's manifests list (`/assets/timeline-images/{en,jp}/manifest.json` on `TIMELINE_ART_SITE_ORIGIN`, default `https://uma.moe`), else the original. A copied English picture may be older art, such as last year's cup of a Champions Meeting, so its planned source replaces it once that downloads.
+- Requests go one at a time, 250 ms apart, retried with backoff for 429 and 5xx.
+- `_state/timeline-art/index.json` records each banner's variant, planned source, download URL, fit revision and size, and the retired English sources. Raising `FIT_REVISION` rebuilds every banner. Banners are never deleted when an event leaves the timeline, since a cached older timeline may still name them.
+
+```powershell
+cargo run -- timeline-art --timeline <banner_timeline.json or .json.gz> --dry-run
+cargo run -- timeline-art --timeline <banner_timeline.json> --compare-frontend ../umamoe-frontend/timeline-image-sync
+docker run --rm -v ${PWD}/timeline-sample:/out -v ${PWD}/generated-data:/data umamoe-resources timeline-art --data-dir /data --out-dir /out --sample 3
+```
+
+- `--dry-run` counts the banners with an English, a Japanese or no source.
+- `--compare-frontend` lists every banner whose source differs from those the frontend's sync recorded. Those records keep mappings from older timelines and came from the live news feed, so some differences are expected; on the same timeline and archives the two pickers agree.
+- `--out-dir` builds a few banners per folder (`--sample`, default 3) and their index into a folder instead of the bucket. It needs the image's converter.
+
+The converter's tests run in the image:
+
+```powershell
+docker run --rm --entrypoint /opt/game-art/bin/python -v ${PWD}/scripts:/scripts -w /scripts umamoe-resources -m unittest test_timeline_art_convert
+```
+
+The frontend's Sync Timeline Images workflow keeps running until the site reads its banners from the bucket.
 
 ## Local Docker
 
