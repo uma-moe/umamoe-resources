@@ -1,21 +1,21 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-05T06:43:03.351436230+00:00",
+  "fetched_at": "2026-11-17T14:37:32.871170307+00:00",
   "analysis": {
-    "news_posts": 2708,
-    "classified_news_posts": 2327,
-    "news_posts_with_images": 1787,
-    "news_posts_with_banner_candidates": 1782,
+    "news_posts": 2720,
+    "classified_news_posts": 2338,
+    "news_posts_with_images": 1795,
+    "news_posts_with_banner_candidates": 1790,
     "event_type_counts": {
-      "campaign": 709,
+      "campaign": 711,
       "career_event": 154,
       "challenge_event": 115,
       "champions_meeting": 211,
-      "factor_research": 117,
-      "gacha": 856,
+      "factor_research": 119,
+      "gacha": 861,
       "league_of_heroes": 128,
-      "legend_race": 215,
+      "legend_race": 217,
       "login_bonus": 125,
       "maintenance": 48,
       "masters_challenge": 64,
@@ -24,18 +24,265 @@
       "racing_carnival": 24,
       "story_event": 299,
       "strongest_team": 37,
-      "trainer_skills_test": 68,
+      "trainer_skills_test": 69,
       "training_scenario": 339,
-      "update": 816
+      "update": 818
     },
-    "discovered_gacha_banner_images": 951,
-    "unique_discovered_gacha_ids": 567,
+    "discovered_gacha_banner_images": 960,
+    "unique_discovered_gacha_ids": 572,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-11-05T04:50:00+00:00",
+    "latest_news_at": "2026-11-16T09:40:00+00:00",
     "api_gacha_banners": 229,
-    "support_cards": 566
+    "support_cards": 568
   },
   "news": [
+    {
+      "post_id": 3550,
+      "page_url": "https://umapyoi.net/news/3550?lang=jp",
+      "title": "Regarding a Bug with Compatibility Bonuses in the \"Bulk Acquisition of Umamusume for Inheritance\" Feature",
+      "title_jp": "「継承専用ウマ娘まとめて獲得」の継承における相性ボーナスの不具合について",
+      "posted_at": "2026-11-16T09:40:00+00:00",
+      "updated_at": "2026-11-16T09:50:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3550,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "「継承専用ウマ娘まとめて獲得」において、下記の不具合が発生しておりました。<br>本不具合の修正は完了しております。<br><br>■不具合内容<br>・継承ウマ娘選択で継承ウマ娘をレンタルした場合、相性ボーナスが低くなる。<br><br>■発生期間<br>2026/8/24 11:30頃 ～ 2026/11/16 18:37頃<br><br>また、本不具合の対応といたしまして、お詫びを予定しております。<br>進捗があり次第、本お知らせにてご報告いたします。<br><br>【11/16 18:50追記】<br>本不具合の対応といたしまして対象のお客様へお詫びをお送りいたしました。<br>お手数ではございますが、プレゼントからご確認ください。<br><br>■対象のお客様<br>2026/11/16 18:37までにゲームを開始されたお客様<br><br>■お詫び内容<br>タフネス30×1<br><br>ご利用のお客様に、ご迷惑をおかけしましたことを、お詫び申し上げます。",
+        "message_english": "The following issue occurred in the “Bulk Acquisition of Umamusume for Inheritance Only” event.<br> This issue has been resolved.<br><br> ■ Issue Details<br> ・When renting an Inheritance Umamusume via the Inheritance Umamusume selection, the compatibility bonus was reduced.<br><br> ■ Duration of the Issue<br> Approx. 11:30 AM on August 24, 2026 – Approx. 6:37 PM on November 16, 2026<br><br> Additionally, we plan to issue an apology in response to this issue.<br> We will provide updates via this announcement as soon as there is any progress.<br><br> [Updated 11/16 at 6:50 PM]<br> As a response to this issue, we have sent apologies to the affected customers.<br> We apologize for the inconvenience; please check your “Gifts” section.<br><br> ■ Affected Customers<br> Customers who started playing the game by 6:37 PM on November 16, 2026<br><br> ■ Apology Details<br> Toughness ×30 (1)<br><br> We sincerely apologize for any inconvenience this may have caused our players.",
+        "post_at": 1794822000,
+        "post_platform_flag": 62,
+        "row_number": 2,
+        "title": "「継承専用ウマ娘まとめて獲得」の継承における相性ボーナスの不具合について",
+        "title_english": "Regarding a Bug with Compatibility Bonuses in the \"Bulk Acquisition of Umamusume for Inheritance\" Feature",
+        "update_at": 1794822600
+      }
+    },
+    {
+      "post_id": 3549,
+      "page_url": "https://umapyoi.net/news/3549?lang=jp",
+      "title": "Notice Regarding the Redownload of Data Following the Google Play Update",
+      "title_jp": "Google Play版アップデートに伴うデータの再ダウンロードに関するお知らせ",
+      "posted_at": "2026-11-13T10:20:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3549,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/19 12:00ごろに行うアップデート後、Google Play版のゲームプレイに必要なデータ約7GBの再ダウンロードが発生いたします。<br>すでにダウンロードいただいているデータも再度ダウンロードいただく必要がございます。あらかじめご了承ください。<br>データを再度ダウンロードしても、端末のストレージ使用量が増大することはございません。<br><br>本件に関してお手間をおかけするお詫びとして、Google Play版をご利用のお客様にジュエル150個の配布を予定しております。<br>お詫びを配布次第、本お知らせにてご報告いたします。<br><br>ご利用のお客様に、ご迷惑をおかけしますことを、お詫び申し上げます。",
+        "message_english": "Following the update scheduled for around 12:00 PM on November 19, you will need to re-download approximately 7 GB of data required to play the Google Play version of the game.<br> You will need to re-download data that you have already downloaded. We appreciate your understanding.<br> Redownloading the data will not increase the amount of storage space used on your device.<br><br> As an apology for the inconvenience caused by this issue, we plan to distribute 150 Gems to users of the Google Play version.<br> We will post an update here as soon as the compensation has been distributed.<br><br> We apologize for any inconvenience this may cause to our users.",
+        "post_at": 1794565200,
+        "post_platform_flag": 20,
+        "row_number": 5,
+        "title": "Google Play版アップデートに伴うデータの再ダウンロードに関するお知らせ",
+        "title_english": "Notice Regarding the Redownload of Data Following the Google Play Update",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3548,
+      "page_url": "https://umapyoi.net/news/3548?lang=jp",
+      "title": "Notice Regarding Refunds and Online Sales of Merchandise for the “7th EVENT in LOS ANGELES”",
+      "title_jp": "『7th EVENT in LOS ANGELES』返金と公演グッズの通信販売に関するご案内",
+      "posted_at": "2026-11-13T07:28:00+00:00",
+      "label": "Media",
+      "event_types": [],
+      "images": [],
+      "raw": {
+        "announce_id": 3548,
+        "announce_label": 3,
+        "article_image": null,
+        "id": 3,
+        "image": "",
+        "label_color": "#FF911C",
+        "label_name_en": "Media",
+        "message": "いつも「ウマ娘 プリティーダービー」を応援いただきありがとうございます。<br><br>本公演のチケットをご購入、またはJTBオフィシャルツアーにお申し込みいただいたお客様を対象に、旅費・キャンセル費等の返金および公演グッズ購入に関する詳細をご案内いたします。<br>当初予定していたメールでのご案内から、本ページでのご案内に変更とさせていただきます。<br>ご案内に大幅にお時間が掛かり、お待ちのお客様にご迷惑、ご心配をおかけしており誠に申し訳ございません。<br><br><br>返金または公演グッズの購入をご希望のお客様は、下記の詳細をご確認のうえ、記載の必要事項をCygames専用窓口までお送りくださいますようお願いいたします。<br><span style=\"font-size: 12px;\">※すでにJTBからメールが届き、Cygames専用窓口へ必要事項をお送りいただいている場合、同じ内容を再度お送りいただく必要はございません。<br>※メールは、日本語または英語でお送りくださいますようお願いいたします。</span><br><br><strong>■受付締切</strong><br>2026年11月30日 23:59 PST（UTC−8／ロサンゼルス時間）<br><span style=\"font-size: 12px;\">※日本時間：2026年12月1日 16:59（JST）</span><br><br>返金または公演グッズの通信販売での購入をご希望の方は、上記日時までに、下記の「ご回答いただきたい内容」をお送りください。<br>領収書などの資料や銀行口座情報は、今後のご案内に沿ってご提出ください。<br><span style=\"font-size: 12px;\">※上記締切日経過後は、返金いたしかねる場合がございます。</span><br><br>なお、公演チケットおよびJTBオフィシャルツアーの代金は、AXSもしくはJTBより返金のご連絡をお送りしております。<br><br><strong>■返金額について</strong><br>＜渡航された場合＞<br>・ロサンゼルスでの宿泊費<br>DAY1・DAY2のいずれか一方の公演に参加予定だった方は最大2泊分、両日の公演に参加予定だった方は最大3泊分の宿泊費の実費を返金いたします。<br>上限額は、1名あたり1泊につき、日本円で返金する場合は50,000円、米ドルで返金する場合は320米ドルです。<br><br>・ロサンゼルスへの航空運賃<br>燃油サーチャージ・空港税等を含め、往復の航空運賃の実費を返金いたします。<br>上限額は、1名あたり往復につき、日本円で返金する場合は700,000円、米ドルで返金する場合は4,450米ドルです。<br><br>＜渡航せず、ご予約をキャンセルされた場合＞<br>返金対象となる内容について、実際に発生したキャンセル費等を全額返金いたします。<br>この場合、上記の宿泊費・航空運賃の上限額は適用いたしません。<br><br>＜JTBオフィシャルツアーにお申し込みの場合＞<br>ツアーに含まれる宿泊費・航空運賃は、JTBから全額返金いたします。<br><br><strong>■公演グッズの通信販売について</strong><br>公演グッズの通信販売での購入をご希望の方には、お申し込み情報を確認のうえ、購入方法等を別途ご案内いたします。<br><br>なお、発送先はアメリカ、カナダを除く地域となります。<br>アメリカ、カナダにお住まいの方は、以下の通信販売をご利用ください。<br>販売期間は2026年11月16日 23:59（PT）までです。<br><a href=\"https://www.goodsmileus.com/\" target=\"_blank\">https://www.goodsmileus.com/</a><br><br><strong>■送信先</strong><br>ts7th_umamusume_la_support@contact.cygames.co.jp<br><br><strong>■個人情報の取り扱い・第三者提供について</strong><br>お送りいただいた個人情報は、株式会社Cygamesが、本件の返金および公演グッズの通信販売に関する対応のために利用いたします。<br>また、お申し込み情報の確認のため、お送りいただいた個人情報の一部を、お申し込み先であるAXS Group LLCおよびそのグループ会社、または株式会社JTBに提供いたします。<br>その他、個人情報の取り扱いについては、株式会社Cygamesのプライバシーポリシーをご確認ください。<br><a href=\"https://www.cygames.co.jp/policy/\" target=\"_blank\">https://www.cygames.co.jp/policy/</a><br><br><strong>■ご回答いただきたい内容</strong><br>以下をメール本文に貼り付け、各項目をご記入ください。<br>選択肢は、該当するものを残してください。<br><br>【1】チケットの購入・ツアーのお申し込み先<br>AXS／JTB<br><br>【2】公演チケットの座席番号（【1】で「AXS」を選択された方のみ）<br>公演日：<br>セクション（SECTION）：<br>列（ROW）：<br>座席番号（SEAT）：<br><br>※複数の公演チケットをご購入の場合は、すべての公演チケットについてご記入ください。<br><br>【3】旅費・キャンセル費等の返金<br>希望する／希望しない<br><br>【4】公演グッズの通信販売での購入（アメリカ、カナダを除く地域への発送です）<br>希望する／希望しない<br><br>【5】現在お住まいの国・地域<br>国・地域名：<br><br>【6】AXSでのチケット購入時、またはツアーのお申し込み時のメールアドレス<br>メールアドレス：<br><br><strong>■ご連絡後の流れ</strong><br>お送りいただいた内容を確認のうえ、Cygames専用窓口から、ご希望に応じたお手続きの詳細をご案内いたします。<br><br>今回のメールでは、返金および公演グッズの通信販売での購入のご希望等を確認いたします。<br>領収書などの資料や銀行口座情報は、今後のご案内に沿ってご提出ください。<br><br>お手数をおかけいたしますが、ご協力くださいますようお願い申し上げます。",
+        "message_english": "Thank you for your continued support of “Umamusume Pretty Derby.”<br><br> For customers who purchased tickets for this performance or signed up for the JTB Official Tour, we would like to provide details regarding refunds for travel expenses, cancellation fees, and other matters, as well as information regarding the purchase of performance merchandise.<br> We have decided to provide this information on this page instead of via email as originally planned.<br> We sincerely apologize for the significant delay in providing this information and for any inconvenience or concern this may have caused to customers who have been waiting.<br><br><br> If you wish to request a refund or purchase event merchandise, please review the details below and send the required information to the Cygames dedicated contact point.<br><span style=\"font-size: 12px;\">*If you have already received an email from JTB and submitted the required information to the Cygames dedicated contact point, there is no need to resubmit the same information. <br>*Please send your email in Japanese or English.</span><br><br><strong>■Deadline</strong><br> November 30, 2026, at 11:59 PM PST (UTC−8 / Los Angeles time)<br><span style=\"font-size: 12px;\">*Japan Time: December 1, 2026, 4:59 PM (JST)</span><br><br> If you wish to receive a refund or purchase concert merchandise through our online store, please submit the “Information We Need from You” listed below by the deadline above.<br> Please submit supporting documents (such as receipts) and bank account information in accordance with future instructions.<br><span style=\"font-size: 12px;\">*Please note that we may be unable to issue refunds after the above deadline has passed.</span><br><br> Please note that AXS or JTB has already sent refund notifications regarding the cost of concert tickets and the JTB Official Tour.<br><br><strong>■ Regarding Refund Amounts</strong><br> &lt;If You Traveled&gt;<br> ・Accommodation expenses in Los Angeles<br> For those who were scheduled to attend either the DAY 1 or DAY 2 performance, we will refund the actual cost of up to 2 nights’ accommodation; for those who were scheduled to attend both performances, we will refund the actual cost of up to 3 nights’ accommodation.<br> The maximum refund per person per night is 50,000 yen if refunded in Japanese yen, or 320 U.S. dollars if refunded in U.S. dollars.<br><br> ・Airfare to Los Angeles<br> We will reimburse the actual cost of round-trip airfare, including fuel surcharges, airport taxes, and other applicable fees.<br> The maximum refund amount per person per round trip is 700,000 yen if refunded in Japanese yen, or 4,450 U.S. dollars if refunded in U.S. dollars.<br><br> &lt;If you cancel your reservation without traveling&gt;<br> For eligible items, we will refund the full amount of any cancellation fees actually incurred.<br> In this case, the maximum refund amounts for accommodation and airfare mentioned above do not apply.<br><br> &lt;If you booked a JTB Official Tour&gt;<br> JTB will refund the full amount of the accommodation and airfare included in the tour.<br><br><strong>■ Regarding Mail-Order Sales of Concert Merchandise</strong><br> For those wishing to purchase concert merchandise through mail order, we will review your application information and provide separate instructions regarding the purchase process.<br><br> Please note that shipping is available only to regions other than the United States and Canada.<br> If you reside in the United States or Canada, please use the mail-order service listed below.<br> The sales period ends at 11:59 PM (PT) on November 16, 2026.<br><a href=\"https://www.goodsmileus.com/\" target=\"_blank\">https://www.goodsmileus.com/</a><br><br><strong>■Mailing Address</strong><br> ts7th_umamusume_la_support@contact.cygames.co.jp<br><br><strong>■Handling of Personal Information and Disclosure to Third Parties</strong><br> Cygames, Inc. will use the personal information you submit to process refunds and handle mail-order sales of event merchandise related to this matter.<br> Additionally, to verify your application information, we will provide a portion of the personal information you submit to AXS Group LLC and its group companies, or to JTB Corporation, which is the entity receiving your application.<br> For further details regarding the handling of personal information, please refer to Cygames, Inc.’s Privacy Policy.<br><a href=\"https://www.cygames.co.jp/policy/\" target=\"_blank\">https://www.cygames.co.jp/policy/</a><br><br><strong>■ Information We Need from You</strong><br> Please copy and paste the text below into the body of your email and fill in each field.<br> Please select and leave the applicable options.<br><br> [1] Where you purchased tickets or booked the tour<br> AXS / JTB<br><br> [2] Seat number for the performance (only for those who selected “AXS” in [1])<br> Performance Date:<br> Section (SECTION):<br> Row (ROW):<br> Seat Number (SEAT):<br><br> *If you purchased multiple performance tickets, please fill in the information for all of them.<br><br> [3] Refunds for Travel Expenses, Cancellation Fees, etc.<br> Yes / No<br><br> [4] Mail-Order Purchase of Performance Merchandise (Shipping to regions other than the U.S. and Canada)<br> Yes / No<br><br> [5] Country or Region of Current Residence<br> Country/Region:<br><br> [6] Email address used when purchasing tickets on AXS or registering for the tour<br> Email Address:<br><br><strong>■Next Steps After Contacting Us</strong><br> After reviewing the information you submitted, the Cygames Dedicated Support Desk will contact you with details on how to proceed based on your request.<br><br> In this email, we will confirm your requests regarding refunds and the purchase of event merchandise through mail order.<br> Please submit any supporting documents, such as receipts, and your bank account information as instructed in our future communications.<br><br> We apologize for any inconvenience this may cause and appreciate your cooperation.",
+        "post_at": 1794554880,
+        "post_platform_flag": 24,
+        "row_number": 6,
+        "title": "『7th EVENT in LOS ANGELES』返金と公演グッズの通信販売に関するご案内",
+        "title_english": "Notice Regarding Refunds and Online Sales of Merchandise for the “7th EVENT in LOS ANGELES”",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3547,
+      "page_url": "https://umapyoi.net/news/3547?lang=jp",
+      "title": "New Umamusume Training Cards Are Here! The Select Pickup Support Card Gacha Is Now Live!",
+      "title_jp": "育成ウマ娘が新登場！セレクトピックアップ サポートカードガチャも開催！",
+      "posted_at": "2026-11-16T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha",
+        "campaign"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/announce_banner_3484_2.png?c=20261111180734",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/announce_banner_3484_2.png?c=20261111180734",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30484.png?c=20261111180734",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30484.png?c=20261111180734",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30485.png?c=20261111180734",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30485.png?c=20261111180734",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/header_40200002.png?c=20261111180734",
+          "field_path": "$.message",
+          "likely_banner": false
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/header_40200002.png?c=20261111180734",
+          "field_path": "$.message_english",
+          "likely_banner": false
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3547/Thumbnail/announce_banner_3484.png?c=20261111180734",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 30484,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30484.png?c=20261111180734"
+        },
+        {
+          "gacha_id": 30485,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30485.png?c=20261111180734"
+        }
+      ],
+      "raw": {
+        "announce_id": 3547,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3547/Thumbnail/announce_banner_3484.png?c=20261111180734",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/16 12:00から、「デアリングタクト登場! プレミアム プリティーダービーガチャ」（略称：「デアリングタクト登場! プレミアムガチャ」）と「セレクトピックアップ サポートカードガチャ」が開催しました。<br>「デアリングタクト登場! プレミアム プリティーダービーガチャ」では、新たな育成ウマ娘が登場します。<br>ピックアップ期間中は、対象の育成ウマ娘の提供割合がアップします。<br><h3 class=\"subheading\">デアリングタクト登場! プレミアムガチャ</h3>「デアリングタクト登場! プレミアム プリティーダービーガチャ」では、★3育成ウマ娘の提供割合が「ピックアップ プリティーダービーガチャ」の1.5倍になります。<br><br>※ピックアップ対象の育成ウマ娘の提供割合は、「ピックアップ プリティーダービーガチャ」におけるピックアップ対象の育成ウマ娘の提供割合と同じです。提供割合の詳細は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br><br>ピックアップ期間中に対象の★3育成ウマ娘を獲得すると、その育成ウマ娘の専用ピースをおまけとして通常より多く獲得できます。 開催期間中は、対象の★3育成ウマ娘を獲得するたびに、何度でもおまけを獲得できます。<br>「育成ウマ娘交換Pt」を消費して対象の★3育成ウマ娘を獲得した場合でも、おまけを獲得できます。<br><h3 class=\"subheading\">セレクトピックアップ サポートカードガチャ</h3>「セレクトピックアップ サポートカードガチャ」では、下記「■ピックアップサポートカード候補」に記載のSSRサポートカードの中から2枚を選び、「ピックアップ選択サポートカード」として設定できます。<br>「ピックアップ選択サポートカード」として設定したカードは、提供割合がアップします。<br><br>※「ピックアップ選択サポートカード」は必ず2枚選択する必要がございます。<br>※「ピックアップ選択サポートカード」に選ばなかった「■ピックアップサポートカード候補」に記載のSSRサポートカードも、ガチャから出現します。<br><h2 class=\"heading\">開催期間</h2>デアリングタクト登場! プレミアム プリティーダービーガチャ<br>11/16 12:00 ～ 12/21 11:59<br><br>セレクトピックアップ サポートカードガチャ<br>11/16 12:00 ～ 11/30 11:59<br><br>※今回は、「デアリングタクト登場! プレミアム プリティーダービーガチャ」と「セレクトピックアップ サポートカードガチャ」の開催期間が異なります。<br><h2 class=\"heading\">育成ウマ娘</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30484.png?c=20261111180734\"></figure>■新登場の育成ウマ娘（ピックアップ対象）<br>★★★ [白光のレガリア]デアリングタクト<br><br>■進化スキルについて<br>[白光のレガリア]デアリングタクトの覚醒スキル「独立独歩」は、2つの進化スキルのうち育成中に進化条件を満たしたものから、どちらか1つのみ選択して進化させることができます。<br><br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/announce_banner_3484_2.png?c=20261111180734\"></figure><br>■交換対象外の引換券について<br>[白光のレガリア]デアリングタクトは、一部を除いて★3引換券の交換対象外になります。<br><br>＜交換対象外の引換券＞<br>・2026/11/16 12:00以降に登場する★3引換券<br>＜交換対象の引換券＞<br>・新人トレーナー応援 ★3引換券<br><br>※交換対象となる★3引換券は予告なく変更する場合がございます。<br><br>■ピックアップ対象の育成ウマ娘<br>★★★ [白光のレガリア]デアリングタクト<br>＜おまけ内容＞<br>[白光のレガリア]デアリングタクトのピース×90<br><h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30485.png?c=20261111180734\"></figure>■ピックアップサポートカード候補<br>・SSR [永久の誓い、永久の輝き]サトノダイヤモンド<br>・SSR [刀光散らしてClash！]タップダンスシチー<br>・SSR [心覚えし、京の華]エアグルーヴ<br>・SSR [天才的ユートピア]トウカイテイオー<br>・SSR [吉兆招福チョコ来たる]マチカネフクキタル<br>・SSR [その執念は怒濤が如く]メイショウドトウ<br>・SSR [巻頭カラーの夏]キセキ<br>・SSR [賑やかな未来を乗せて走れ！]サクラチヨノオー<br>・SSR [両手いっぱい、小倉愛]ナイスネイチャ<br>・SSR [Innovator]フォーエバーヤング<br><h2 class=\"heading\">注意事項</h2>1. 今回新しく登場する育成ウマ娘は、次回以降の「プリティーダービーガチャ」からも登場します。<br>2. 「育成ウマ娘交換Pt」および「サポートカード交換Pt」は、開催中のほかのガチャや、次回以降のガチャに引き継がれません。<br>3. ガチャ開催期間中に使用しなかった200Pt未満の「育成ウマ娘交換Pt」および「サポートカード交換Pt」は、ガチャ終了後に自動で「クローバー」へと変換されます。<br>4. ガチャの詳細、提供割合およびその他の注意事項は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br>5. 継承スキルの詳細は、ガチャ画面右上の[育成ウマ娘詳細]＞[スキル詳細]からご確認ください。<br>6. 開催期間および内容は、予告なく変更する場合がございます。<br><h2 class=\"heading\">ウマ娘ストーリー解放キャンペーン</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/header_40200002.png?c=20261111180734\"></figure>[白光のレガリア]デアリングタクトの登場を記念して、デアリングタクトのウマ娘ストーリー第1話～第4話を期間限定で解放します。<br>解放期間中は、ストーリーの解放条件を満たしていない場合でも視聴できます。<br><h2 class=\"heading\">ウマ娘ストーリー解放期間</h2>11/16 12:00 ～ 12/21 11:59<br><h2 class=\"heading\">対象ウマ娘</h2>・デアリングタクト<br><h2 class=\"heading\">注意事項</h2>1. ストーリー解放期間中は、対象ウマ娘を獲得していなくても、ウマ娘ストーリー第1話～第4話を視聴できます。<br>2. 解放期間中に対象ウマ娘のウマ娘ストーリー第1話～第4話を視聴した場合は、「初回ジュエル報酬の獲得」、「ウマ娘ストーリーの獲得」、「ウマ娘名鑑の経験値獲得」のすべてが適用されます。<br>3. 解放期間中に対象ウマ娘のウマ娘ストーリー第1話～第4話を視聴しなかった場合は、「初回ジュエル報酬の獲得」、「ウマ娘ストーリーの獲得」、「ウマ娘名鑑の経験値獲得」は適用されません。<br>4. 解放期間終了後は、視聴していない対象ウマ娘のウマ娘ストーリーは解放されていない状態に戻ります。<br>5. ウマ娘ストーリーは、チュートリアル完了後に視聴できます。",
+        "message_english": "Starting at 12:00 on November 16, the “Daring Tact Arrives! Premium Pretty Derby Gacha” (abbreviated as “Daring Tact Arrives! Premium Gacha”) and the “Select Pickup Support Card Gacha” went live.<br> The “Daring Tact Arrives! Premium Pretty Derby Gacha” introduces a new trainable Umamusume.<br> During the featured period, the drop rate for the eligible training Umamusume will be increased.<br><h3 class=\"subheading\"> Daring Tact Arrives! Premium Gacha</h3> In the “Daring Tact Arrives! Premium Pretty Derby Gacha,” the drop rate for ★3 Training Umamusume will be 1.5 times that of the “Pickup Pretty Derby Gacha.”<br><br> *The drop rate for featured Umamusume characters is the same as that for featured characters in the “Featured Pretty Derby Gacha.” Please check [Gacha Details] at the top of the gacha screen for specific drop rates.<br><br> If you obtain an eligible ★3 Trainable Umamusume during the Pickup period, you’ll receive more of that character’s exclusive pieces as a bonus than usual. You can receive this bonus as many times as you like whenever you obtain an eligible ★3 Trainable Umamusume during the event period.<br> You can also receive the bonus even if you obtain an eligible ★3 Training Umamusume by spending “Training Umamusume Exchange Points.”<br><h3 class=\"subheading\"> Select Pickup Support Card Gacha</h3> In the “Select Pickup Support Card Gacha,” you can choose two SSR Support Cards from the list below under “■ Pickup Support Card Candidates” and set them as your “Selected Pickup Support Cards.”<br> The drop rate for cards set as “Selected Pickup Support Cards” will be increased.<br><br> *You must select exactly 2 “Pickup Support Cards.”<br> * SSR Support Cards listed in “■ Pickup Support Card Candidates” that were not selected as “Pickup Support Cards” will also appear in the gacha.<br><h2 class=\"heading\"> Event Period</h2> Daring Tact Arrives! Premium Pretty Derby Gacha<br> November 16, 12:00 PM – December 21, 11:59 AM<br><br> Select Pickup Support Card Gacha<br> November 16, 12:00 PM – November 30, 11:59 AM<br><br> *Please note that the event periods for the “Daring Tact Arrives! Premium Pretty Derby Gacha” and the “Select Pickup Support Card Gacha” differ this time.<br><h2 class=\"heading\"> Trainable Umamusume</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30484.png?c=20261111180734\"></figure> ■Newly Added Training Umamusume (Featured)<br> ★★★ [Regalia of White Light] Daring Tact<br><br> ■About Evolution Skills<br> For [Regalia of White Light] Daring Tact’s Awakening Skill “Go It Alone,” you can choose to evolve only one of the two Evolution Skills—whichever meets the evolution conditions during training.<br><br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/announce_banner_3484_2.png?c=20261111180734\"></figure><br> ■ Regarding Vouchers Not Eligible for Exchange<br> [Regalia of White Light] Daring Tact is not eligible for exchange with ★3 redemption tickets, with a few exceptions.<br><br> &lt;Vouchers Not Eligible for Exchange&gt;<br> ・★3 Vouchers released on or after November 16, 2026, at 12:00 PM<br> &lt;Exchangeable Vouchers&gt;<br> ・New Trainer Support ★3 Redemption Voucher<br><br> *The ★3 Vouchers eligible for exchange are subject to change without notice.<br><br> ■ Featured Umamusume for Training<br> ★★★ [Regalia of White Light] Daring Tact<br> &lt;Bonus Contents&gt;<br> [Regalia of White Light] Daring Tact Pieces ×90<br><h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/gacha_banner_30485.png?c=20261111180734\"></figure> ■Featured Support Card Candidates<br> ・SSR [Eternal Vow, Eternal Radiance] Satono Diamond<br> ・SSR [Blade Light Scatters—Clash!] Tap Dance City<br> ・SSR [Etched in the Heart, the Splendor of Kyoto] Air Groove<br> ・SSR [Genius Utopia] Tokai Teio<br> ・SSR [Auspicious Chocolate Brings Good Fortune] Matikane​fukukitaru<br> ・SSR [That Determination Is Like a Raging Torrent] Meisho Doto<br> ・SSR [Summer on the Front Cover] Kiseki<br> ・SSR [Run Toward a Lively Future!] Sakura Chiyono O<br> ・SSR [Arms Full of Ogura Love] Nice Nature<br> ・SSR [Innovator] Forever Young<br><h2 class=\"heading\"> Important Notes</h2> 1. The new Training Umamusume introduced in this event will also appear in future “Pretty Derby Gacha” events.<br> 2. “Training Umamusume Exchange Points” and “Support Card Exchange Points” will not carry over to other currently active gachas or to future gachas.<br> 3. Any “Training Umamusume Exchange Points” and “Support Card Exchange Points” totaling less than 200 points that are not used during the gacha event period will be automatically converted to “Clover” after the gacha ends.<br> 4. Please check [Gacha Details] at the top of the gacha screen for details on the gacha, drop rates, and other important notes.<br> 5. For details on inherited skills, please check [Training Umamusume Details] &gt; [Skill Details] in the upper-right corner of the gacha screen.<br> 6. The event period and content are subject to change without prior notice.<br><h2 class=\"heading\"> Umamusume Story Unlock Campaign</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3547/Header/header_40200002.png?c=20261111180734\"></figure> To commemorate the debut of [Regalia of White Light] Daring Tact, Episodes 1 through 4 of Daring Tact’s Umamusume Story will be unlocked for a limited time.<br> During the unlock period, you can view the story even if you haven’t met the unlock conditions.<br><h2 class=\"heading\"> Umamusume Story Unlock Period</h2> November 16, 12:00 PM – December 21, 11:59 AM<br><h2 class=\"heading\"> Eligible Umamusume</h2> ・Daring Tact<br><h2 class=\"heading\"> Important Notes</h2> 1. During the story unlock period, you can watch Chapters 1–4 of the Umamusume Story even if you do not own the eligible Umamusume.<br> 2. If you watch Chapters 1–4 of an eligible Umamusume’s story during the unlock period, you will receive all of the following: the “First-Time Jewel Reward,” the “Umamusume Story,” and “Umamusume Encyclopedia Experience Points.”<br> 3. If you do not watch Chapters 1–4 of an eligible Umamusume’s story during the unlock period, you will not receive the “First-Time Jewel Reward,” “Umamusume Story,” or “Umamusume Encyclopedia Experience Points.”<br> 4. After the unlock period ends, the Umamusume Stories for eligible Umamusume characters that you have not watched will revert to their locked state.<br> 5. You can watch the Umamusume Story after completing the tutorial.",
+        "post_at": 1794798000,
+        "post_platform_flag": 62,
+        "row_number": 3,
+        "title": "育成ウマ娘が新登場！セレクトピックアップ サポートカードガチャも開催！",
+        "title_english": "New Umamusume Training Cards Are Here! The Select Pickup Support Card Gacha Is Now Live!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3546,
+      "page_url": "https://umapyoi.net/news/3546?lang=jp",
+      "title": "[Preview] New Training Umamusume Cards Are Coming! The Select Pickup Support Card Gacha is also starting soon!",
+      "title_jp": "【予告】育成ウマ娘が新登場！セレクトピックアップ サポートカードガチャも開催決定！",
+      "posted_at": "2026-11-15T09:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/announce_banner_3484_2.png?c=20261111180450",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/announce_banner_3484_2.png?c=20261111180450",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450",
+          "field_path": "$.article_image",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30485.png?c=20261111180450",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30485.png?c=20261111180450",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 30484,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450"
+        },
+        {
+          "gacha_id": 30485,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30485.png?c=20261111180450"
+        }
+      ],
+      "raw": {
+        "announce_id": 3546,
+        "announce_label": 1,
+        "article_image": "https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450",
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/16 12:00から、「デアリングタクト登場! プレミアム プリティーダービーガチャ」（略称：「デアリングタクト登場! プレミアムガチャ」）と「セレクトピックアップ サポートカードガチャ」の開催が決定しました。<br>「デアリングタクト登場! プレミアム プリティーダービーガチャ」では、新たな育成ウマ娘が登場します。<br><h3 class=\"subheading\">デアリングタクト登場! プレミアムガチャ</h3>「デアリングタクト登場! プレミアム プリティーダービーガチャ」では、★3育成ウマ娘の提供割合が「ピックアップ プリティーダービーガチャ」の1.5倍になります。<br><br>※ピックアップ対象の育成ウマ娘の提供割合は、「ピックアップ プリティーダービーガチャ」におけるピックアップ対象の育成ウマ娘の提供割合と同じです。提供割合の詳細は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br><br>ピックアップ期間中に対象の★3育成ウマ娘を獲得すると、その育成ウマ娘の専用ピースをおまけとして通常より多く獲得できます。<br><h3 class=\"subheading\">セレクトピックアップ サポートカードガチャ</h3>「セレクトピックアップ サポートカードガチャ」では、下記「■ピックアップサポートカード候補」に記載のSSRサポートカードの中から2枚を選び、「ピックアップ選択サポートカード」として設定できます。<br>「ピックアップ選択サポートカード」として設定したカードは、提供割合がアップします。<br><br>※「ピックアップ選択サポートカード」は必ず2枚選択する必要がございます。<br>※「ピックアップ選択サポートカード」に選ばなかった「■ピックアップサポートカード候補」に記載のSSRサポートカードも、ガチャから出現します。<br><h2 class=\"heading\">開催期間</h2>デアリングタクト登場! プレミアム プリティーダービーガチャ<br>11/16 12:00 ～ 12/21 11:59<br><br>セレクトピックアップ サポートカードガチャ<br>11/16 12:00 ～ 11/30 11:59<br><br>※今回は、「デアリングタクト登場! プレミアム プリティーダービーガチャ」と「セレクトピックアップ サポートカードガチャ」の開催期間が異なります。<br><h2 class=\"heading\">育成ウマ娘</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450\"></figure>■新登場の育成ウマ娘（ピックアップ対象）<br>★★★ [白光のレガリア]デアリングタクト<br><br>■進化スキルについて<br>[白光のレガリア]デアリングタクトの覚醒スキル「独立独歩」は、2つの進化スキルのうち育成中に進化条件を満たしたものから、どちらか1つのみ選択して進化させることができます。<br><br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/announce_banner_3484_2.png?c=20261111180450\"></figure><br>■交換対象外の引換券について<br>[白光のレガリア]デアリングタクトは、一部を除いて★3引換券の交換対象外になります。<br><br>＜交換対象外の引換券＞<br>・2026/11/16 12:00以降に登場する★3引換券<br>＜交換対象の引換券＞<br>・新人トレーナー応援 ★3引換券<br><br>※交換対象となる★3引換券は予告なく変更する場合がございます。<br><br>■ピックアップ対象の育成ウマ娘<br>★★★ [白光のレガリア]デアリングタクト<br>＜おまけ内容＞<br>[白光のレガリア]デアリングタクトのピース×90<br><h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30485.png?c=20261111180450\"></figure>■ピックアップサポートカード候補<br>・SSR [永久の誓い、永久の輝き]サトノダイヤモンド<br>・SSR [刀光散らしてClash！]タップダンスシチー<br>・SSR [心覚えし、京の華]エアグルーヴ<br>・SSR [天才的ユートピア]トウカイテイオー<br>・SSR [吉兆招福チョコ来たる]マチカネフクキタル<br>・SSR [その執念は怒濤が如く]メイショウドトウ<br>・SSR [巻頭カラーの夏]キセキ<br>・SSR [賑やかな未来を乗せて走れ！]サクラチヨノオー<br>・SSR [両手いっぱい、小倉愛]ナイスネイチャ<br>・SSR [Innovator]フォーエバーヤング<br><h2 class=\"heading\">注意事項</h2>1. 今回新しく登場する育成ウマ娘は、次回以降の「プリティーダービーガチャ」からも登場します。<br>2. ピックアップ対象の★2以下の育成ウマ娘を獲得した場合のおまけは、通常の獲得数と同じです。<br>3. 名前が同じ育成ウマ娘は、同じチームに編成できません。また、育成で同時に継承ウマ娘として選択できません。<br>4. 開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "Starting at 12:00 on November 16, the “Daring Tact Arrives! Premium Pretty Derby Gacha” (abbreviated as “Daring Tact Arrives! Premium Gacha”) and the “Select Pickup Support Card Gacha” will be held.<br> In the “Daring Tact Arrives! Premium Pretty Derby Gacha,” a new trainable Umamusume will make her debut.<br><h3 class=\"subheading\"> Daring Tact Arrives! Premium Gacha</h3> In the “Daring Tact Arrives! Premium Pretty Derby Gacha,” the drop rate for ★3 Training Umamusume will be 1.5 times that of the “Pickup Pretty Derby Gacha.”<br><br> *The drop rate for the featured training Umamusume is the same as that for the featured training Umamusume in the “Pickup Pretty Derby Gacha.” Please check [Gacha Details] at the top of the gacha screen for specific drop rates.<br><br> If you obtain an eligible ★3 Trainable Umamusume during the Pickup period, you’ll receive more of that Umamusume’s exclusive pieces as a bonus than usual.<br><h3 class=\"subheading\"> Select Pickup Support Card Gacha</h3> In the “Select Pickup Support Card Gacha,” you can choose two SSR Support Cards from the list below under “■ Pickup Support Card Candidates” and set them as “Selected Pickup Support Cards.”<br> The drop rate for cards set as “Selected Pickup Support Cards” will be increased.<br><br> *You must select exactly two “Pickup Support Cards.”<br> * SSR Support Cards listed in “■ Pickup Support Card Candidates” that were not selected as “Pickup Support Cards” will also appear in the gacha.<br><h2 class=\"heading\"> Event Period</h2> Daring Tact Arrives! Premium Pretty Derby Gacha<br> November 16, 12:00 PM – December 21, 11:59 AM<br><br> Select Pickup Support Card Gacha<br> November 16, 12:00 PM – November 30, 11:59 AM<br><br> *Please note that the event periods for the “Daring Tact Arrives! Premium Pretty Derby Gacha” and the “Select Pickup Support Card Gacha” differ this time.<br><h2 class=\"heading\"> Trainable Umamusume</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30484.png?c=20261111180450\"></figure> ■Newly Added Training Umamusume (Featured)<br> ★★★ [Regalia of White Light] Daring Tact<br><br> ■About Evolution Skills<br> For [Regalia of White Light] Daring Tact’s Awakening Skill “Independent Stride,” you can choose to evolve only one of the two Evolution Skills—whichever meets the evolution conditions during training.<br><br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/announce_banner_3484_2.png?c=20261111180450\"></figure><br> ■ Regarding Vouchers Not Eligible for Exchange<br> [Regalia of White Light] Daring Tact is not eligible for exchange with ★3 redemption tickets, with a few exceptions.<br><br> &lt;Vouchers Not Eligible for Exchange&gt;<br> ・★3 Vouchers released on or after November 16, 2026, at 12:00 PM<br> &lt;Exchangeable Vouchers&gt;<br> ・New Trainer Support ★3 Redemption Voucher<br><br> *The ★3 Vouchers eligible for exchange are subject to change without notice.<br><br> ■ Featured Umamusume for Training<br> ★★★ [Regalia of White Light] Daring Tact<br> &lt;Bonus Contents&gt;<br> [Regalia of White Light] Daring Tact Pieces ×90<br><h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3546/Header/gacha_banner_30485.png?c=20261111180450\"></figure> ■Featured Support Card Candidates<br> ・SSR [Eternal Vow, Eternal Radiance] Satono Diamond<br> ・SSR [Blade Light Scatters—Clash!] Tap Dance City<br> ・SSR [Etched in the Heart, the Splendor of Kyoto] Air Groove<br> ・SSR [Genius Utopia] Tokai Teio<br> ・SSR [Auspicious Chocolate Brings Good Fortune] Matikane​fukukitaru<br> ・SSR [That Determination Is Like a Raging Torrent] Meisho Doto<br> ・SSR [Summer on the Front Cover] Kiseki<br> ・SSR [Run Toward a Lively Future!] Sakura Chiyono O<br> ・SSR [Arms Full of Ogura Love] Nice Nature<br> ・SSR [Innovator] Forever Young<br><h2 class=\"heading\"> Important Notes</h2> 1. The new Umamusume characters introduced in this event will also appear in future “Pretty Derby Gacha” events.<br> 2. If you obtain a featured Training Umamusume rated ★2 or lower, the bonus you receive will be the same as for a regular acquisition.<br> 3. Umamusume with the same name cannot be assigned to the same team. Additionally, they cannot be selected simultaneously as Inheritance Umamusume during training.<br> 4. The event period and details are subject to change without prior notice.",
+        "post_at": 1794733200,
+        "post_platform_flag": 62,
+        "row_number": 4,
+        "title": "【予告】育成ウマ娘が新登場！セレクトピックアップ サポートカードガチャも開催決定！",
+        "title_english": "[Preview] New Training Umamusume Cards Are Coming! The Select Pickup Support Card Gacha is also starting soon!",
+        "update_at": null
+      }
+    },
     {
       "post_id": 3542,
       "page_url": "https://umapyoi.net/news/3542?lang=jp",
@@ -60,6 +307,77 @@
         "row_number": 1,
         "title": "『7th EVENT in LOS ANGELES』返金等に関するご案内メール送信のお知らせ",
         "title_english": "Notice Regarding the Sending of an Email Regarding Refunds, etc., for the “7th EVENT in LOS ANGELES”",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3540,
+      "page_url": "https://umapyoi.net/news/3540?lang=jp",
+      "title": "The \"Agnes Tachyon Factor Research\" event is now underway!",
+      "title_jp": "イベント「アグネスタキオンの因子研究」開催中！",
+      "posted_at": "2026-11-10T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "legend_race",
+        "factor_research"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3540/Thumbnail/banner_31200006.png?c=20261105120328",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "raw": {
+        "announce_id": 3540,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3540/Thumbnail/banner_31200006.png?c=20261105120328",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/10 12:00から、イベント「アグネスタキオンの因子研究」を開催中です！<br><br>本イベントでは、研究ゲージを溜めることで「因子研究レポート」などのさまざまな報酬を獲得できます。<br>「因子研究レポート」を使用することで、殿堂入りウマ娘や継承専用ウマ娘の一部因子を強化できます。<br><br>本イベントで獲得した「因子研究レポート」を使用できるのは、本イベントの因子強化期間が終了するまでです。<br>※「因子研究レポート」は、イベント開催期間中も使用できます。<h2 class=\"heading\">イベント開催期間</h2>11/10 12:00 ～ 11/19 11:59<h2 class=\"heading\">報酬受取・因子強化期間</h2>11/19 12:00 ～ 11/22 11:59<h2 class=\"heading\">研究ゲージ</h2>研究ゲージを溜められるのは、下記です。<br>・育成<br>・全国興行<br>・チーム競技場<br>・デイリーレース<br>・デイリーレジェンドレース<h3 class=\"subheading\">研究成果報酬</h3>研究ゲージが1本以上溜まった状態でイベントトップ画面に移動することで、溜まった研究ゲージの本数に応じた研究成果報酬が獲得できます。<h2 class=\"heading\">因子強化について</h2>本イベントでは、「因子研究レポート」を使用し、殿堂入りウマ娘や継承専用ウマ娘の因子強化ができます。<br>因子強化をすると因子の★を増やせます。<h3 class=\"subheading\">因子研究レポートで強化できる因子</h3>・基礎能力因子<br>・適性因子<br>・固有因子<br>※汎用因子は強化できません。<h2 class=\"heading\">注意事項</h2>1. イベントについての詳細は、イベント「アグネスタキオンの因子研究」のトップ画面右上の[ヘルプ]をご確認ください。<br>2. イベント開催期間および内容は、予告なく変更する場合がございます。<br>3. 本イベントで獲得した「因子研究レポート」は、次回のイベントに持ち越せません。<br>4. 因子を★4以上にはできません。<br>5. 開催期間を過ぎてから育成およびレースを完了した場合、研究ゲージは上昇しません。<br>6. 育成中のウマ娘の継承ウマ娘に因子強化をした場合、その育成では継承ウマ娘への因子強化は反映されません。<br>※継承ウマ娘は、育成開始時の因子の状態が適用されます。<br>7. 殿堂入りウマ娘や継承専用ウマ娘の継承元となったウマ娘に因子強化をした場合、その殿堂入りウマ娘や継承専用ウマ娘の因子に因子強化は反映されません。<br>8. 「因子研究レポート」の類似アイテム「因子強化レポート」は、本イベント画面からは使用できません。 [メニュー]＞[持ち物/変換]＞[消費アイテム]から使用してください。",
+        "message_english": "The \"Agnes Tachyon's Factor Research\" event is now underway, starting at 12:00 on November 10!<br><br> In this event, you can earn various rewards, such as “Factor Research Reports,” by filling the research gauge.<br> By using “Factor Research Reports,” you can enhance certain factors of Hall of Fame Umamusume and Umamusume designated for inheritance.<br><br> \"Factor Research Reports\" obtained during this event can only be used until the event’s factor enhancement period ends.<br> *“Factor Research Reports” can be used even while the event is still active.<h2 class=\"heading\"> Event Period</h2> November 10, 12:00 PM – November 19, 11:59 AM<h2 class=\"heading\"> Reward Claim &amp; Factor Enhancement Period</h2> November 19, 12:00 PM – November 22, 11:59 AM<h2 class=\"heading\"> Research Gauge</h2> You can accumulate Research Gauge through the following:<br> ・Training<br> ・National Tournaments<br> ・Team Arena<br> ・Daily Races<br> ・Daily Legend Race<h3 class=\"subheading\"> Research Rewards</h3> If you navigate to the event top screen while having at least one Research Gauge bar filled, you will receive Research Achievement Rewards based on the number of filled Research Gauge bars.<h2 class=\"heading\"> About Factor Enhancement</h2> In this event, you can use “Factor Research Reports” to enhance the factors of Hall of Fame Umamusume and Umamusume designated for inheritance.<br> Enhancing factors increases their star rating.<h3 class=\"subheading\"> Factors That Can Be Enhanced with Factor Research Reports</h3> ・Basic Ability Factors<br> ・Aptitude Factors<br> ・Unique Factors<br> *General Factors cannot be enhanced.<h2 class=\"heading\"> Important Notes</h2> 1. For details about the event, please check the [Help] link in the upper-right corner of the main screen for the event “Agnes Tachyon’s Factor Research.”<br> 2. The event period and content are subject to change without notice.<br> 3. “Factor Research Reports” obtained in this event cannot be carried over to the next event.<br> 4. Factors cannot be upgraded to ★4 or higher.<br> 5. If you complete training or a race after the event period has ended, the Research Gauge will not increase.<br> 6. If you enhance the factors of an inherited Umamusume while training another Umamusume, the factor enhancements will not be applied to the inherited Umamusume during that training session.<br> *For inherited Umamusume, the factor status at the start of training applies.<br> 7. If you enhance the factors of an Umamusume that served as the source for a Hall of Fame Umamusume or an Inheritance-Exclusive Umamusume, the factor enhancement will not be reflected in the factors of that Hall of Fame Umamusume or Inheritance-Exclusive Umamusume.<br> 8. The “Factor Enhancement Report,” which is similar to the “Factor Research Report,” cannot be used from this event screen. Please use it via [Menu] &gt; [Inventory/Convert] &gt; [Consumable Items].",
+        "post_at": 1794279600,
+        "post_platform_flag": 62,
+        "row_number": 8,
+        "title": "イベント「アグネスタキオンの因子研究」開催中！",
+        "title_english": "The \"Agnes Tachyon Factor Research\" event is now underway!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3539,
+      "page_url": "https://umapyoi.net/news/3539?lang=jp",
+      "title": "Announcement: \"Agnes Tachyon's Factor Research\" Event Coming Soon!",
+      "title_jp": "イベント「アグネスタキオンの因子研究」開催予告！",
+      "posted_at": "2026-11-09T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "factor_research"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3539/Thumbnail/banner_31200005.png?c=20261105120211",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "raw": {
+        "announce_id": 3539,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3539/Thumbnail/banner_31200005.png?c=20261105120211",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/10 12:00から、イベント「アグネスタキオンの因子研究」を開催いたします！<br><br>「アグネスタキオンの因子研究」は、研究ゲージを溜めることで、「因子研究レポート」などの研究成果報酬を獲得できるイベントです。<br>研究ゲージは、育成や全国興行、チーム競技場、デイリープログラムで溜められます。<br><br>本イベントでは「因子研究レポート」を使用して、殿堂入りウマ娘や継承専用ウマ娘の一部因子を強化できます。<h2 class=\"heading\">開催期間</h2>11/10 12:00 ～ 11/19 11:59<h2 class=\"heading\">注意事項</h2>1. イベントの詳細については、開催後に掲載されるお知らせや、イベント「アグネスタキオンの因子研究」のトップ画面右上の[ヘルプ]をご確認ください。<br>2. イベント開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "Starting at 12:00 on November 10, we will be holding the event “Agnes Tachyon’s Factor Research”!<br><br> \"Agnes Tachyon's Factor Research\" is an event where you can earn research rewards, such as \"Factor Research Reports,\" by filling the research gauge.<br> You can fill the Research Gauge through Training, National Tournaments, Team Arena, and Daily Programs.<br><br> In this event, you can use “Factor Research Reports” to enhance certain factors of Hall of Fame Umamusume and Umamusume designated for inheritance.<h2 class=\"heading\"> Event Period</h2> November 10, 12:00 PM – November 19, 11:59 AM<h2 class=\"heading\"> Important Notes</h2> 1. For details about the event, please check the announcements posted after the event begins or click [Help] in the upper-right corner of the “Agnes Tachyon’s Factor Research” event main screen.<br> 2. The event period and content are subject to change without prior notice.",
+        "post_at": 1794193200,
+        "post_platform_flag": 62,
+        "row_number": 11,
+        "title": "イベント「アグネスタキオンの因子研究」開催予告！",
+        "title_english": "Announcement: \"Agnes Tachyon's Factor Research\" Event Coming Soon!",
         "update_at": null
       }
     },
@@ -92,6 +410,198 @@
         "row_number": 2,
         "title": "育成シナリオ「駿大祭編」におけるカルストンライトオの一部育成イベントの不具合について",
         "title_english": "Regarding a Bug in Some Training Events for Calstone Light O in the \"Shundai Festival\" Training Scenario",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3536,
+      "page_url": "https://umapyoi.net/news/3536?lang=jp",
+      "title": "\"Select Pickup\" Stamp Sheet Gacha Event Now Live!",
+      "title_jp": "セレクトピックアップ スタンプシートガチャ開催！",
+      "posted_at": "2026-11-10T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3536/Header/gacha_banner_50254.png?c=20261105120608",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3536/Header/gacha_banner_50254.png?c=20261105120608",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3536/Thumbnail/announce_banner_5254.png?c=20261105120608",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 50254,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3536/Header/gacha_banner_50254.png?c=20261105120608"
+        }
+      ],
+      "raw": {
+        "announce_id": 3536,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3536/Thumbnail/announce_banner_5254.png?c=20261105120608",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/10 12:00から、「セレクトピックアップ スタンプシートガチャ」（略称：「スタンプシートガチャ」）を開催しております。<br><br>「スタンプシートガチャ」は、ガチャを引くごとに虹の結晶片などの豪華報酬を獲得できる「スタンプシート機能」と、「セレクトピックアップ機能」がセットになったガチャです。<br>『5回引く!』（有償ジュエル750個）と、スタンプが10個貯まるごとに解放される、ピックアップSSR確定の『10回引く!』（有償ジュエル1500個）が利用できます。<h2 class=\"heading\">スタンプシート機能について</h2>「スタンプシートガチャ」では『5回引く!』と『10回引く!』のいずれかのガチャを引くごとにスタンプシートにスタンプが押されます。<br>スタンプシートに押されたスタンプの合計数に応じて、報酬を獲得できます。<br>スタンプが押される数は毎回抽選になっており、スタンプ個数の提供割合に基づき、1～5個のスタンプが押されます。<br>『10回引く!』はスタンプを合計10個獲得するごとに1回分が解放され、最大で3回まで引くことができます。<br>※『10回引く!』が解放されるまでは、『5回引く!』のみ引くことができます。<br>※『10回引く!』が解放された場合、『10回引く!』を引くまでは、『5回引く!』を引くことができません。<br>※3回目の『10回引く!』を引いた場合、以降は『5回引く!』と『10回引く!』のいずれも引くことができません。<br><br>『10回引く!』の10回目には、「ピックアップ選択サポートカード」として選択した3枚のSSRサポートカードのいずれかを確定で獲得できます。<br>スタンプシートは最大4シートまであり、獲得できるスタンプ報酬の詳細は、ガチャ画面の右下の『スタンプ報酬』ボタンから確認できます。<br><h2 class=\"heading\">スタンプ個数の提供割合</h2><table class=\"SelectStepupInfoTable\"><thead><tr><th>スタンプ個数</th><th>提供割合</th></tr></thead><tbody><tr><td>1個</td><td>45.000％</td></tr><tr><td>2個</td><td>35.000％</td></tr><tr><td>3個</td><td>15.000％</td></tr><tr><td>4個</td><td>3.000％</td></tr><tr><td>5個</td><td>2.000％</td></tr></tbody></table>※『5回引く!』と『10回引く!』で獲得できるスタンプ個数の提供割合はどちらも同じです。<br><h2 class=\"heading\">セレクトピックアップ機能について</h2>「スタンプシートガチャ」では、下記「■ピックアップサポートカード候補」に記載のSSRサポートカードの中から3枚を選び、「ピックアップ選択サポートカード」として設定できます。<br>「ピックアップ選択サポートカード」として設定したカードは、提供割合がアップします。<br><br>出現するサポートカードは2026/9/30までに開催されたガチャでリリースされたサポートカードです。<br>詳細は、ガチャ画面右上の[ガチャ詳細]、[サポートカード詳細]をご確認ください。<br>※「ピックアップ選択サポートカード」は必ず3枚選択する必要があります。<br>※「ピックアップ選択サポートカード」は設定後、いつでも変更できます。<br>※「ピックアップ選択サポートカード」に選ばなかった「■ピックアップサポートカード候補」に記載のSSRサポートカードも、ガチャから出現します。<br>※『10回引く!』の10回目には、「ピックアップ選択サポートカード」として選択した3枚のSSRサポートカードのいずれかを確定で獲得できます。<br><h2 class=\"heading\">開催期間</h2>11/10 12:00 ～ 12/28 11:59<br><h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3536/Header/gacha_banner_50254.png?c=20261105120608\"></figure>■ピックアップサポートカード候補<br>・SSR [As if Guided]エフフォーリア<br>・SSR [行き先はあたたかな場所]マチカネタンホイザ<br>・SSR [時に交わる海と空]ミスターシービー<br>・SSR [永久の誓い、永久の輝き]サトノダイヤモンド<br>・SSR [刀光散らしてClash！]タップダンスシチー<br>・SSR [心覚えし、京の華]エアグルーヴ<br>・SSR [天才的ユートピア]トウカイテイオー<br>・SSR [氷結晶の静域]アドマイヤグルーヴ<br>・SSR [響け、二人の凱歌]マルシュロレーヌ<br>・SSR [吉兆招福チョコ来たる]マチカネフクキタル<br>・SSR [その執念は怒濤が如く]メイショウドトウ<br>・SSR [巻頭カラーの夏]キセキ<br>・SSR [賑やかな未来を乗せて走れ！]サクラチヨノオー<br>・SSR [ぬくもりのノエル]フェノーメノ<br>・SSR [激録！爆走トナカイ事件]ゴールドシップ<br>・SSR [スマイル・エバーアフター]グランアレグリア<br>・SSR [全てに挑む勇ましき者]アグネスデジタル<br>・SSR [ゆかし、きらめきの旅路]ファインモーション<br>・SSR [単焦点でつかまえて]アストンマーチャン<br>・SSR [白に至る純真]デアリングタクト<br>・SSR [白に至る覚悟]デアリングハート<br>・SSR [夏空チルタイム]アーモンドアイ<br>・SSR [気まぐれ渡り星]ステイゴールド<br>・SSR [両手いっぱい、小倉愛]ナイスネイチャ<br>・SSR [Innovator]フォーエバーヤング<h2 class=\"heading\">注意事項</h2>1. 「スタンプシートガチャ」では「サポートカード交換Pt」は獲得できません。<br>2. 獲得したスタンプ報酬は、プレゼントに送られます。<br>3. プレゼントに送られたスタンプ報酬には、受け取り期限はございません。<br>4. ガチャの詳細、提供割合およびその他の注意事項は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br>5. 開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "Starting at 12:00 on November 10, we are holding the “Select Pickup Stamp Sheet Gacha” (abbreviated as “Stamp Sheet Gacha”).<br><br> The “Stamp Sheet Gacha” is a gacha that combines the “Stamp Sheet Feature”—which lets you earn generous rewards such as Rainbow Crystal Shards with every pull—with the “Select Pickup Feature.”<br> You can choose between “5 Pulls!” (750 Premium Gems) and “10 Pulls!” (1,500 Premium Gems), which unlocks a guaranteed SSR from the Pickup pool every time you collect 10 stamps.<h2 class=\"heading\"> About the Stamp Sheet Feature</h2> In the “Stamp Sheet Gacha,” a stamp is added to your stamp sheet every time you draw from either the “5 Draws!” or “10 Draws!” gacha.<br> You can earn rewards based on the total number of stamps collected on your stamp sheet.<br> The number of stamps awarded is determined by a random draw each time; based on the probability distribution, you will receive between 1 and 5 stamps.<br> For “Draw 10 Times!”, one draw is unlocked for every 10 stamps you collect, and you can draw up to a maximum of 3 times.<br> *Until “10-Draw!” is unlocked, you can only use “5-Draw!”.<br> *Once “10 Draws!” is unlocked, you cannot use “5 Draws!” until you have used “10 Draws!”<br> *Once you’ve drawn “10 Draws!” for the third time, you will no longer be able to draw either “5 Draws!” or “10 Draws!”<br><br> On the 10th “10-Draw!” pull, you are guaranteed to receive one of the three SSR Support Cards you selected as “Pickup Support Cards.”<br> There are up to 4 stamp sheets available, and you can view details on the stamp rewards you can earn by tapping the “Stamp Rewards” button in the bottom-right corner of the gacha screen.<br><h2 class=\"heading\"> Stamp Count Distribution Rates</h2><table class=\"SelectStepupInfoTable\"><thead><tr><th> Number of Stamps</th><th> Drop Rate</th></tr></thead><tbody><tr><td> 1 Stamp</td><td> 45.000%</td></tr><tr><td> 2</td><td> 35.000%</td></tr><tr><td> 3 items</td><td> 15.000%</td></tr><tr><td> 4 items</td><td> 3.000%</td></tr><tr><td> 5 items</td><td> 2.000%</td></tr></tbody></table> *The distribution of stamps you can earn from “Draw 5 Times!” and “Draw 10 Times!” is the same for both.<br><h2 class=\"heading\"> About the Select Pickup Feature</h2> In the “Stamp Sheet Gacha,” you can select 3 SSR Support Cards from the list of “■ Pickup Support Card Candidates” below and set them as “Pickup Support Cards.”<br> The drop rate for cards set as “Pickup Support Cards” will be increased.<br><br> The Support Cards that can appear are those released in Gachas held up to September 30, 2026.<br> For details, please check [Gacha Details] and [Support Card Details] in the upper-right corner of the gacha screen.<br> *You must select exactly 3 “Pickup Support Cards.”<br> * You can change your “Featured Support Cards” at any time after setting them.<br> * SSR Support Cards listed under “■ Featured Support Card Candidates” that were not selected as “Featured Support Cards” may also appear in the gacha.<br> * On the 10th pull of “10 Pulls!”, you are guaranteed to receive one of the three SSR Support Cards you selected as your “Pickup Selection Support Cards.”<br><h2 class=\"heading\"> Event Period</h2> November 10, 12:00 PM – December 28, 11:59 AM<br><h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3536/Header/gacha_banner_50254.png?c=20261105120608\"></figure> ■ Featured Support Card Candidates<br> ・SSR [As if Guided] Efforia<br> ・SSR [Destination: A Warm Place] Matikanetannhauser<br> ・SSR [Where Sea and Sky Meet] Mr. C.B.<br> ・SSR [Eternal Vow, Eternal Radiance] Satono Diamond<br> ・SSR [Blade Light Scatters—Clash!] Tap Dance City<br> ・SSR [Etched in My Heart: The Splendor of Kyoto] Air Groove<br> ・SSR [Genius Utopia] Tokai Teio<br> ・SSR [The Serene Realm of Ice Crystals] Admire Groove<br> ・SSR [Let Their Triumphant Hymn Ring Out] Marche Lorraine<br> ・SSR [Auspicious Chocolate Brings Good Fortune] Matikane​fukukitaru<br> ・SSR [That Determination Is Like a Raging Torrent] Meisho Doto<br> ・SSR [Summer on the Front Cover] Kiseki<br> ・SSR [Race Toward a Vibrant Future!] Sakura Chiyono O<br> ・SSR [A Warm Christmas] Fenomeno<br> ・SSR [The Sensational Tale! The Speeding Reindeer Incident] Gold Ship<br> ・SSR [Smile Ever After] Gran Alegria<br> ・SSR [The Brave One Who Takes on Everything] Agnes Digital<br> ・SSR [A Charming, Sparkling Journey] Fine Motion<br> ・SSR [Capture It with a Prime Lens] Aston Machan<br> ・SSR [Purity Leading to White] Daring Tact<br> ・SSR [Resolve to Reach White] Daring Heart<br> ・SSR [Summer Sky Chill Time] Almond Eye<br> ・SSR [Capricious Shooting Star] Stay Gold<br> ・SSR [Arms Full of Ogura Love] Nice Nature<br> ・SSR [Innovator] Forever Young<h2 class=\"heading\"> Important Notes</h2> 1. You cannot earn “Support Card Exchange Points” from the “Stamp Sheet Gacha.”<br> 2. Earned stamp rewards will be sent to your “Gift” section.<br> 3. There is no expiration date for stamp rewards sent to your “Gift” section.<br> 4. For gacha details, drop rates, and other important notes, please check [Gacha Details] at the top of the gacha screen.<br> 5. The event period and content are subject to change without prior notice.",
+        "post_at": 1794279600,
+        "post_platform_flag": 62,
+        "row_number": 9,
+        "title": "セレクトピックアップ スタンプシートガチャ開催！",
+        "title_english": "\"Select Pickup\" Stamp Sheet Gacha Event Now Live!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3535,
+      "page_url": "https://umapyoi.net/news/3535?lang=jp",
+      "title": "New Umamusume Training & Support Cards Are Here! Pickup Gacha Event Now Live!",
+      "title_jp": "育成ウマ娘&サポートカード新登場！ピックアップガチャ開催！",
+      "posted_at": "2026-11-10T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha",
+        "campaign"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30482.png?c=20261104123702",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30482.png?c=20261104123702",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30483.png?c=20261104123702",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30483.png?c=20261104123702",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/header_40200002.png?c=20261104123702",
+          "field_path": "$.message",
+          "likely_banner": false
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/header_40200002.png?c=20261104123702",
+          "field_path": "$.message_english",
+          "likely_banner": false
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3535/Thumbnail/announce_banner_3482.png?c=20261104123702",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 30482,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30482.png?c=20261104123702"
+        },
+        {
+          "gacha_id": 30483,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30483.png?c=20261104123702"
+        }
+      ],
+      "raw": {
+        "announce_id": 3535,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3535/Thumbnail/announce_banner_3482.png?c=20261104123702",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/10 12:00から、「ピックアップ プリティーダービーガチャ」と「ピックアップ サポートカードガチャ」が開催しました。<br>それぞれ新たな育成ウマ娘とサポートカードが登場します。<br><br>ピックアップ期間中は、対象の育成ウマ娘とサポートカードの提供割合がアップします。<br><br>さらに、ピックアップ期間中に対象の★3育成ウマ娘を獲得すると、その育成ウマ娘の専用ピースをおまけとして通常より多く獲得できます。<br>開催期間中は、対象の★3育成ウマ娘を獲得するたびに、何度でもおまけを獲得できます。<br>「育成ウマ娘交換Pt」を消費して対象の★3育成ウマ娘を獲得した場合でも、おまけを獲得できます。<br><br>ピックアップ対象の育成ウマ娘とサポートカードは以下のとおりです。<h2 class=\"heading\">ピックアップガチャ開催期間</h2>11/10 12:00 ～ 11/19 11:59<br><h2 class=\"heading\">育成ウマ娘</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30482.png?c=20261104123702\"></figure>■新登場の育成ウマ娘（ピックアップ対象）<br>★★★ [熟れしめでたし実り姫]ユキノビジン<br><br>■ピックアップ対象の育成ウマ娘<br>★★★ [熟れしめでたし実り姫]ユキノビジン<br>＜おまけ内容＞<br>[熟れしめでたし実り姫]ユキノビジンのピース×90<h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30483.png?c=20261104123702\"></figure>■新登場のサポートカード（ピックアップ対象）<br>・SSR [馳せて奪うは映山紅]ノーリーズン<br>・SR [黄昏に馳せる追憶]ステイゴールド<h2 class=\"heading\">注意事項</h2>1. 「育成ウマ娘交換Pt」および「サポートカード交換Pt」は、開催中のほかのガチャや、次回以降のガチャに引き継がれません。<br>2. ガチャ開催期間中に使用しなかった200Pt未満の「育成ウマ娘交換Pt」および「サポートカード交換Pt」は、ガチャ終了後に自動で「クローバー」へと変換されます。<br>3. ガチャの詳細、提供割合およびその他の注意事項は、ガチャ画面上部の[ガチャ詳細]からご確認ください。<br>4. 継承スキルの詳細は、ガチャ画面右上の[育成ウマ娘詳細]＞[スキル詳細]からご確認ください。<br>5. 開催期間および内容は、予告なく変更する場合がございます。<h2 class=\"heading\">ウマ娘ストーリー解放キャンペーン</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/header_40200002.png?c=20261104123702\"></figure>[熟れしめでたし実り姫]ユキノビジンの登場を記念して、ユキノビジンのウマ娘ストーリー第1話～第4話を期間限定で解放します。<br>解放期間中は、ストーリーの解放条件を満たしていない場合でも視聴できます。<h2 class=\"heading\">ウマ娘ストーリー解放期間</h2>11/10 12:00 ～ 11/19 11:59<br><h2 class=\"heading\">対象ウマ娘</h2>・ユキノビジン<h2 class=\"heading\">注意事項</h2>1. ストーリー解放期間中は、対象ウマ娘を獲得していなくても、ウマ娘ストーリー第1話～第4話を視聴できます。<br>2. 解放期間中に対象ウマ娘のウマ娘ストーリー第1話～第4話を視聴した場合は、「初回ジュエル報酬の獲得」、「ウマ娘ストーリーの獲得」、「ウマ娘名鑑の経験値獲得」のすべてが適用されます。<br>3. 解放期間中に対象ウマ娘のウマ娘ストーリー第1話～第4話を視聴しなかった場合は、「初回ジュエル報酬の獲得」、「ウマ娘ストーリーの獲得」、「ウマ娘名鑑の経験値獲得」は適用されません。<br>4. 解放期間終了後は、視聴していない対象ウマ娘のウマ娘ストーリーは解放されていない状態に戻ります。<br>5. ウマ娘ストーリーは、チュートリアル完了後に視聴できます。",
+        "message_english": "Starting at 12:00 on November 10, the “Pickup Pretty Derby Gacha” and “Pickup Support Card Gacha” went live.<br> New trainable Umamusume and support cards will be introduced in each gacha.<br><br> During the Pickup period, the drop rates for eligible Training Umamusume and Support Cards will be increased.<br><br> Additionally, if you obtain a featured ★3 Training Umamusume during the Pickup period, you’ll receive more of that Training Umamusume’s exclusive pieces as a bonus than usual.<br> You can receive this bonus as many times as you like whenever you obtain an eligible ★3 Training Umamusume during the event period.<br> You can also receive the bonus if you use “Training Umamusume Exchange Points” to obtain an eligible ★3 Training Umamusume.<br><br> The featured Training Umamusume and Support Cards are as follows.<h2 class=\"heading\"> Featured Gacha Event Period</h2> November 10 at 12:00 PM – November 19 at 11:59 AM<br><h2 class=\"heading\"> Training Umamusume</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30482.png?c=20261104123702\"></figure> ■ Newly Added Training Umamusume (Featured)<br> ★★★ [The Ripe and Blessed Princess of Harvest] Yukino Bijin<br><br> ■ Training Umamusume Featured in the Pickup<br> ★★★ [The Blessed Princess of Ripened Harvest] Yukino Bijin<br> &lt;Bonus Contents&gt;<br> [The Blessed Princess of the Ripe Harvest] Yukino Bijin Pieces ×90<h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/gacha_banner_30483.png?c=20261104123702\"></figure> ■New Support Cards (Featured)<br> ・SSR [Rushing to Seize the Azalea] No Reason<br> ・SR [Memories Racing Toward Twilight] Stay Gold<h2 class=\"heading\"> Important Notes</h2> 1. “Umamusume Training Exchange Points” and “Support Card Exchange Points” will not carry over to other currently active gacha events or to future gacha events.<br> 2. Any “Umamusume Training Exchange Points” and “Support Card Exchange Points” totaling less than 200 points that are not used during the gacha event period will be automatically converted to “Clover” after the gacha ends.<br> 3. Please check [Gacha Details] at the top of the gacha screen for details, drop rates, and other important notes.<br> 4. For details on inherited skills, please check [Training Umamusume Details] &gt; [Skill Details] in the upper-right corner of the gacha screen.<br> 5. The event period and content are subject to change without prior notice.<h2 class=\"heading\"> Umamusume Story Unlock Campaign</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3535/Header/header_40200002.png?c=20261104123702\"></figure> To commemorate the debut of [The Ripe and Blessed Princess of the Harvest] Yukino Bijin, Chapters 1 through 4 of Yukino Bijin’s Umamusume Story will be unlocked for a limited time.<br> During the unlock period, you can view the story even if you haven’t met the unlock conditions.<h2 class=\"heading\"> Umamusume Story Unlock Period</h2> November 10, 12:00 PM – November 19, 11:59 AM<br><h2 class=\"heading\"> Eligible Umamusume</h2> ・Yukino Bijin<h2 class=\"heading\"> Important Notes</h2> 1. During the story unlock period, you can watch Chapters 1–4 of the Umamusume Story even if you haven’t obtained the eligible Umamusume.<br> 2. If you watch Chapters 1–4 of an eligible Umamusume’s story during the unlock period, you will receive all of the following: the “First-Time Jewel Reward,” the “Umamusume Story,” and “Umamusume Encyclopedia Experience Points.”<br> 3. If you do not watch Chapters 1–4 of an eligible Umamusume’s story during the unlock period, you will not receive the “First-Time Jewel Reward,” “Umamusume Story,” or “Umamusume Encyclopedia Experience Points.”<br> 4. After the unlock period ends, the Umamusume Stories for eligible Umamusume characters that you have not watched will revert to their locked state.<br> 5. You can watch the Umamusume Story after completing the tutorial.",
+        "post_at": 1794279600,
+        "post_platform_flag": 62,
+        "row_number": 10,
+        "title": "育成ウマ娘&サポートカード新登場！ピックアップガチャ開催！",
+        "title_english": "New Umamusume Training & Support Cards Are Here! Pickup Gacha Event Now Live!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3534,
+      "page_url": "https://umapyoi.net/news/3534?lang=jp",
+      "title": "[Preview] New Training Umamusume & Support Cards Coming Soon! The Pickup Gacha starts soon!",
+      "title_jp": "【予告】育成ウマ娘&サポートカード新登場！ピックアップガチャ開催決定！",
+      "posted_at": "2026-11-09T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "gacha"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424",
+          "field_path": "$.article_image",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30483.png?c=20261104123424",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30483.png?c=20261104123424",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        }
+      ],
+      "gacha_banners": [
+        {
+          "gacha_id": 30482,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424"
+        },
+        {
+          "gacha_id": 30483,
+          "image_url": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30483.png?c=20261104123424"
+        }
+      ],
+      "raw": {
+        "announce_id": 3534,
+        "announce_label": 1,
+        "article_image": "https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424",
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/10 12:00から、「ピックアップ プリティーダービーガチャ」と「ピックアップ サポートカードガチャ」の開催が決定しました。<br>それぞれ新たな育成ウマ娘とサポートカードが登場します。<br><br>ピックアップ期間中に対象の★3育成ウマ娘を獲得すると、その育成ウマ娘の専用ピースをおまけとして通常より多く獲得できます。<br><br>ピックアップ対象の育成ウマ娘とサポートカードは以下のとおりです。<h2 class=\"heading\">ピックアップガチャ開催期間</h2>11/10 12:00 ～ 11/19 11:59<br><h2 class=\"heading\">育成ウマ娘</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424\"></figure>■新登場の育成ウマ娘（ピックアップ対象）<br>★★★ [熟れしめでたし実り姫]ユキノビジン<br><br>■ピックアップ対象の育成ウマ娘<br>★★★ [熟れしめでたし実り姫]ユキノビジン<br>＜おまけ内容＞<br>[熟れしめでたし実り姫]ユキノビジンのピース×90<h2 class=\"heading\">サポートカード</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30483.png?c=20261104123424\"></figure>■新登場のサポートカード（ピックアップ対象）<br>・SSR [馳せて奪うは映山紅]ノーリーズン<br>・SR [黄昏に馳せる追憶]ステイゴールド<h2 class=\"heading\">注意事項</h2>1. ピックアップ対象の★2以下の育成ウマ娘を獲得した場合のおまけは、通常の獲得数と同じです。<br>2. 名前が同じ育成ウマ娘は、同じチームに編成できません。また、育成で同時に継承ウマ娘として選択できません。<br>3. 開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "It has been announced that the “Pickup Pretty Derby Gacha” and “Pickup Support Card Gacha” will be held starting at 12:00 on November 10.<br> New trainable Umamusume and support cards will be introduced in each gacha.<br><br> If you obtain an eligible ★3 Training Umamusume during the Pickup period, you’ll receive more of that Training Umamusume’s exclusive pieces as a bonus than usual.<br><br> The featured Training Umamusume and Support Cards are as follows.<h2 class=\"heading\"> Pickup Gacha Event Period</h2> November 10 at 12:00 PM – November 19 at 11:59 AM<br><h2 class=\"heading\"> Training Umamusume</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30482.png?c=20261104123424\"></figure> ■Newly Added Training Umamusume (Featured)<br> ★★★ [The Ripe and Blessed Princess of Harvest] Yukino Bijin<br><br> ■ Training Umamusume Featured in the Pickup<br> ★★★ [The Blessed Princess of Ripened Harvest] Yukino Bijin<br> &lt;Bonus Contents&gt;<br> [The Blessed Princess of the Ripe Harvest] Yukino Bijin Pieces ×90<h2 class=\"heading\"> Support Cards</h2><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3534/Header/gacha_banner_30483.png?c=20261104123424\"></figure> ■New Support Cards (Featured)<br> ・SSR [Rushing to Seize the Azalea] No Reason<br> ・SR [Memories Racing Toward Twilight] Stay Gold<h2 class=\"heading\"> Important Notes</h2> 1. If you obtain a ★2 or lower Training Umamusume that is part of the featured lineup, the bonus you receive will be the same as the standard acquisition amount.<br> 2. Umamusume with the same name cannot be assigned to the same team. Additionally, they cannot be selected simultaneously as Inheritance Umamusume during training.<br> 3. The event period and details are subject to change without prior notice.",
+        "post_at": 1794193200,
+        "post_platform_flag": 62,
+        "row_number": 12,
+        "title": "【予告】育成ウマ娘&サポートカード新登場！ピックアップガチャ開催決定！",
+        "title_english": "[Preview] New Training Umamusume & Support Cards Coming Soon! The Pickup Gacha starts soon!",
         "update_at": null
       }
     },
@@ -1134,6 +1644,61 @@
       }
     },
     {
+      "post_id": 3521,
+      "page_url": "https://umapyoi.net/news/3521?lang=jp",
+      "title": "The Legend Race Is Here!",
+      "title_jp": "レジェンドレース開催！",
+      "posted_at": "2026-11-06T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "legend_race"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_022.png?c=20261021150243",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_022.png?c=20261021150243",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_023.png?c=20261021150243",
+          "field_path": "$.message",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_023.png?c=20261021150243",
+          "field_path": "$.message_english",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3521/Thumbnail/banner_EV_20261106_021.png?c=20261021150243",
+          "field_path": "$.image",
+          "likely_banner": true
+        }
+      ],
+      "raw": {
+        "announce_id": 3521,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "https://prd-info-umamusume.akamaized.net/announce/3521/Thumbnail/banner_EV_20261106_021.png?c=20261021150243",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/6 12:00から、レジェンドレースを開催中です！<br>レジェンドレースは、LEGENDウマ娘に挑戦し、豪華報酬を獲得できるイベントです。<br>出走するだけで報酬が獲得できます。条件に適したウマ娘を育成し、LEGENDウマ娘に挑戦してみましょう！<br><h2 class=\"heading\">開催期間</h2>11/6 12:00 ～ 11/9 4:59<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_022.png?c=20261021150243\"></figure>11/9 5:00 ～ 11/12 4:59<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_023.png?c=20261021150243\"></figure><h2 class=\"heading\">対象レース</h2>ジャパンカップ 東京 芝 2400m（中距離） 左 秋 晴 良 昼<br><h2 class=\"heading\">主な報酬</h2>・[ほっぴん♪ビタミンハート]スペシャルウィークのピース<br>・[Grand itinéraire]シュヴァルグランのピース<br>・虹の結晶片<br>・金の結晶片<br>・ジュエル<br>※その他報酬については、レジェンドレースの画面からご確認ください。<br><h2 class=\"heading\">出走回数</h2>1つのレースにつき、レジェンドレースチケットを1枚使用して出走できます。<br>レジェンドレースチケットは、初日のみ11/6 12:00に付与されます。<br>以降、毎日5:00に最大3枚入手できます。<br>※レジェンドレースチケットを1枚所持した状態で5:00を過ぎた場合、補充される枚数は2枚です。<br><h2 class=\"heading\">注意事項</h2>1. レジェンドレースの詳細は、ヘルプ内の[レース]＞[レジェンドレース]をご確認ください。<br>2. LEGENDウマ娘と同じ殿堂入りウマ娘は、出走できません。<br>3. 5:00を跨いでレースに出走した場合、出走が完了できない場合がございます。<br>4. レジェンドレースの報酬から、LEGENDウマ娘の別衣装ピースは出現しません。<br>5. レジェンドレース「VSスペシャルウィーク」「VSシュヴァルグラン」は、今後開催される場合がございます。現在は開催日未定です。<br>6. レジェンドレースの開催期間および内容は、予告なく変更する場合がございます。",
+        "message_english": "The Legend Race is currently underway, starting at 12:00 on November 6!<br> The Legend Race is an event where you can challenge LEGEND Umamusume and earn luxurious rewards.<br> You can earn rewards just by entering the race. Train an Umamusume that meets the requirements and take on the LEGEND Umamusume!<br><h2 class=\"heading\"> Event Period</h2> November 6 at 12:00 PM – November 9 at 4:59 AM<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_022.png?c=20261021150243\"></figure> November 9 at 5:00 AM – November 12 at 4:59 AM<br><figure><img src=\"https://prd-info-umamusume.akamaized.net/announce/3521/Header/banner_EV_20261105_023.png?c=20261021150243\"></figure><h2 class=\"heading\"> Eligible Races</h2> Japan Cup, Tokyo, Turf, 2400m (Middle Distance), Left-handed, Fall, Sunny, Good, Daytime<br><h2 class=\"heading\"> Main Rewards</h2> ・[Hopping ♪ Vitamin Heart] Special Week Piece<br> ・[Grand Itinéraire] Cheval Grand Piece<br> ・Rainbow Crystal Shard<br> ・Gold Crystal Shards<br> ・Jewel<br> *Please check the Legend Race screen for other rewards.<br><h2 class=\"heading\"> Number of Races</h2> You can enter one race per Legend Race ticket.<br> Legend Race Tickets will be awarded only on the first day, November 6 at 12:00 PM.<br> After that, you can obtain up to 3 tickets daily at 5:00.<br> *If you have one Legend Race ticket when 5:00 passes, you will receive two additional tickets.<br><h2 class=\"heading\"> Important Notes</h2> 1. For details on the Legend Race, please check [Races] &gt; [Legend Race] in the Help section.<br> 2. Umamusume who have been inducted into the Hall of Fame along with LEGEND Umamusume cannot participate in the race.<br> 3. If you enter a race that spans 5:00, you may not be able to complete the race.<br> 4. Additional costume pieces for LEGEND Umamusume will not appear as rewards from Legend Races.<br> 5. Legend Races titled “VS Special Week” and “VS Cheval Grand” may be held in the future. The dates have not yet been determined.<br> 6. The dates and details of the Legend Race are subject to change without prior notice.",
+        "post_at": 1793934000,
+        "post_platform_flag": 62,
+        "row_number": 15,
+        "title": "レジェンドレース開催！",
+        "title_english": "The Legend Race Is Here!",
+        "update_at": null
+      }
+    },
+    {
       "post_id": 3520,
       "page_url": "https://umapyoi.net/news/3520?lang=jp",
       "title": "Legend Race—Starting Soon!",
@@ -1185,6 +1750,35 @@
         "row_number": 2,
         "title": "レジェンドレース開催決定！",
         "title_english": "Legend Race—Starting Soon!",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3519,
+      "page_url": "https://umapyoi.net/news/3519?lang=jp",
+      "title": "The \"Trainer Skills Test\" Event Has Ended!",
+      "title_jp": "イベント「トレーナー技能試験」終了！",
+      "posted_at": "2026-11-08T03:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "trainer_skills_test"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3519,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "11/8 12:00に、イベント「トレーナー技能試験」の開催期間が終了しました。<br>11/8 12:00 ～ 11/11 11:59までは以下を行うことができます。<br>・育成ウマ娘別ランキング報酬の受け取り<br>・未受け取りの報酬をプレゼントから受け取り<br>・ショップでのトライアルコイン交換<br>・「サポートランキング」「育成ウマ娘別ランキング」「リーディングウマ娘」の各ランキングの結果確認<br><h2 class=\"heading\">注意事項</h2>1. 本イベントで獲得したトライアルコインは、次回のイベントに持ち越せません。<br>2. 11/11 12:00以降は、トライアルコインを使用できません。<br>3. 報酬受け取り期間中に条件を満たしても、イベントミッションは達成されません。<br>4. 試験に挑戦中の育成で、イベント開催期間が終了した後に育成を完了した場合、イベントの結果は反映されず、報酬は獲得できません。",
+        "message_english": "The \"Trainer Skills Test\" event ended at 12:00 on November 8.<br> From 12:00 PM on November 8 through 11:59 AM on November 11, you can do the following:<br> ・Claim rewards from the separate rankings for each Umamusume you’ve trained<br> ・Claim any unclaimed rewards from the “Gift” section<br> ・Exchange Trial Coins at the Shop<br> ・Check the results for the “Support Rankings,” “Training Umamusume Rankings,” and “Leading Umamusume” rankings<br><h2 class=\"heading\"> Important Notes</h2> 1. Trial Coins earned during this event cannot be carried over to the next event.<br> 2. Trial Coins cannot be used after 12:00 PM on November 11.<br> 3. Even if you meet the conditions during the reward claim period, the event mission will not be considered complete.<br> 4. If you complete the training of a character who was in the middle of a trial after the event period ends, the event results will not be reflected, and you will not receive any rewards.",
+        "post_at": 1794106800,
+        "post_platform_flag": 62,
+        "row_number": 13,
+        "title": "イベント「トレーナー技能試験」終了！",
+        "title_english": "The \"Trainer Skills Test\" Event Has Ended!",
         "update_at": null
       }
     },
@@ -318597,6 +319191,31 @@
       }
     },
     {
+      "support_id": 20102,
+      "chara_id": 1135,
+      "gametora_id": 20102,
+      "title_jp": "[黄昏に馳せる追憶]",
+      "images": [
+        {
+          "url": "https://gametora.com/images/umamusume/icons/utx_ico_obtain_02.png",
+          "field_path": "$.type_icon_url",
+          "likely_banner": false
+        }
+      ],
+      "raw": {
+        "chara_id": 1135,
+        "gametora": "20102-stay-gold",
+        "id": 20102,
+        "rarity": 2,
+        "rarity_string": "SR",
+        "start_date": 1794279600,
+        "title": "[黄昏に馳せる追憶]",
+        "title_en": null,
+        "type": "Power",
+        "type_icon_url": "https://gametora.com/images/umamusume/icons/utx_ico_obtain_02.png"
+      }
+    },
+    {
       "support_id": 30001,
       "chara_id": 1001,
       "gametora_id": 30001,
@@ -330507,6 +331126,31 @@
         "title_en": null,
         "type": "Friend",
         "type_icon_url": "https://gametora.com/images/umamusume/icons/utx_ico_obtain_05.png"
+      }
+    },
+    {
+      "support_id": 30324,
+      "chara_id": 1096,
+      "gametora_id": 30324,
+      "title_jp": "[馳せて奪うは映山紅]",
+      "images": [
+        {
+          "url": "https://gametora.com/images/umamusume/icons/utx_ico_obtain_01.png",
+          "field_path": "$.type_icon_url",
+          "likely_banner": false
+        }
+      ],
+      "raw": {
+        "chara_id": 1096,
+        "gametora": "30324-no-reason",
+        "id": 30324,
+        "rarity": 3,
+        "rarity_string": "SSR",
+        "start_date": 1794279600,
+        "title": "[馳せて奪うは映山紅]",
+        "title_en": null,
+        "type": "Stamina",
+        "type_icon_url": "https://gametora.com/images/umamusume/icons/utx_ico_obtain_01.png"
       }
     }
   ]

@@ -430,6 +430,24 @@
             "title": "List of Known Issues",
             "update_at": 1785489600
           }
+        },
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "16ebe85facf229872fddb925b887786e0555e2f2cabc3c5afb9aaf73161ac9b2",
+          "raw": {
+            "announce_id": 155,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " The following is a list of issues we know to be affecting the game.<br>\r\n<br>\r\n ■ Issues Being Worked On<br>\r\n [Update: 8:00 a.m., Nov 17, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • During Independent Training for the following Trainee Umamusume, attribute gains from certain Career events may be different than expected.</div><br>\r\n • Mayano Top Gun<br>\r\n • Meisho Doto<br>\r\n<br>\r\n [Update: 12:30 a.m., Jun 26 (UTC)]<br>\r\n<div class=\"postscript-01\"> • When using tablet mode in the Steam version, the game may not respond to touch input.</div><br>\r\n<br>\r\n<br>\r\n ■ Resolved Issues<br>\r\n [Update: 9:20 a.m., Jul 31, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • Event Bonus Umamusume details do not display correctly when viewing the Career Profile of an ongoing Independent Training session.</div><br>\r\n (This issue only affects the display; the Event Bonus effect is correctly applied to Event Points received.)<br>\r\n<br>\r\n [Update: 9:40 a.m., Jul 29, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • An error was found in the character text on the \"Wings of Steam and Steel\" story event screen.</div><br>\r\n Correct text: UWAAAAAH! Urgh... I was just thinking about the researcher we helped... I'm shooo gwad it worked out!<br>\r\n<br>\r\n [Update: 8:30 a.m., Jul 27, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • An error with code 205 can occur when starting Independent Training for Trackblazer: Start of the Climax with the following Trainee Umamusume:</div><br>\r\n • Matikanetannhauser<br>\r\n • Sweep Tosho<br><br>\r\n [Update: 6:20 a.m., Jul 17, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • Animations do not match corresponding Home screen voice lines when certain Umamusume are set to their Casual Wear outfits.</div></br>\r\n [Update: 3:15 a.m., Jul 3, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the Career Scenario \"Unity Cup: Shine On, Team Spirit!\", the game may freeze when selecting \"Watch Main Race\" in certain Team Races.</div><br>\r\n (If you encounter this issue, it should be possible to progress the Career by restarting the game and selecting \"See All Race Results\" instead.)<br>\r\n<div class=\"postscript-01\"> • In the story event \"Make a Splash! Summer Showdown! ☆,\" an incorrect summary is displayed below the image introducing the event. The correct text is as follows:</div><br>\r\n Correct text: The midsummer Splash Recreation event is underway! Mejiro McQueen finds herself roped into the competition by Gold Ship, and with both unwilling to back down, the two face off! Meanwhile, competition is sparking off between Sakura Chiyono O and Maruzensky. Who will win the action-packed water pistol battle?<br>\r\n<br>\r\n [Update: 6:00 p.m., Jul 1, 2026 (UTC)]<br>\r\n<div class=\"postscript-01\"> • Certain Career Events for Yaeno Muteki are displayed in Japanese.</div><br>\r\n<div class=\"postscript-01\"> • In the Career Scenario \"Unity Cup: Shine On, Team Spirit!\", unintended teams may appear in Team Races.</div><br>\r\n (This issue does not affect Career progress.)<br>\r\n<br>\r\n [Update: 6:06 p.m., Jun 27 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the event \"Aim for the Stars! Dream Team\", the number of Scout Race Tickets is not being updated even after the scheduled time has passed.</div><br>\r\n [Update: 8:20 a.m., Apr 20 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the Career Scenario \"Trackblazer: Start of the Climax,\" using training items on attributes greater than 1,000 may cause digits to be cut off, resulting in an incorrect value being displayed.</div><br>\r\n (Please note that this issue only affects the displayed value; the actual attribute value is calculated correctly.)<br>\r\n<br>\r\n [Update: 11:30 a.m., Apr 1 (UTC)]<br>\r\n<div class=\"postscript-01\"> • Part of the mission text for Part 3 of the Special Missions \"Tracen Special: Training the Trainer\" contains an error.</div><br>\r\n Incorrect: Complete a Career playthrough with at least 3 attributes at S rank or better<br>\r\n Correct: Complete a Career playthrough with at least 2 attributes at S rank or better<br>\r\n (Please note that this issue is only present in the mission text; completing a Career playthrough with any 2 attributes at S rank or better will result in clearing the mission.)<br>\r\n<br>\r\n [Update: 8:30 a.m., Mar 26 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the Career Scenario \"Trackblazer: Start of the Climax,\" when purchasing certain items from the Pro Shop with the automatic use option enabled, the \"Used\" badge is displayed in Japanese.</div><br>\r\n (For more information on automatic use of training items, please refer to Trackblazer: Start of the Climax under Career in Help.)<br>\r\n<br>\r\n [Update: 8:00 a.m., Feb 18 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the Steam version, if the Agenda is open in the right-hand menu when starting a Recreation minigame, certain icons in the Scheduled Races screen display incorrectly.</div><br>\r\n (Please note that this issue only affects the display; Career gameplay outcomes are not affected. If you encounter this issue, you can return the display to normal by re-opening the Agenda after navigating to a different tab.)<br>\r\n<br>\r\n [Update: 11:09 a.m., Jan 30 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the story event \"Blossoming Beginnings! New Year's Karuta Showdown,\" the Event Bonus effect of applicable Support Cards is not displayed correctly, even if they are in the Trainer's possession.</div><br> \r\n (Please note that this issue only affects the display; when completing a Career, the Event Bonus effect is correctly applied to the Event Points received.)<br> \r\n<br>\r\n [Update: 9:00 a.m., Jan 22 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The text regarding the requirements for obtaining the \"Super Sprinter\" epithet is currently incorrect.</div><br>\r\n Incorrect: Win at least 7 graded races of 1,400 meters or less and attain Stamina and Power of 1,200 or higher<br>\r\n Correct: Win at least 7 graded races of 1,400 meters or less and attain Speed and Power of 1,200 or higher<br>\r\n *This is only a display issue―the actual requirements for the epithet are correct.<br>\r\n<br>\r\n [Update: 9:00 a.m., Jan 22 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the Steam version's Options menu, the options listed under Main Settings → Screen Orientation →　Graphics Settings do not change the graphics quality as indicated.</div><br>\r\n (Currently, selecting the \"Standard\" and \"Basic\" options listed in this location instead switches between Windowed and Borderless Fullscreen display modes. To adjust graphics quality, please use the \"Standard\" and \"Basic\" options listed under Graphics → Quality on the same page.)<br>\r\n<br>\r\n [Update: 7:00 a.m., Jan 6 (UTC)]<br>\r\n<div class=\"postscript-01\"> • An incorrect Umamusume icon displays in Room Matches and the Trophy Room.</div><br>\r\n [Update: 6:45 a.m., Dec 26 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The parameters that can be gained from an event choice may actually be higher than what's displayed in the pop-up when checking its effects.</div><br>\r\n [Update: 8:00 a.m., Dec 17 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The Members screen cannot be scrolled when accessed from Invite under the Club menu.</div><br>\r\n [Update: 9:00 a.m., Dec 2 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In some cases, the Current Promotion Line in Team Trials will display \"0 pts\".</div><br>\r\n (Please note that this issue only affects the number displayed; your actual score is unaffected.)<br>\r\n<br>\r\n [Update: 5:30 a.m., Nov 27 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The skill level for Agnes Digital's Unique Skill, \"OMG! (ﾟ∀ﾟ)  The Final Sprint! ☆\", may sometimes not increase during the \"Fan Fest\" trainee event despite fulfilling the prerequisites.</div><br>\r\n [Update: 9:30 a.m., Oct 3 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The number of completed missions is not properly displayed on the Missions icon on the Home screen even when there are mission rewards available to collect.</div><br>\r\n (Please note that this issue only affects the number displayed on the Missions icon; mission rewards can still be collected by selecting the icon as usual. If you encounter this issue, restarting the game should cause the correct number to appear on the icon.)<br>\r\n<br>\r\n [Update: 10:30 a.m., Oct 2 (UTC)]<br>\r\n<div class=\"postscript-01\"> • Some errors were included in the Help text for the \"Uma Quest: Epic Odyssey\" story event. </div><br>\r\n (The text has been fixed and any incorrect information has been removed.)<br>\r\n<br>\r\n [Update: 7:20 a.m., Oct 1 (UTC)]<br>\r\n<div class=\"postscript-01\"> • On Android devices, an error is displayed repeatedly when starting a new game, after entering the user's country/region and birth date. It is possible to bypass this error and progress the game by selecting the Retry option twice.</div><br>\r\n [Update: 10:30 a.m., Aug 21 (UTC)]<br>\r\n<div class=\"postscript-01\"> • In the 10:00 p.m., Aug 20 (UTC) notice announcing new Spotlight Pretty Derby and Spotlight Support Card Scouts, the rarity of the SR Support Card \"[The World's My Oyster] Seeking the Pearl\" was incorrectly listed as SSR. </div><br>\r\n (This issue was only present in the notice text; scout rates etc. were not affected.)<br>\r\n<br>\r\n [Update: 10:30 a.m., Aug 5 (UTC)]<br>\r\n<div class=\"postscript-01\"> • When playing Team Trials on the Steam version of the game, trainers may be unable to proceed past the results screen.</div><br>\r\n [Update: 12:40 p.m., Aug 1 (UTC)]<br>\r\n<div class=\"postscript-01\"> • When attempting to purchase carats, an error listed with Error Code 102 can occur.</div><br>\r\n [Update: 6:00 a.m., Jul 11 (UTC)]<br>\r\n<div class=\"postscript-01\"> • The Main Mission \"Link App Data\" currently cannot be completed in the Steam version.</div><br>\r\n<div class=\"postscript-01\"> • When using certain Android devices (Android 16), the app may not launch properly.</div><br>\r\n <!--修正見送りの不具合発生次第コメントアウトを外す ■ Issues Not to Be Fixed<br>\r\n We have determined the below issues are not bugs, and there are no plans to fix them at the present time.<br>-->\r\n These issues will be corrected in future updates.<br>\r\n It may take some time before fixes can be implemented, so we ask for your patience.<br><br>\r\n We sincerely apologize to any trainers who are inconvenienced by these issues.",
+            "post_at": 1750897800,
+            "post_platform_flag": 16,
+            "title": "List of Known Issues",
+            "update_at": 1794902400
+          }
         }
       ]
     },
@@ -13741,6 +13759,56 @@
       ]
     },
     {
+      "announce_id": 1091,
+      "page_url": "https://umapyoi.net/en/news/1091",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "da1c3ed05636505d82b05839b2ae5889f770ce5bdfcf1540b87f1aace5f0b5a8",
+          "raw": {
+            "announce_id": 1091,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_25900006_L1794348000.png?c=20260925035008",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " To celebrate the Hopeful Stakes G1 race, bonus Star Piece rewards are available in certain Career races for a limited time!<br>\r\n<br>\r\n During the availability period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day.<br>\r\n You can earn bonus rewards just by entering, but you'll get more if you manage to win!<br>\r\n<br>\r\n See below for more details.\r\n<h2 class=\"heading\"> Race / Period / Rewards</h2>\r\n Hopeful Stakes<br>\r\n 3:00 p.m., Nov 10–2:59 p.m., Nov 12, 2026 (UTC)<br>\r\n [Nevertheless] Narita Taishin Star Pieces<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.",
+            "post_at": 1794348000,
+            "post_platform_flag": 62,
+            "title": "Bonus Star Piece rewards in Career!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1092,
+      "page_url": "https://umapyoi.net/en/news/1092",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "befb06195b8e11ee5669ca9bc250c92beba24e3d63c96caa066a2ae7d1bc6a0a",
+          "raw": {
+            "announce_id": 1092,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_25900007_L1794780000.png?c=20260925035033",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " To celebrate the Tokyo Daishoten G1 race, bonus Star Piece rewards are available in certain Career races for a limited time!<br>\r\n<br>\r\n During the availability period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day.<br>\r\n You can earn bonus rewards just by entering, but you'll get more if you manage to win!<br>\r\n<br>\r\n See below for more details. \r\n<h2 class=\"heading\"> Race / Period / Rewards</h2>\r\n Tokyo Daishoten<br>\r\n 3:00 p.m., Nov 15–2:59 p.m., Nov 17, 2026 (UTC)<br>\r\n [Edomurasaki] Inari One Star Pieces<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.",
+            "post_at": 1794780000,
+            "post_platform_flag": 62,
+            "title": "Bonus Star Piece rewards in Career!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1093,
       "page_url": "https://umapyoi.net/en/news/1093",
       "first_seen_at": "2026-11-01T22:01:37.470356060+00:00",
@@ -14085,6 +14153,31 @@
             "post_at": 1793829600,
             "post_platform_flag": 62,
             "title": "Umamusume: Pretty Derby the Stage – Sprinters' Story Celebration coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1117,
+      "page_url": "https://umapyoi.net/en/news/1117",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "c9c491918c51970783ab36f0b574fdc0c3423192a314232e33a1ec50a08534ec",
+          "raw": {
+            "announce_id": 1117,
+            "announce_label": 1,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27100001_L1793916000.png?c=20261020064905",
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a special celebration to commemorate Umamusume: Pretty Derby the Stage – Sprinters' Story has begun!<br>\r\n This celebration includes a special login bonus and the addition of a brand new song to the game.<br>\r\n See below for details of included events.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27100001_L1793916000.png?c=20261020064905\"></figure> As of 10:00 p.m., Nov 5, 2026 (UTC), the Umamusume: Pretty Derby the Stage – Sprinters' Story Login Bonus has begun!<br>\r\n Log in during the event period for a one-time gift of 500 carats!<br>\r\n(This bonus can only be claimed once.)<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Nov 5–2:59 p.m., Nov 19, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. To receive this login bonus on the first day, please reenter the game from the title screen after the event begins.<br>\r\n 2. Only a single reward can be obtained from this event during the availability period.<br>\r\n 3. If you do not log in during the availability period, you will not receive the rewards.<br>\r\n 4. The availability period and details of this event are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27100002_L1793916000.png?c=20261020064905\"></figure>\r\n To celebrate Umamusume: Pretty Derby the Stage – Sprinters' Story, we are planning to gift all trainers with \"Overrunner!\", the main theme song of the stage performance.<br>\r\n Once obtained, you can view this song in the Concert Theater.<br>\r\n<h2 class=\"heading\"> Planned Timing</h2>\r\n 10:00 p.m., Nov 9, 2026 (UTC)<br>\r\n<br>\r\n See below for details of this giveaway.<br>\r\n<h3 class=\"subheading\"> Gift Contents</h3>\r\n Song: \"Overrunner!\"<br>\r\n (Once obtained, you can view this song in the Concert Theater.)<br>\r\n<h3 class=\"subheading\"> Eligible Trainers</h3>\r\n All trainers<br>\r\n<h3 class=\"subheading\"> How to Receive</h3>\r\n After completing the game's tutorial, select Presents on the Home screen to find your gift.<br>\r\n If you don't see the gift in your Presents, try returning to the title screen and loading the game again.<br>\r\n<h3 class=\"subheading\"> Gift Period</h3>\r\n 10:00 p.m., Nov 9, 2026 (UTC) onward<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n The details of this giveaway are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27100003_L1793916000.png?c=20261020064905\"></figure>\r\n What's more, we're also planning to add the song \"Overrunner!\" to the Uma Jukebox!<br>\r\n<h2 class=\"heading\"> Planned Timing</h2>\r\n 10:00 p.m., Nov 9, 2026 (UTC)<br>\r\n<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n The details of this event are subject to change without notice.<br>",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Umamusume: Pretty Derby the Stage – Sprinters' Story Celebration now underway!",
             "update_at": null
           }
         }
@@ -14516,6 +14609,56 @@
       ]
     },
     {
+      "announce_id": 1146,
+      "page_url": "https://umapyoi.net/en/news/1146",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "990905b2b887dc254ae5fb1eec539e41d0063dfae27270ef7adec73c061292f2",
+          "raw": {
+            "announce_id": 1146,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/announce_banner_3142_L1793916000.png?c=20260925035332",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a new Spotlight Pretty Derby Scout and Spotlight Support Card Scout have begun!<br>\r\n They feature a new Trainee Umamusume and new Support Cards.<br>\r\n<br>\r\n During the spotlight period, scout rates for spotlighted Trainee Umamusume and Support Cards are increased!<br>\r\n<br>\r\n In addition, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n During the availability period, you can earn bonuses as many times as you acquire the spotlighted 3★ Trainee Umamusume, including when you do so by using Trainee Exchange Points.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30142_L1793916000.png?c=20260925035332\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Fun☆Fun☆Party Night] Daitaku Helios<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume<br>\r\n ★★★ [Fun☆Fun☆Party Night] Daitaku Helios<br>\r\n Scout Bonus:<br>\r\n [Fun☆Fun☆Party Night] Daitaku Helios Star Piece × 90<br>\r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30143_L1793916000.png?c=20260925035332\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [To You] K.S.Miracle<br>\r\n • SR [A Clip to Keep Your Heart Warm] Aston Machan<br>\r\n • R [Tracen Academy] Aston Machan<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Trainee Exchange Points and Support Card Exchange Points from these Spotlight Scouts cannot be carried over to future Scouts or other Scouts currently in progress.<br>\r\n 2. Trainee Exchange Points and Support Card Exchange Points not utilized during the Spotlight Scout availability period will automatically be converted into Clovers.<br>\r\n 3. For more details on Scouts, specific rates, and other important information, tap Details on the Scout screen.<br>\r\n 4. Scout schedules and contents are subject to change without notice.<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_40200001_L1793916000.png?c=20260925035332\"></figure>\r\n To celebrate the new arrival of [Fun☆Fun☆Party Night] Daitaku Helios, episodes 1 through 4 of her Umamusume Story will be fully unlocked for a limited time!<br>\r\n During the sneak peek period, you can watch the story episodes even without fulfilling their unlock conditions!<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Applicable Umamusume</h2>\r\n • Daitaku Helios<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. During the sneak peek period, even if you have not obtained the applicable Umamusume, you can still watch episodes 1 through 4 of their Umamusume Stories!<br>\r\n 2. If you do watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will obtain first-watch carat rewards, Umamusume Story rewards, and Umamusume Archive experience.<br>\r\n 3. If you do not watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will not obtain first-watch carat rewards, Umamusume Story rewards, or Umamusume Archive experience.<br>\r\n 4. After the sneak peek period has ended, any unwatched Umamusume Stories will once again become locked.<br>\r\n 5. Umamusume Stories can be viewed after the tutorial is completed.<br>",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Spotlight Pretty Derby and Spotlight Support Card Scouts out now!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1147,
+      "page_url": "https://umapyoi.net/en/news/1147",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "97f0e2b111ab2000ddf8742a91252cdbb6c151291eb6c90230ffbf1f7e6e702d",
+          "raw": {
+            "announce_id": 1147,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30320202_L1794088800.png?c=20260925035415",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " Here is some information about the upcoming race event Champions Meeting: Aquarius Cup.<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n League Selection: From 10:00 p.m., Nov 17, 2026 (UTC)<br>\r\n Round 1: From 10:00 p.m., Nov 21, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Race Conditions</h2>\r\n Tokyo / Dirt / 1,600m (Mile) / Left-Handed / Winter / Snowy / Soft / Afternoon<br>\r\n<br>\r\n<br>\r\n The full schedule and other details will be posted once they have been decided.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Champions Meeting, please refer to the Help topic.<br>\r\n 2. The schedule and contents are subject to change without notice.",
+            "post_at": 1794088800,
+            "post_platform_flag": 62,
+            "title": "The race event Champions Meeting: Aquarius Cup is coming in late November!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1148,
       "page_url": "https://umapyoi.net/en/news/1148",
       "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
@@ -14535,6 +14678,31 @@
             "post_at": 1793829600,
             "post_platform_flag": 62,
             "title": "Unity Cup Pretty Derby and Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1149,
+      "page_url": "https://umapyoi.net/en/news/1149",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "e140f96a7e02e8816813f30fe5b2ad34cc8fefe649c2a2e6dfa3e49ca305df19",
+          "raw": {
+            "announce_id": 1149,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/announce_banner_3144_L1793916000.png?c=20260925035632",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a Unity Cup Pretty Derby Scout and Unity Cup Support Card Scout have begun!<br>\r\n The Trainee Umamusume and Support Cards spotlighted in these Scouts are featured as Scenario Link characters in the Career Scenario Unity Cup: Shine On, Team Spirit!<br>\r\n<br>\r\n During the spotlight period, scout rates for spotlighted Trainee Umamusume and Support Cards are increased!<br>\r\n<br>\r\n In addition, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n During the availability period, you can earn bonuses as many times as you acquire the spotlighted 3★ Trainee Umamusume, including when you do so by using Trainee Exchange Points.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n <h2 class=\"heading\"> Unity Cup Scout Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30144_L1793916000.png?c=20260925035632\"></figure>\r\n ■ Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Vampire Makeover!] Rice Shower<br>\r\n ★★★ [New Year ♪ New Urara!] Haru Urara<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 1<br>\r\n ★★★ [Vampire Makeover!] Rice Shower<br>\r\n Scout Bonus:<br>\r\n [Vampire Makeover!] Rice Shower Star Piece × 90<br> \r\n<br>\r\n ■ Spotlight Trainee Umamusume 2<br>\r\n ★★★ [New Year ♪ New Urara!] Haru Urara<br>\r\n Scout Bonus:<br>\r\n [New Year ♪ New Urara!] Haru Urara Star Piece × 90<br> \r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30145_L1793916000.png?c=20260925035632\"></figure>\r\n ■ Support Cards (Spotlight)<br>\r\n • SSR [Hands Up, Crook!] Taiki Shuttle<br>\r\n • SSR [Touching Sleeves Is Good Luck! ♪] Matikanefukukitaru<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Trainee Exchange Points and Support Card Exchange Points from these Scouts cannot be carried over to future Scouts or other Scouts currently in progress.<br>\r\n 2. Trainee Exchange Points and Support Card Exchange Points not utilized during the Scout availability period will automatically be converted into Clovers.<br>\r\n 3. For more details on Scouts, specific rates, and other important information, tap Details on the Scout screen.<br>\r\n 4. Scout schedules and contents are subject to change without notice.<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_40200001_L1793916000.png?c=20260925035632\"></figure>\r\n Episodes 1 through 4 of Rice Shower's Umamusume Story will be fully unlocked for a limited time!<br>\r\n During the sneak peek period, you can watch the story episodes even without fulfilling their unlock conditions!<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Applicable Umamusume</h2>\r\n • Rice Shower<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. During the sneak peek period, even if you have not obtained the applicable Umamusume, you can still watch episodes 1 through 4 of their Umamusume Stories!<br>\r\n 2. If you do watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will obtain first-watch carat rewards, Umamusume Story rewards, and Umamusume Archive experience.<br>\r\n 3. If you do not watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will not obtain first-watch carat rewards, Umamusume Story rewards, or Umamusume Archive experience.<br>\r\n 4. After the sneak peek period has ended, any unwatched Umamusume Stories will once again become locked.<br>\r\n 5. Umamusume Stories can be viewed after the tutorial is completed.",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Unity Cup Pretty Derby and Support Card Scouts out now!",
             "update_at": null
           }
         }
@@ -14566,6 +14734,56 @@
       ]
     },
     {
+      "announce_id": 1151,
+      "page_url": "https://umapyoi.net/en/news/1151",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "869f45313e235a073cd8ba0ab41bf7973f46c8350232faf91fa613c14f4de09d",
+          "raw": {
+            "announce_id": 1151,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30700006_L1793916000.png?c=20261022072657",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a Racing Carnival event has begun!<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 12, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Reward Collection / Carnival Point Exchange Period</h2>\r\n 10:00 p.m., Nov 12–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Event Overview</h2>\r\n In Racing Carnival events, you can face off against specific Umamusume in special event races.<br>\r\n Place well in these races to earn Carnival Points, which can be exchanged for a variety of useful items!<br>\r\n<h2 class=\"heading\"> Event Races</h2>\r\n There are two types of race featured in this event: standard Carnival Races, and higher-difficulty Challenge Races.<br>\r\n Both types of event race cost 1 RP to enter.<br>\r\n Each time you enter a Carnival Race, the Challenge Gauge will fill up by an amount based on the result you achieve.<br>\r\n Once the Challenge Gauge is completely full, you will be able to trigger a Challenge Race.<br>\r\n When a Challenge Race is triggered, its difficulty will be set at random to either Very Hard or Extreme, and you will face off against an opponent specific to the selected difficulty.<br>\r\n<h3 class=\"subheading\"> Carnival Races</h3>\r\n Hishi Akebono: Kyoto / Turf / 1,400m (Sprint) / Right-Handed / Outer / Winter / Sunny / Firm<br>\r\n Nishino Flower: Nakayama / Turf / 1,200m (Sprint) / Right-Handed / Outer / Winter / Sunny / Firm<br>\r\n Taiki Shuttle: Tokyo / Turf / 1,400m (Sprint) / Left-Handed / Winter / Sunny / Firm<br>\r\n Bamboo Memory: Chukyo / Turf / 1,200m (Sprint) / Left-Handed / Winter / Sunny / Firm<br>\r\n<h3 class=\"subheading\"> Challenge Races</h3>\r\n Curren Chan: Chukyo / Turf / 1,200m (Sprint) / Left-Handed / Winter / Sunny / Firm<br>\r\n<h3 class=\"subheading\"> Challenge Race Opponents</h3>\r\n Very Hard: [Fille Éclair] Curren Chan<br>\r\n Extreme: [Ma Chérie of the New Moon] Curren Chan<br>\r\n<h2 class=\"heading\"> Carnival Bonus Skills</h2>\r\n This event features Carnival Bonus skills: special skills that are only available for the duration of the event.<br>\r\n The Carnival Bonus skill will boost an Umamusume's stats and help raise their mood to Great when they run in an event race.<br>\r\n<h2 class=\"heading\"> Carnival Bonus Sparks</h2>\r\n The first step to learning a Carnival Bonus skill is to obtain a Carnival Bonus Spark by entering one of this event's races.<br>\r\n Once an Umamusume has obtained one of these Sparks, use that Umamusume as a Legacy in Career mode and your trainee for that Career will be able to learn the Carnival Bonus skill.<br>\r\n<h2 class=\"heading\"> Leveling Up Carnival Bonus Skills</h2>\r\n By alternating between running event races and completing Career playthroughs, you can gain higher-level Carnival Bonus skills, which increases their effectiveness during event races.<br>\r\n Try to make good use of the Carnival Bonus skills to win event races and earn great rewards!<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30700003_L1793916000.png?c=20261022072657\"></figure>\r\n Enter event races to earn Carnival Points and get rewards!<br>\r\n<h2 class=\"heading\"> Carnival Points</h2>\r\n Carnival Points are awarded based on the results you achieve in the event's races. You can exchange them for various items in the Carnival Point Exchange.<br>\r\n (For more information on Carnival Points, tap Carnival Point Exchange on the event screen or Shop on the bottom left of the Home screen.)<br> \r\n<br>\r\n [Notable Exchange Items]<br>\r\n • Rainbow Crystal Shard<br>\r\n • Gold Crystal Shard<br>\r\n • Trainee Scout Ticket<br>\r\n • Support Card Scout Ticket<br>\r\n<h2 class=\"heading\"> Event Missions</h2>\r\n Complete the event's Daily Missions and Special Missions to earn extra rewards.<br>\r\n<br>\r\n [Notable Mission Rewards]<br>\r\n • Carats<br>\r\n • Rainbow Crystal Shard<br>\r\n • Gold Crystal Shard<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on the event, tap the Help icon on the top right of the event screen.<br>\r\n 2. The event schedule and contents are subject to change without notice.<br>\r\n 3. You cannot enter a race with a Veteran Umamusume that is the same as that race's main opponent.<br>\r\n 4. Carnival Points earned in this event cannot be carried over to future events.<br>\r\n 5. Carnival Bonus Sparks will be removed at the end of the event. They cannot be carried over to future events.<br>\r\n 6. Carnival Bonus skills will be removed at the end of the event. They cannot be carried over to future events.<br>\r\n 7. Carnival Bonus skills do not count toward your number of skills for the purpose of fulfilling conditions for epithets, missions, etc.<br>\r\n 8. If you start a race that ends after the conclusion of the event period, you may not be able to finish.<br>\r\n 9. If the event period concludes during a race, you will not receive rewards for that race.<br>\r\n 10. If you have unclaimed rewards for an event mission when that mission is reset, they will be sent to your Presents the next time you log in.<br>\r\n<br>",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "A Racing Carnival event is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1152,
+      "page_url": "https://umapyoi.net/en/news/1152",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "53d291d6371d2d97de1ad526f596626b5d4364342799dcbd61aadadf3188779f",
+          "raw": {
+            "announce_id": 1152,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": "&nbsp;As of 10:00 p.m., Nov 12, 2026 (UTC), the Racing Carnival event has ended.<br>\n<br>\n&nbsp;From 10:00 p.m., Nov 12 through 9:59 p.m., Nov 15, 2026 (UTC), trainers will be able to exchange Carnival Points for items in the shop, complete event races in progress and receive their rewards, and collect outstanding mission rewards.<br>\n<br>\n<h2 class=\"heading\">&nbsp;Important Information</h2>\n&nbsp;1. Carnival Points obtained during this event cannot be carried over to future events.<br>\n&nbsp;2. From 10:00 p.m., Nov 15, 2026 (UTC) onwards, it will not be possible to use remaining Carnival Points.<br>\n&nbsp;3. You cannot complete event missions during the reward collection period, even if you fulfill their conditions.<br>",
+            "post_at": 1794520800,
+            "post_platform_flag": 62,
+            "title": "The Racing Carnival event has ended!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1153,
       "page_url": "https://umapyoi.net/en/news/1153",
       "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
@@ -14591,6 +14809,56 @@
       ]
     },
     {
+      "announce_id": 1154,
+      "page_url": "https://umapyoi.net/en/news/1154",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "a8515bed529da73e33fc775fd5e31f5836a19b1988947bf823670ec014322a15",
+          "raw": {
+            "announce_id": 1154,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_26200002_L1793916000.png?c=20261014025258",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a Let's Go! Uma Outing event is underway!<br>\r\n<br>\r\n During this event, you can go on Outings with your trainees up to twice a day!<br>\r\n Going on Outings will increase your trainee's Bond, and you can acquire a variety of rewards to help with future Careers.<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> How to Go on Outings</h2>\r\n 1. During the event availability period, select the Uma Outing! Underway! icon from the top-left corner of the Home screen.<br>\r\n 2. Select the trainee you want to go on an Outing with from the event screen.<br>\r\n 3. Select your Outing Destination from the selection screen.<br>\r\n 4. Select the Outing Reward you want from the selection screen.<br>\r\n 5. Press OK on the confirmation screen.<br>\r\n 6. Your Outing Episode will play, your trainee's Bond will increase, and you will acquire your Outing Reward.<br>\r\n<h2 class=\"heading\"> Outing Gauge</h2>\r\n You can go on Outings by filling the Outing Gauge to its max.<br>\r\n The Outing Gauge is filled once per day by logging in. After going on an Outing, it can be filled an additional time afterwards by playing Career Mode, Team Trials, Daily Races, and Daily Legend Races.<br>\r\n (The Outing Gauge cannot be filled past its cap.)<br>\r\n Once you have been on two Outings in a day, it will not be possible to fill the Outing Gauge again until the next day begins at 3:00 p.m. (UTC).<br>\r\n<h2 class=\"heading\"> Changes from the Previous Let's Go! Uma Outing Event</h2>\r\n 1. It is now possible to take photos of the Outing scenes.<br>\r\n 2. The event UI and animations have been adjusted.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Only acquired Trainee Umamusume are eligible as partners for Outings.<br>\r\n 2. The login bonus for Outings and possible times you can go on an Outing reset at 3:00 p.m. (UTC) each day.<br>\r\n 3. Unlocked Outing Episodes can be viewed by selecting the Uma Outing! Underway! icon at the top left of the Home screen and either holding down the Umamusume's icon or selecting Unlocked Episodes.<br>\r\n (Outing Episodes can only be viewed during the event's availability period.)<br>\r\n 4. Outing Episodes unlocked during this event will become locked again during the next event.<br>\r\n 5. Once you have acquired all the rewards from an Outing Destination, you will be unable to acquire any more. Subsequent visits to this destination will only earn Bond Points.<br>\r\n 6. You can still earn Bond Points from Outings with Trainee Umamusume who have reached their max Bond Level, but only up to a maximum of 5,000 past the cap.<br>\r\n 7. If an Outing in progress has not been finished when the event ends, you will gain Bond Points for that Trainee Umamusume the next time you log in, and your selected rewards will be sent to your Presents.<br>\r\n (You will not be able to view the Outing Episode after the event has ended. You must log in within 180 days of the event ending to receive rewards. Rewards will expire 30 days after they are sent to your Presents.)<br>\r\n 8. The Uma Outing schedule and contents are subject to change without notice.",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Let's Go! Uma Outing now available!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1155,
+      "page_url": "https://umapyoi.net/en/news/1155",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "82e6f02fb6c1436e8f83a2763ada3c1ed0a723212d63dc2780957081e4e62368",
+          "raw": {
+            "announce_id": 1155,
+            "announce_label": 1,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27000001_L1793916000.png?c=20261019054325",
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), we're celebrating the Career Scenario Unity Cup: Shine On, Team Spirit! with a set of special events!<br>\r\n<br>\r\n<h2 class=\"heading\"> Event Details</h2>\r\n See below for details of included events.<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27000001_L1793916000.png?c=20261019054325\"></figure>\r\n As of 10:00 p.m., Nov 5, 2026 (UTC), the Unity Cup Halved TP Costs event has begun!<br>\r\n During this event, the TP cost for starting a new Career in the Career Scenario Unity Cup: Shine On, Team Spirit! will be halved.<br>\r\n<h3 class=\"subheading\"> Availability Period</h3>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Important Information</h3>\r\n 1. If you use a story event's Event Boost feature during this event period, it will cost 30 TP to start the Career.<br>\r\n 2. The cost to reroll Sparks during this event period will remain 30 TP.<br>\r\n 3. The availability period and details of this event are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27000002_L1793916000.png?c=20261019054325\"></figure>\r\n As of 10:00 p.m., Nov 5, 2026 (UTC), the Unity Cup 2x Career Mode Rewards event has begun!<br>\r\n During the event period, race rewards and completion rewards obtained from Unity Cup: Shine On, Team Spirit! Career playthroughs will be doubled!<br>\r\n Take this opportunity to complete Careers with all your favorite trainees!<br>\r\n<h3 class=\"subheading\"> Availability Period</h3>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 15, 2026 (UTC)<br>\r\n<h3 class=\"subheading\"> Important Information</h3>\r\n 1. Certain types of rewards, including Bond Points and fans, will not be doubled.<br>\r\n 2. If the event period ends during a race or Career playthrough, the relevant rewards will not be doubled.<br>\r\n 3. For more details on Career mode, select Help under Menu on the Home screen and refer to the Career section.<br>\r\n 4. The availability period and details of this event are subject to change without notice.",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Unity Cup: Shine On, Team Spirit! events are here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1156,
       "page_url": "https://umapyoi.net/en/news/1156",
       "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
@@ -14610,6 +14878,156 @@
             "post_at": 1793829600,
             "post_platform_flag": 62,
             "title": "Transfer Requests coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1157,
+      "page_url": "https://umapyoi.net/en/news/1157",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "63b61aae0a1d9f7d79801b404698144b4f19ccadbf0ddf08758bea2e95c2f156",
+          "raw": {
+            "announce_id": 1157,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30500002_L1793916000.png?c=20260925024723",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 5, 2026 (UTC), a Transfer Request event has begun!<br>\r\n Transfer Requests allow trainers to receive rewards by transferring Veteran Umamusume that meet the recipient trainer's desired conditions.<br>\r\n<h2 class=\"heading\"> Availability Period</h2>\r\n 10:00 p.m., Nov 5–9:59 p.m., Nov 9, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Outline</h2>\r\n By transferring Veteran Umamusume that meet the request conditions, you can earn rewards.<br>\r\n Any transferred Veteran Umamusume will disappear.<br>\r\n Once a Veteran Umamusume has been transferred, she cannot be recovered.<br>\r\n Requests are updated every two days at 10:00 p.m. (UTC).<br>\r\n<h3 class=\"subheading\"> Request Conditions</h3>\r\n Each trainer's request includes required conditions relating to the Veteran Umamusume's abilities and achievements.<br>\r\n You may only transfer Veteran Umamusume that meet the request conditions.<br>\r\n<h3 class=\"subheading\"> Rank</h3>\r\n Each request has a defined rank.<br>\r\n The higher the rank, the greater the rewards you can receive.<br>\r\n<h3 class=\"subheading\"> Transfer Availability Period</h3>\r\n Each request has a transfer availability period.<br>\r\n You can no longer transfer once the availability period has passed.<br>\r\n<h3 class=\"subheading\"> Transfer Amount</h3>\r\n The amount of possible transfers per request is limited.<br>\r\n Transferring one Veteran Umamusume reduces the amount by one transfer.<br>\r\n Once a request's remaining transfers reach 0, you will be unable to transfer to that trainer.<br>\r\n<h2 class=\"heading\"> Rewards</h2>\r\nYour rewards will differ depending on the contents and rank of the request.<br>\r\n<br>\r\n ■ Main Rewards<br>\r\n • Trainee Umamusume Star Pieces<br>\r\n • Monies<br>\r\n • Support Points<br>\r\n Note: When the reward is a Trainee Umamusume's Star Pieces, you will receive Star Pieces corresponding to the transferred Veteran Umamusume.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on Transfer Requests, please refer to Transfer Requests under Umamusume in Help.<br>\r\n 2. Rewards are added directly to your totals.<br>\r\n 3. Rewards will not include Star Pieces for alternate outfit versions of the transferred Veteran Umamusume.<br>\r\n 4. The option to select all transfer requests will be changed to Off if the request list is updated due to time elapsing.<br>\r\n 5. The Transfer Request schedule and contents are subject to change without notice.",
+            "post_at": 1793916000,
+            "post_platform_flag": 62,
+            "title": "Transfer Requests now available!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1158,
+      "page_url": "https://umapyoi.net/en/news/1158",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "1ef679fc6ac08d71aff955cf35820a6ea232c694f2679a97ac665a3bc3d5e175",
+          "raw": {
+            "announce_id": 1158,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30100041_L1793916000.png?c=20260925041613",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " The story event Sweet Memories Teatime is set to begin at 10:00 p.m., Nov 9, 2026 (UTC)!<br>\r\n In this story event, you can complete Career playthroughs to collect Event Points, which will earn you a variety of rewards, including copies of an event-exclusive SSR Support Card. As you progress through the event, you will also unlock episodes of an exclusive story to enjoy.<br>\r\n\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Nov 9–9:59 p.m., Nov 23, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on story events, please refer to the notice that will be posted when the event begins, or tap the Help icon on the top right of the event screen.<br>\r\n 2. The event schedule and contents are subject to change without notice.<br>\r\n<br>",
+            "post_at": 1793916000,
+            "post_platform_flag": 16,
+            "title": "The story event Sweet Memories Teatime is coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1159,
+      "page_url": "https://umapyoi.net/en/news/1159",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "98fa9b9a40c38e91d84c573602af3fd18832ac95fa06ac510044e2c2c65a1590",
+          "raw": {
+            "announce_id": 1159,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_30100042_L1794261600.png?c=20260925060024",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 9, 2026 (UTC), the story event Sweet Memories Teatime has begun!<br>\r\n<h2 class=\"heading\"> Event Availability Period</h2>\r\n 10:00 p.m., Nov 9–9:59 p.m., Nov 23, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Reward Collection Period</h2>\r\n 10:00 p.m., Nov 23–9:59 p.m., Nov 26, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Event Overview</h2>\r\n In this story event, you can complete Career playthroughs to collect Event Points, which will earn you a variety of rewards, including copies of an event-exclusive SSR Support Card. As you progress through the event, you will also unlock episodes of an exclusive story to enjoy.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30100064_L1794261600.png?c=20260925060024\"></figure>\r\n By collecting Event Points, you can watch an event-exclusive story!</figure>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30100063_L1794261600.png?c=20260925060024\"></figure>\r\n By collecting Event Points and clearing event missions, you can obtain the following rewards!</figure><br>\r\n • Event-Exclusive SSR Support Card: [Fondente Smile] Hishi Akebono<br>\r\n • Event-Exclusive Title: Sweet Memories Teatime<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_30100065_L1794261600.png?c=20260925060024\"></figure>\r\n You can play the Prize Derby using the Prize Coins you get by playing the event!<br>\r\n Among the Prize Derby bingo rewards, you have the chance to obtain the event-exclusive SSR Support Card [Fondente Smile] Hishi Akebono.<br>\r\n If you perform 25 spins on a single bingo sheet, that sheet's spin quota is fulfilled, and any subsequent spins are guaranteed to land on segments you have not yet filled in.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. For more information on story events, please tap the Help icon on the top right of the event screen.<br>\r\n 2. Event Points earned in this event cannot be carried over to future events.<br>\r\n 3. Prize Coins earned in this event will be converted into monies after the reward collection period has ended.<br>\r\n 4. The event schedule and contents are subject to change without notice.<br>\r\n 5. Additional Event Bonus Umamusume and Event Bonus Support Cards may become available during the event.  ",
+            "post_at": 1794261600,
+            "post_platform_flag": 62,
+            "title": "The story event Sweet Memories Teatime is here!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1164,
+      "page_url": "https://umapyoi.net/en/news/1164",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "bf023df19813e9034c70828cb36357cd63f7b5d9e66c0498524f385eeb925899",
+          "raw": {
+            "announce_id": 1164,
+            "announce_label": 1,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30146_L1794175200.png?c=20260925030253",
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " A new Spotlight Pretty Derby Scout and Spotlight Support Card Scout are set to begin at 10:00 p.m., Nov 9, 2026 (UTC)!<br>\r\n They will feature new Trainee Umamusume and Support Cards.<br>\r\n<br>\r\n During the spotlight period, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Nov 9–9:59 p.m., Nov 23, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30146_L1794175200.png?c=20260925030253\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Melt Your Heart] Ines Fujin<br>\r\n ★★★ [Marguerite Latte] Mejiro Ryan<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 1<br>\r\n ★★★ [Melt Your Heart] Ines Fujin<br>\r\n Scout Bonus:<br>\r\n [Melt Your Heart] Ines Fujin Star Piece × 90<br> \r\n<br>\r\n ■ Spotlight Trainee Umamusume 2<br>\r\n ★★★ [Marguerite Latte] Mejiro Ryan<br>\r\n Scout Bonus:<br>\r\n [Marguerite Latte] Mejiro Ryan Star Piece × 90<br> \r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30147_L1794175200.png?c=20260925030253\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [Marvelous☆Chocolate Show] Marvelous Sunday<br>\r\n • SSR [Transform! Garçon Form!] Biko Pegasus<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. When scouting a spotlighted 2★ Trainee Umamusume, the number of Star Pieces acquired will remain the normal amount.<br>\r\n 2. Trainee Umamusume with the same name cannot be on the same team, nor can they be selected as Legacy Umamusume at the same time in Career mode.<br>\r\n 3. Scout schedules and contents are subject to change without notice.<br>\r\n<br>",
+            "post_at": 1794175200,
+            "post_platform_flag": 62,
+            "title": "New Spotlight Pretty Derby and Spotlight Support Card Scouts coming soon!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1165,
+      "page_url": "https://umapyoi.net/en/news/1165",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "147d60baba4665d55c038640cb453fc690d297eb1c5a665b9394663393439b9f",
+          "raw": {
+            "announce_id": 1165,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/announce_banner_3146_L1794261600.png?c=20261028021543",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 9, 2026 (UTC), a new Spotlight Pretty Derby Scout and Spotlight Support Card Scout have begun!<br>\r\n Trainee Umamusume and Support Cards debuting in these Scouts are featured as event bonuses in the ongoing story event Sweet Memories Teatime.<br>\r\n<br>\r\n During the spotlight period, scout rates for spotlighted Trainee Umamusume and Support Cards are increased!<br>\r\n<br>\r\n In addition, if you obtain a spotlighted 3★ Trainee Umamusume, you will receive more of her Star Pieces than usual as a bonus.<br>\r\n During the availability period, you can earn bonuses as many times as you acquire the spotlighted 3★ Trainee Umamusume, including when you do so by using Trainee Exchange Points.<br>\r\n<br>\r\n The spotlighted Trainee Umamusume and Support Cards are listed below.<br>\r\n<h2 class=\"heading\"> Spotlight Scout Availability Period</h2>\r\n 10:00 p.m., Nov 9–9:59 p.m., Nov 23, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Trainee Umamusume</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30146_L1794261600.png?c=20261028021543\"></figure>\r\n ■ Debut Trainee Umamusume (Spotlight)<br>\r\n ★★★ [Melt Your Heart] Ines Fujin<br>\r\n ★★★ [Marguerite Latte] Mejiro Ryan<br>\r\n<br>\r\n ■ Spotlight Trainee Umamusume 1<br>\r\n ★★★ [Melt Your Heart] Ines Fujin<br>\r\n Scout Bonus:<br>\r\n [Melt Your Heart] Ines Fujin Star Piece × 90<br> \r\n<br>\r\n ■ Spotlight Trainee Umamusume 2<br>\r\n ★★★ [Marguerite Latte] Mejiro Ryan<br>\r\n Scout Bonus:<br>\r\n [Marguerite Latte] Mejiro Ryan Star Piece × 90<br> \r\n<h2 class=\"heading\"> Support Cards</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/gacha_banner_30147_L1794261600.png?c=20261028021543\"></figure>\r\n ■ Debut Support Cards (Spotlight)<br>\r\n • SSR [Marvelous☆Chocolate Show] Marvelous Sunday<br>\r\n • SSR [Transform! Garçon Form!] Biko Pegasus<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Trainee Exchange Points and Support Card Exchange Points from these Spotlight Scouts cannot be carried over to future Scouts or other Scouts currently in progress.<br>\r\n 2. Trainee Exchange Points and Support Card Exchange Points not utilized during the Spotlight Scout availability period will automatically be converted into Clovers.<br>\r\n 3. For more details on Scouts, specific rates, and other important information, tap Details on the Scout screen.<br>\r\n 4. For more information on event bonuses, please tap the Help icon on the top right of the event screen.<br>\r\n 5. Scout schedules and contents are subject to change without notice.<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek</h2>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_40200001_L1794261600.png?c=20261028021543\"></figure>\r\n To celebrate the new arrival of [Melt Your Heart] Ines Fujin and [Marguerite Latte] Mejiro Ryan, episodes 1 through 4 of their Umamusume Stories will be fully unlocked for a limited time!<br>\r\n During the sneak peek period, you can watch the story episodes even without fulfilling their unlock conditions!<br>\r\n<h2 class=\"heading\"> Umamusume Story Sneak Peek Period</h2>\r\n 10:00 p.m., Nov 9–9:59 p.m., Nov 23, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Applicable Umamusume</h2>\r\n • Ines Fujin<br>\r\n • Mejiro Ryan<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. During the sneak peek period, even if you have not obtained the applicable Umamusume, you can still watch episodes 1 through 4 of their Umamusume Stories!<br>\r\n 2. If you do watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will obtain first-watch carat rewards, Umamusume Story rewards, and Umamusume Archive experience.<br>\r\n 3. If you do not watch episodes 1 through 4 of an applicable Umamusume's Umamusume Story during the sneak peek period, you will not obtain first-watch carat rewards, Umamusume Story rewards, or Umamusume Archive experience.<br>\r\n 4. After the sneak peek period has ended, any unwatched Umamusume Stories will once again become locked.<br>\r\n 5. Umamusume Stories can be viewed after the tutorial is completed.<br>\r\n<br>",
+            "post_at": 1794261600,
+            "post_platform_flag": 62,
+            "title": "Spotlight Pretty Derby and Spotlight Support Card Scouts out now!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 1168,
+      "page_url": "https://umapyoi.net/en/news/1168",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "16fdf4972ae55ab1780a7de5cf988072ba8d2122473058697987642fd19b20d2",
+          "raw": {
+            "announce_id": 1168,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": "&nbsp;As of 10:00 p.m., Nov 9, 2026 (UTC), new titles have been added, along with corresponding missions to obtain them.<br>\n<br>\n&nbsp;The new titles and the conditions to earn them are as follows.<br>\n<h2 class=\"heading\">&nbsp;Titles and Missions</h2>\n&nbsp;Career:<br>\n&nbsp;• \"Early Racer Gets the Carrot\" - Win all races and clear all Career goals without using a retry<br>\n&nbsp;• \"Power of Friendship\" - Complete a Career playthrough having triggered Friendship Training at least 60 times<br>\n&nbsp;• \"Nothing Beats Experience\" - Complete a Career playthrough having run at least 35 races<br>\n&nbsp;• \"Spark God\" - Achieve a 3★ spark in attribute, aptitude, and Unique Skill in a single Career playthrough<br>\n&nbsp;• \"Expert Front Runner\" - Achieve Front Runner aptitude S 30 times<br>\n&nbsp;• \"Expert Pace Chaser\" - Achieve Pace Chaser aptitude S 30 times<br>\n&nbsp;• \"Expert Late Surger\" - Achieve Late Surger aptitude S 30 times<br>\n&nbsp;• \"Expert End Closer\" - Achieve End Closer aptitude S 30 times<br>\n&nbsp;• \"Sprint Expert\" - Achieve Sprint aptitude S 30 times<br>\n&nbsp;• \"Mile Expert\" - Achieve Mile aptitude S 30 times<br>\n&nbsp;• \"Medium Expert\" - Achieve Medium aptitude S 30 times<br>\n&nbsp;• \"Long Expert\" - Achieve Long aptitude S 30 times<br>\n&nbsp;• \"Turf Expert\" - Achieve Turf aptitude S 30 times<br>\n&nbsp;• \"Dirt Expert\" - Achieve Dirt aptitude S 30 times<br>\n<br>\n&nbsp;Team Trials:<br>\n&nbsp;• \"One, Two, Three!\" - Place 1st, 2nd, and 3rd in a Team Trial 1 time<br>\n&nbsp;• \"Utter Domination\" - Place 1st, 2nd, and 3rd in a Team Trial 5 times<br>\n&nbsp;• \"Mejiro Family\" - Win a Team Trials race with a specific combination of Umamusume<br>\n&nbsp;• \"BNW\" - Win a Team Trials race with a specific combination of Umamusume<br>\n&nbsp;• \"Student Council\" - Win a Team Trials race with a specific combination of Umamusume<br>\n&nbsp;• \"Eternal Top Three\" - Win a Team Trials race with a specific combination of Umamusume<br>\n<br>\n&nbsp;Main Story:<br>\n&nbsp;• \"First Blessing\" - Win Main Story Act 1, Chapter 2, Race 1<br>\n&nbsp;• \"Triumph over Nightmares\" - Win Main Story Act 1, Chapter 3, Race 3<br>\n&nbsp;• \"Conqueror\" - Win Main Story Act 1, Chapter 4, Race 3<br>\n&nbsp;• \"The Way You Want\" - Win Main Story Act 1, Chapter 5, Race 2<br>\n&nbsp;• \"I Have to Win!\" - Win Main Story Act 1, Finale Part 1, Race 2<br>\n&nbsp;• \"Japan's Number One\" - Win Main Story Act 1, Finale Part 2, Race 7<br>\n<br>\n<h2 class=\"heading\">&nbsp;Important Information</h2>&nbsp;1. Only progress made after this update will count toward completing the newly added missions.<br>\n&nbsp;2. To complete the mission \"Early Racer Gets the Carrot,\" you will need to win all races entered during that Career, not only the goal races.<br>\n&nbsp;3. Team races in the Career Scenario Unity Cup: Shine On, Team Spirit! do not count towards mission progress for \"Early Racer Gets the Carrot\" and \"Nothing Beats Experience.\"<br>\n&nbsp;4. When calculating mission progress for \"Power of Friendship,\" if multiple training partners trigger Friendship Training on the same turn, each partner counts as a separate activation.<br>\n&nbsp;For example: If two training partners are displayed on Speed training with a rainbow icon, and you select to train Speed for that turn, this will increase your mission progress by two.<br>\n&nbsp;5. When attempting the Team Trials missions added in this update, you must enter the relevant races with a full team of three members.<br>\n<br>",
+            "post_at": 1794261600,
+            "post_platform_flag": 62,
+            "title": "New title missions are here!",
             "update_at": null
           }
         }
@@ -17701,6 +18119,74 @@
             "post_at": 1793854200,
             "post_platform_flag": 62,
             "title": "Emails sent regarding reimbursement for the 7th EVENT in LOS ANGELES concerts",
+            "update_at": null
+          }
+        },
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "47daafc96590e8f30ae71fc3ab9e674c154de50b01a92f97535e576c34960c41",
+          "raw": {
+            "announce_id": 100118,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " Thank you for your continued support of Umamusume: Pretty Derby.<br>\r\n<br>\r\n We would like to once again sincerely apologize for the inconvenience and concern caused by the cancellation of the 7th EVENT: THE STAGE in LOS ANGELES concerts.<br>\r\n<br>\r\n If you purchased concert tickets, you will receive an email from AXS confirming your intent to receive reimbursement for travel expenses or cancellation fees and purchase concert merchandise.<br>\r\n<br>\r\n If you would like to receive reimbursement or purchase concert merchandise, please read the email and submit the required information to the address below.<br>\r\n<br>\r\n<h2 class=\"heading\"> Cygames LA Concert Support</h2>\r\n ts7th_umamusume_la_support@contact.cygames.co.jp<br>\r\n<br>\r\n The above address is the official email address we will use to handle inquiries related to this matter. Please do not reply to the instructions sent by AXS.<br>\r\n<br>\r\n<h2 class=\"heading\"> Regarding Suspicious Emails</h2>\r\n Be wary of illegitimate emails pretending to be from Cygames or other companies involved in this matter. If you do receive such an email, notify us at the above address. Do not click on any links, open attachments, or submit personal information.<br>\r\n<br>\r\n<br>\r\n<br>\r\n [Update: 3:00 a.m., Nov 6, 2026 (UTC)]<br>\r\n It may take some time for those who purchased concert tickets to receive the email from AXS.<br>\r\n Thank you for your continued patience.<br>",
+            "post_at": 1793854200,
+            "post_platform_flag": 62,
+            "title": "Emails sent regarding reimbursement for the 7th EVENT in LOS ANGELES concerts",
+            "update_at": 1793934000
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 100119,
+      "page_url": "https://umapyoi.net/en/news/100119",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "e2efa2c4c920be42e10a625d25bf8dea64f60670d4fc9c975781781d26f62f20",
+          "raw": {
+            "announce_id": 100119,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " We have confirmed the following issue affecting the Racing Carnival event.<br>\r\n<br>\r\n ■ Issue Details<br>\r\n When training a Trainee in Independent Training, Carnival Bonus skills may reach a maximum level of 6.<br>\r\n (The intended maximum level of Carnival Bonus skills is 3.)<br>\r\n<br>\r\n ■ Affected Period<br>\r\n 10:00 p.m., Nov 5–present (UTC)<br>\r\n<br>\r\n We are currently investigating this issue.<br>\r\n This notice will be updated as soon as more information is available.<br>\r\n<br>\r\n [Update: 9:15 a.m., Nov 9, 2026 (UTC)]<br>\r\n This issue has now been resolved.<br>\r\n<br>\r\n ■ Affected Period<br>\r\n 10:00 p.m., Nov 5– 8:40 a.m., Nov 9, 2026 (UTC)<br>\r\n<br>\r\n As an apology for the inconvenience, we plan to distribute items to affected trainers.<br>\r\n This notice will be updated once more details are available.<br>\r\n<br>\r\n [Update: 10:15 a.m., Nov 10, 2026 (UTC)]<br>\r\n The following corrections have now been applied to the affected Carvinal Bonus skills.<br>\r\n<br>\r\n ■ Affected Trainers<br>\r\n All trainers who trained an Umamusume in Independent Training during the affected period and obtained a Carnival Bonus skill with a level of 4 or higher<br>\r\n<br>\r\n ■ Corrections Applied<br>\r\n All Carnival Bonus skills with a level of 4 or higher have been changed to level 3 to match the intended maximum level.<br>\r\n<br>\r\n ■ Important Information<br>\r\n If you don't see changes reflected in game, try returning to the title screen and loading the game again.<br>\r\n<br>\r\n The distribution of apology items is still being prepared.<br>\r\n This notice will be updated once more details are available.<br>\r\n<br>\r\n [Update: 4:50 a.m., Nov 11, 2026 (UTC)]<br>\r\n The distribution of items is now complete.<br>\r\n Eligible trainers can find the items in their Presents.<br>\r\n<br>\r\n ■ Eligible Trainers<br>\r\n All trainers who entered Racing Carnival races during the affected period using an Umamusume who had obtained a Carnival Bonus skill of level 4 or higher<br>\r\n<br>\r\n ■ Contents<br>\r\n Carrot Jelly Mini (quantity corresponds to the number of event races entered using an Umamusume who had obtained an affected Carnival Bonus skill)<br>\r\n<br>\r\n We sincerely apologize to all trainers who faced inconveniences due to this issue.",
+            "post_at": 1793885400,
+            "post_platform_flag": 62,
+            "title": "Issue with Racing Carnival event",
+            "update_at": 1794372600
+          }
+        }
+      ]
+    },
+    {
+      "announce_id": 100120,
+      "page_url": "https://umapyoi.net/en/news/100120",
+      "first_seen_at": "2026-11-17T14:37:48.737167395+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-17T14:37:48.737167395+00:00",
+          "content_hash": "2fbd2672d06e9a814bc0524d973daf6a06b589de85fa7a7f2a894a4b5145089e",
+          "raw": {
+            "announce_id": 100120,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " Thank you for your continued support of Umamusume: Pretty Derby.<br>\r\n<br>\r\n Please read the following for information regarding the reimbursement process for concert ticket purchases, travel fees, and cancellation fees, as well as how to purchase concert merchandise. These details are being provided through this web notice instead of via email as originally planned.<br>\r\n We acknowledge that the announcement of this information has taken longer than expected, and we sincerely apologize for the inconvenience and concern caused by the delay.<br>\r\n<br>\r\n If you would like to receive reimbursement or purchase concert merchandise, please submit the required information to the designated Cygames email address by the deadline.<br>\r\n<br>\r\n *If you have already submitted the required information to Cygames, you do not have to submit the same information again.<br>\r\n<br>\r\n *Emails must be written in English or Japanese.<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Deadline</h2>\r\n 11:59 p.m., November 30, 2026 (PT)<br>\r\n<br>\r\n If you would like to receive reimbursement or purchase concert merchandise, submit the required information by the above deadline. You will receive further instructions to submit receipts, bank account information, etc.<br>\r\n<br>\r\n *Requests for reimbursement submitted after the deadline might not be fulfilled.<br>\r\n<br>\r\n<br>\r\n You will receive a separate email from AXS regarding concert ticket refunds.<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Reimbursement</h2>\r\n If you traveled:<br>\r\n<br>\r\n • Lodging Expenses<br>\r\n<br>\r\n You will be reimbursed for actual costs incurred for up to two nights of lodging if you had ticket(s) to attend one of the two concerts, or up to three nights if you had tickets to attend both days. The maximum amount covered will be USD 320 or JPY 50,000 per person per night.<br>\r\n<br>\r\n • Air Travel to Los Angeles<br>\r\n<br>\r\n You will be reimbursed for actual costs incurred for round-trip flight tickets, including fuel surcharges and airport taxes. The maximum amount covered will be USD 4,450 or JPY 700,000 per person.<br>\r\n<br>\r\n If you cancelled bookings without traveling:<br>\r\n<br>\r\n<br>\r\n You will be reimbursed in full for any cancellation fees incurred. The above reimbursement limits for lodging and air travel expenses do not apply in this case.<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Concert Merchandise</h2>\r\n If you would like to purchase concert merchandise online, you will receive further instructions on how to do so after the information you provided is verified.<br>\r\n<br>\r\n Those residing in the US or Canada may purchase merchandise from the site linked below.<br>\r\n Merchandise will be on sale until 11:59 p.m., November 16 (PT).<br>\r\n<br>\r\n<a href=\"https://www.goodsmileus.com/\">https://www.goodsmileus.com/</a>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Where to Submit Information</h2>\r\n ts7th_umamusume_la_support@contact.cygames.co.jp<br>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Regarding Personal Information</h2>\r\n Cygames, Inc. will use the personal information you submit for purposes related to the reimbursement of expenses or online sale of concert merchandise.<br>\r\n In order to confirm your answers, some of your personal information will be shared with AXS Group LLC and its affiliated companies.<br>\r\n<br>\r\n For more on the handling of your personal information, refer to the Cygames, Inc. Privacy Policy.<br>\r\n<a href=\"https://www.cygames.co.jp/en/policy/\">https://www.cygames.co.jp/en/policy/</a>\r\n<br>\r\n<br>\r\n<h2 class=\"heading\"> Required Information</h2>\r\n Paste the text below into an email and fill in the required information. For yes/no questions, delete one of the choices so that your answer remains.<br>\r\n<br>\r\n<br>\r\n 1. Concert Ticket Seat Number:<br>\r\n Concert Date:<br>\r\n Section:<br>\r\n Row:<br>\r\n<br>\r\n *If you purchased multiple tickets, list all of them.<br>\r\n<br>\r\n 2. I would like to be reimbursed for travel expenses or cancellation fees.<br>\r\n Yes/No<br>\r\n<br>\r\n<br>\r\n 3. Country/Region of Residence:<br>\r\n<br>\r\n 4. Email Address Used When Purchasing Tickets from AXS:<br>\r\n<br>\r\n<h2 class=\"heading\"> Next Steps</h2>\r\n After your answers have been confirmed, you will receive further instructions from the Cygames LA Concert Support email address.<br>\r\n<br>\r\n The purpose of this email is to confirm your intent to receive reimbursement or purchase concert merchandise. You will receive further instructions to submit receipts, bank account information, etc.<br>\r\n<br>\r\n Thank you for your patience and cooperation.<br>",
+            "post_at": 1794554100,
+            "post_platform_flag": 62,
+            "title": "Information regarding LA concert cancellation reimbursement and online merchandise sales",
             "update_at": null
           }
         }
