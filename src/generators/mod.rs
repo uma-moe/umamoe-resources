@@ -20,6 +20,7 @@ pub mod skills;
 pub mod support_cards_db;
 pub mod supports;
 pub mod timeline;
+pub mod timeline_images;
 
 #[derive(Debug)]
 pub struct ResourceOutput {

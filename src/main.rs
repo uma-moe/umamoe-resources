@@ -93,6 +93,27 @@ enum Command {
         #[arg(long)]
         only: Vec<String>,
     },
+    /// Pick the source of every timeline banner and upload the new or better pictures.
+    TimelineArt {
+        /// The timeline to picture, `.json` or `.json.gz`; the current one in --data-dir if unset.
+        #[arg(long)]
+        timeline: Option<PathBuf>,
+        #[arg(long, default_value = "generated-data")]
+        data_dir: PathBuf,
+        /// Report how many banners have an English, a Japanese or no source, and download nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Build a few banners per folder into this folder instead of the bucket, to check them.
+        #[arg(long)]
+        out_dir: Option<PathBuf>,
+        /// Banners per folder with --out-dir.
+        #[arg(long, default_value_t = 3)]
+        sample: usize,
+        /// Compare the picked sources with those the frontend's image sync recorded in this
+        /// folder (its timeline-image-sync/).
+        #[arg(long)]
+        compare_frontend: Option<PathBuf>,
+    },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
         #[arg(long, env = "DATABASE_URL")]
@@ -199,6 +220,9 @@ struct ServeArgs {
     /// the bucket keeps a single record of what was published.
     #[arg(long, env = "GAME_ART_PUBLISH")]
     publish_game_art: bool,
+    /// How often the game art publisher also refreshes the timeline banners.
+    #[arg(long, env = "TIMELINE_ART_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(60..), default_value_t = 1800)]
+    timeline_art_interval_seconds: u64,
     /// Also write plain .json files beside the .json.gz artifacts during startup generation.
     #[arg(long)]
     write_json: bool,
@@ -222,6 +246,7 @@ impl Default for ServeArgs {
             confirmed_banner_dates_path: None,
             confirmed_banner_dates_refresh_interval_seconds: 60,
             publish_game_art: false,
+            timeline_art_interval_seconds: 1800,
             write_json: false,
             no_generate: false,
         }
@@ -311,6 +336,34 @@ async fn main() -> Result<()> {
                     let bucket = assets::Bucket::fromEnv()?;
                     assets::publishGameArt(&bucket, &options, &master, &version, dry_run).await?;
                 }
+            }
+        }
+        Command::TimelineArt {
+            timeline,
+            data_dir,
+            dry_run,
+            out_dir,
+            sample,
+            compare_frontend,
+        } => {
+            let timeline_path = match timeline {
+                Some(path) => path,
+                None => assets::currentTimelinePath(&data_dir)?,
+            };
+            let timeline_json = assets::readTimeline(&timeline_path)?;
+            let options = assets::TimelineArtOptions::fromEnv();
+
+            if let Some(sync_dir) = compare_frontend {
+                let report = assets::compareTimelineArtWithFrontend(&timeline_json, &sync_dir)?;
+                printParity("Japanese", &report.japanese);
+                printParity("English", &report.english);
+            } else if dry_run {
+                assets::reportTimelineArtPlan(&timeline_json)?;
+            } else if let Some(folder) = out_dir {
+                assets::buildTimelineArtSample(&options, &timeline_json, &folder, sample).await?;
+            } else {
+                let bucket = assets::Bucket::fromEnv()?;
+                assets::publishTimelineArt(&bucket, &options, &timeline_json).await?;
             }
         }
         Command::Refresh {
@@ -493,6 +546,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     spawnRefreshLoop(args.clone());
     if args.publish_game_art {
         spawnGameArtLoop(args.refresh_interval_seconds, args.master.clone());
+        spawnTimelineArtLoop(args.timeline_art_interval_seconds, args.data_dir.clone());
     }
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
@@ -623,6 +677,74 @@ fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf) {
             }
         }
     });
+}
+
+#[allow(non_snake_case)]
+/// Publishes the current timeline's banners at start and then on every interval, which catches
+/// new timelines, new news archives and English art uploaded around a release.
+fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf) {
+    let bucket = match assets::Bucket::fromEnv() {
+        Ok(bucket) => bucket,
+        Err(error) => {
+            warn!(error = %error, "timeline art publishing is on but not configured");
+            return;
+        }
+    };
+    let options = assets::TimelineArtOptions::fromEnv();
+
+    info!(
+        interval_seconds,
+        "automatic timeline art publishing enabled"
+    );
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            let timeline =
+                assets::currentTimelinePath(&data_dir).and_then(|path| assets::readTimeline(&path));
+            let timeline_json = match timeline {
+                Ok(timeline_json) => timeline_json,
+                Err(error) => {
+                    warn!(
+                        error = format!("{error:#}"),
+                        "timeline art waits for a generated timeline"
+                    );
+                    continue;
+                }
+            };
+            if let Err(error) = assets::publishTimelineArt(&bucket, &options, &timeline_json).await
+            {
+                warn!(
+                    error = format!("{error:#}"),
+                    "timeline art publishing failed"
+                );
+            }
+        }
+    });
+}
+
+#[allow(non_snake_case)]
+fn printParity(locale: &str, parity: &generators::timeline_images::LocaleParity) {
+    println!(
+        "{locale}: {} matching, {} different, {} recorded but not picked",
+        parity.matching,
+        parity.mismatches.len(),
+        parity.unplanned.len()
+    );
+    for mismatch in &parity.mismatches {
+        println!("  {}", mismatch.image_path);
+        println!(
+            "    picked   {}",
+            mismatch.planned.as_deref().unwrap_or("nothing")
+        );
+        println!("    recorded {}", mismatch.recorded);
+    }
+    for state_key in &parity.unplanned {
+        println!("  not picked: {state_key}");
+    }
 }
 
 fn spawn_confirmed_banner_dates_url_refresh_loop(args: ServeArgs, path: PathBuf, url: String) {

@@ -30,8 +30,10 @@ const BUNDLED_TIMELINE_LEGEND_RACES_JSON: &[u8] =
     include_bytes!("../jp_data/timeline_legend_races.json");
 const BUNDLED_TIMELINE_CAMPAIGNS_JSON: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
-const BUNDLED_UMAPYOI_ARCHIVE_JSON: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
-const BUNDLED_GLOBAL_NEWS_JSON: &[u8] = include_bytes!("../global_data/official_news_archive.json");
+pub(crate) const BUNDLED_UMAPYOI_ARCHIVE_JSON: &[u8] =
+    include_bytes!("../jp_data/umapyoi_archive.json");
+pub(crate) const BUNDLED_GLOBAL_NEWS_JSON: &[u8] =
+    include_bytes!("../global_data/official_news_archive.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
@@ -1328,7 +1330,7 @@ fn best_umapyoi_post_for_event<'a>(
         .map(|(_, _, post)| post)
 }
 
-fn normalized_timeline_title(value: &str) -> String {
+pub(crate) fn normalized_timeline_title(value: &str) -> String {
     value
         .to_ascii_lowercase()
         .chars()
@@ -1345,7 +1347,7 @@ fn normalized_timeline_title(value: &str) -> String {
         .join(" ")
 }
 
-fn timeline_title_similarity(left: &str, right: &str) -> usize {
+pub(crate) fn timeline_title_similarity(left: &str, right: &str) -> usize {
     const IGNORED: &[&str] = &[
         "the", "a", "an", "is", "are", "now", "here", "held", "event", "campaign", "missions",
         "mission", "race", "live", "underway",
