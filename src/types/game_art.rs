@@ -296,6 +296,53 @@ pub(super) const PORTRAIT_OUTPUTS: &[ArtOutput] = &[
     ArtOutput::resized("art/umas/{card}/stand.webp", (512, 512)),
 ];
 
+/// The other pictures of an outfit, kept at the game's size in its uma folder. A `{dress}`
+/// picture is named by the outfit it shows, a `{card}` picture by the card.
+pub(super) const OUTFIT_PICTURES: &[OutfitPicture] = &[
+    OutfitPicture {
+        source: "chara/chr{chara}/chr_icon_{chara}_{dress}_01",
+        name: "icon",
+        file: "icon.webp",
+    },
+    OutfitPicture {
+        source: "chara/chr{chara}/chr_icon_{chara}_{dress}_02",
+        name: "iconGold",
+        file: "icon-gold.webp",
+    },
+    OutfitPicture {
+        source: "chara/chr{chara}/trained_chr_icon_{chara}_{dress}_01",
+        name: "trainedIcon",
+        file: "trained-icon.webp",
+    },
+    OutfitPicture {
+        source: "chara/chr{chara}/trained_chr_icon_{chara}_{dress}_02",
+        name: "trainedIconGold",
+        file: "trained-icon-gold.webp",
+    },
+    OutfitPicture {
+        source: "chara/chr{chara}/push_icon_{chara}_{dress}",
+        name: "pushIcon",
+        file: "push-icon.webp",
+    },
+    OutfitPicture {
+        source: "outgame/dress/dress_{dress}_0_00",
+        name: "dress",
+        file: "dress.webp",
+    },
+    OutfitPicture {
+        source: "outgame/note/gacha_thumb/chara_card/gacha_thumb_{card}",
+        name: "gachaThumb",
+        file: "gacha-thumb.webp",
+    },
+];
+
+pub(super) struct OutfitPicture {
+    pub(super) source: &'static str,
+    /// The key the uma document lists the picture under.
+    pub(super) name: &'static str,
+    pub(super) file: &'static str,
+}
+
 /// Sprites cut from one of the game's atlases. The sprites name their pictures in a second
 /// bundle, so both are loaded together.
 pub(super) struct AtlasFamily {
