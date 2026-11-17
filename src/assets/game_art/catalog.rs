@@ -4,12 +4,13 @@ use super::layout::{characterKey, umaFolders, umaKey};
 use super::race_motions::raceMotion;
 use super::types::{
     ArtFamily, ArtOutput, AtlasPlan, AtlasSprites, CardOutfit, Catalog, CoursePart, Dependencies,
-    Fit, OutfitRow, PlannedOutput, PrefabFamily, SpriteSource, SupportCard, ART_FAMILIES,
-    ATLAS_FAMILIES, CHIBI_CONVERTER_REVISION, CONVERTER_REVISION, COURSE_ENVIRONMENT,
+    Fit, OutfitPicture, OutfitRow, PlannedOutput, PrefabFamily, SpriteSource, SupportCard,
+    ART_FAMILIES, ATLAS_FAMILIES, CHIBI_CONVERTER_REVISION, CONVERTER_REVISION, COURSE_ENVIRONMENT,
     COURSE_NAME_CATEGORY, COURSE_PARTS, COURSE_SKY, CUTIN_CONVERTER_REVISION, CUTIN_SET_FOLDER,
     CUTIN_TIMELINE_FOLDER, EFFECT_CONVERTER_REVISION, EFFECT_FOLDER, MODEL_CONVERTER_REVISION,
-    PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, PROP_FOLDER, SHADER_BUNDLE, SHADER_CONVERTER_REVISION,
-    SHADER_RECORD, SPRITE_SOURCES, TRACK_CATEGORY, TRACK_FOLDER, UMA_CONVERTER_REVISION,
+    OUTFIT_PICTURES, PORTRAIT_OUTPUTS, PORTRAIT_SOURCE, PROP_FOLDER, SHADER_BUNDLE,
+    SHADER_CONVERTER_REVISION, SHADER_RECORD, SPRITE_SOURCES, TRACK_CATEGORY, TRACK_FOLDER,
+    UMA_CONVERTER_REVISION,
 };
 use super::umas::{isUmaRecord, outfitRows, umaOutfits};
 use anyhow::{Context, Result};
@@ -91,6 +92,45 @@ impl Catalog {
                     .iter()
                     .find_map(|sprites| self.spriteOutputs(sprites, name))
             })
+            .or_else(|| {
+                OUTFIT_PICTURES
+                    .iter()
+                    .find_map(|picture| self.outfitPictureOutputs(picture, name))
+            })
+    }
+
+    /// An outfit's icon, dress or gacha picture in its uma folder, `art/umas/100101/icon.webp`.
+    /// Outfits without a folder of their own, such as the shared uniforms, are left out.
+    fn outfitPictureOutputs(
+        &self,
+        picture: &OutfitPicture,
+        name: &str,
+    ) -> Option<Vec<PlannedOutput>> {
+        let captures = matchPattern(picture.source, name)?;
+        let captured = |placeholder: &str| {
+            captures
+                .iter()
+                .find(|(known, _)| *known == placeholder)
+                .and_then(|(_, digits)| digits.parse::<u32>().ok())
+        };
+
+        let folder = match (captured("dress"), captured("card")) {
+            (Some(dress), _) => self.uma_folders.get(&dress)?,
+            (None, Some(card)) => self.cardFolder(card)?,
+            (None, None) => return None,
+        };
+        Some(vec![PlannedOutput {
+            key: umaKey(folder, picture.file),
+            object: objectName(name).to_string(),
+            fit: Fit::Native,
+        }])
+    }
+
+    /// The uma folder of a playable card, when the card's outfit is served under it.
+    fn cardFolder(&self, card: u32) -> Option<&String> {
+        let outfit = self.cards.iter().find(|outfit| outfit.card == card)?;
+        let folder = self.uma_folders.get(&outfit.dress)?;
+        (*folder == card.to_string()).then_some(folder)
     }
 
     /// A chibi sprite in its outfit's uma folder, `art/umas/100101/sprites/0020.webp`, or in its
@@ -143,6 +183,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .map(|family| family.source)
         .chain([PORTRAIT_SOURCE])
         .chain(SPRITE_SOURCES.iter().map(|sprites| sprites.source))
+        .chain(OUTFIT_PICTURES.iter().map(|picture| picture.source))
         .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
         .chain([TRACK_CATEGORY, SHADER_BUNDLE])
@@ -566,6 +607,56 @@ mod tests {
     }
 
     #[test]
+    fn outfitPicturesAreServedInTheFolderOfTheOutfitTheyShow() {
+        let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
+
+        let icon = keys(&catalog, "chara/chr1001/chr_icon_1001_100130_02");
+        let trained_icon = keys(&catalog, "chara/chr1001/trained_chr_icon_1001_100102_01");
+        let dress = keys(&catalog, "outgame/dress/dress_100130_0_00");
+
+        assert_eq!(
+            icon,
+            Some(vec!["art/umas/100102/icon-gold.webp".to_string()])
+        );
+        assert_eq!(
+            trained_icon,
+            Some(vec!["art/umas/100103/trained-icon.webp".to_string()])
+        );
+        assert_eq!(dress, Some(vec!["art/umas/100102/dress.webp".to_string()]));
+    }
+
+    #[test]
+    fn gachaThumbnailsAreServedInTheFolderOfTheirCard() {
+        let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
+
+        let thumb = keys(
+            &catalog,
+            "outgame/note/gacha_thumb/chara_card/gacha_thumb_100102",
+        );
+        let unknown_card = keys(
+            &catalog,
+            "outgame/note/gacha_thumb/chara_card/gacha_thumb_100109",
+        );
+
+        assert_eq!(
+            thumb,
+            Some(vec!["art/umas/100102/gacha-thumb.webp".to_string()])
+        );
+        assert_eq!(unknown_card, None);
+    }
+
+    #[test]
+    fn picturesOfSharedOutfitsAreIgnored() {
+        let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
+
+        assert_eq!(
+            keys(&catalog, "chara/chr1001/chr_icon_1001_000001_01"),
+            None
+        );
+        assert_eq!(keys(&catalog, "chara/chr1001/push_icon_1001_000002"), None);
+    }
+
+    #[test]
     fn outfitsNoCardWearsAreIgnored() {
         let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
 
@@ -863,14 +954,7 @@ mod tests {
     fn neighbouringFilesTheSiteDoesNotUseAreIgnored() {
         let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
 
-        assert_eq!(
-            keys(&catalog, "chara/chr1001/chr_icon_1001_100101_01"),
-            None
-        );
-        assert_eq!(
-            keys(&catalog, "chara/chr1001/trained_chr_icon_1001_100101_01"),
-            None
-        );
+        assert_eq!(keys(&catalog, "chara/chr1001/chr_icon_training_1001"), None);
         assert_eq!(
             keys(&catalog, "minigame/mng_0001/icon/frm_item_icon_00000"),
             None

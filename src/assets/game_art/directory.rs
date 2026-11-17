@@ -8,7 +8,7 @@ use super::layout::{characterKey, rootLink, umaKey, Layout, ART_ROOT, SHADER_IND
 use super::race_motions::raceMotion;
 use super::types::{
     ArtState, CardOutfit, Catalog, OutfitRow, PrefabFamily, PublishedArt, UmaTraits,
-    DOCUMENT_SCHEMA,
+    DOCUMENT_SCHEMA, OUTFIT_PICTURES,
 };
 use anyhow::Result;
 use serde::Serialize;
@@ -268,8 +268,7 @@ impl<'a> Directory<'a> {
             name: uma.name,
             character: self.characterLink(uma.chara),
             outfit: uma.dress,
-            portrait: self.published.link(&umaKey(uma.folder, "portrait.webp")),
-            stand: self.published.link(&umaKey(uma.folder, "stand.webp")),
+            pictures: self.umaPictures(uma.folder),
             model,
             chibi,
             cutins: own_cutins
@@ -277,6 +276,19 @@ impl<'a> Directory<'a> {
                 .filter_map(|cutin| self.cutinEntry(cutin))
                 .collect(),
         }
+    }
+
+    fn umaPictures(&self, folder: &str) -> BTreeMap<&'static str, String> {
+        let stand_art = [("portrait", "portrait.webp"), ("stand", "stand.webp")];
+        let other_pictures = OUTFIT_PICTURES
+            .iter()
+            .map(|picture| (picture.name, picture.file));
+
+        stand_art
+            .into_iter()
+            .chain(other_pictures)
+            .filter_map(|(name, file)| Some((name, self.published.link(&umaKey(folder, file))?)))
+            .collect()
     }
 
     /// The race clips the uma plays: runs of its running form and gate starts from its run set,
@@ -681,12 +693,10 @@ struct UmaDocument<'a> {
     character: CharacterLink<'a>,
     /// The game's outfit id, which NPC race rows and outfit changes give.
     outfit: u32,
-    /// The stand art at 128 px, for lists.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    portrait: Option<String>,
-    /// The same stand art at the game's full 512 px.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    stand: Option<String>,
+    /// The outfit's 2D pictures by name: `portrait` is the stand art at 128 px for lists, `stand`
+    /// the same art at the game's full 512 px, the rest are listed in `OUTFIT_PICTURES`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pictures: BTreeMap<&'static str, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<ModelEntry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -995,6 +1005,11 @@ mod tests {
             characterKey(1001, "icon.webp"),
             &[],
         );
+        publish(
+            "chara/chr1001/chr_icon_1001_100101_02",
+            umaKey("100101", "icon-gold.webp"),
+            &[],
+        );
         let mut shaders = record(SHADER_INDEX_KEY, &[]);
         shaders.content_outputs = [TOON, ADDITIVE].map(|link| link[1..].to_string()).to_vec();
         state.files.insert(SHADER_BUNDLE.to_string(), shaders);
@@ -1041,6 +1056,10 @@ mod tests {
                 "icon": "/art/characters/1001/icon.webp",
                 "index": "/art/characters/1001/index.json",
             })
+        );
+        assert_eq!(
+            uma["pictures"],
+            json!({"iconGold": "/art/umas/100101/icon-gold.webp"})
         );
         assert_eq!(
             uma["model"],

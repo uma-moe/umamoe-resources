@@ -421,7 +421,7 @@ art/
                              an outfit no card wears is <character>-<outfit>, 1066-106601,
                              as NPC race rows name it
     index.json               every file the uma loads, see below
-    model.glb  chibi.glb  portrait.webp  stand.webp  sprites/  cutin/  cutin-002/
+    model.glb  chibi.glb  portrait.webp  stand.webp  icon.webp  dress.webp  sprites/  cutin/  …
   characters/1001/           what all of a character's umas share
     index.json               name, icon, its umas and support cards
     icon.webp  cutin/  chibi-motions/<role>/  effects/<set>/  sprites/
@@ -439,7 +439,7 @@ Every folder an uma, character, racecourse or library lives in has an `index.jso
 {
   "schema": 1, "id": 100101, "name": "Special Dreamer", "outfit": 100101,
   "character": {"id": 1001, "name": "Special Week", "icon": "/art/characters/1001/icon.webp", "index": "/art/characters/1001/index.json"},
-  "portrait": "/art/umas/100101/portrait.webp", "stand": "/art/umas/100101/stand.webp",
+  "pictures": {"portrait": "/art/umas/100101/portrait.webp", "stand": "/art/umas/100101/stand.webp", "icon": "/art/umas/100101/icon.webp", "…": "…"},
   "model": {"file": "/art/umas/100101/model.glb", "shaders": ["/art/shaders/gallop/3d/chara/toon/tser.json"],
             "motions": {"run": ["/art/motions/race/bright/run-fast-standard.glb"], "gate": ["…"], "finish": ["…"]}},
   "chibi": {"file": "/art/umas/100101/chibi.glb", "sprites": ["…"], "motions": {"body": ["/art/characters/1001/chibi-motions/body/00_idle01_loop.glb"]}},
@@ -457,7 +457,7 @@ Every folder an uma, character, racecourse or library lives in has an `index.jso
 - Documents are rewritten at most every ten minutes during a run, and at its end. `_state/game-art/_directory.json` keeps each document's MD5, so only changed documents are uploaded and documents no longer written are deleted. Documents are cached for five minutes, files for a day.
 - A file keeps the part of its game name that tells it apart from its siblings. When two files would still share a key, both keep their full game names and the run logs the clash.
 
-- It publishes for the version of the local `master.mdb`, which the refresh loop keeps current. Card portraits come from that master: the stand art (`chara_stand`) is published at 128 px as `portrait.webp` and at its full 512 px as `stand.webp`; the game names each by the outfit it shows, and `card_rarity_data.race_dress_id` at the card's top rarity says which outfit it wears (cards that start below 3★ wear the shared uniform until then), so card 100102 shows outfit 100130 and card 100701 outfit 100701.
+- It publishes for the version of the local `master.mdb`, which the refresh loop keeps current. Card portraits come from that master: the stand art (`chara_stand`) is published at 128 px as `portrait.webp` and at its full 512 px as `stand.webp`; the game names each by the outfit it shows, and `card_rarity_data.race_dress_id` at the card's top rarity says which outfit it wears (cards that start below 3★ wear the shared uniform until then), so card 100102 shows outfit 100130 and card 100701 outfit 100701. The uma folder also gets the outfit's other pictures at the game's size (`OUTFIT_PICTURES`): the square icon in its silver and gold frame (`icon.webp`, `icon-gold.webp`, 256 px), the round icon of a trained uma (`trained-icon.webp`, `trained-icon-gold.webp`), the 64 px notification icon (`push-icon.webp`), the outfit on its hanger (`dress.webp`) and the card's 512×256 gacha close-up (`gacha-thumb.webp`). Shared outfits such as the uniform have no uma folder and are left out. The uma document lists all of them under `pictures`.
 - An atlas is one bundle of named sprites drawing from a second texture bundle; both are downloaded together, sprites are cut at the size they are drawn, and the atlas is rebuilt when either bundle changes.
 - Every race track prefab (`3d/env/race/…/pfb_…`, 773 today, 15 tracks plus gates and props) becomes a binary glTF in its course's `parts/` folder, `art/racecourses/10001/parts/0000_002.glb`; gates, skies and props every course shares go to `art/racecourses/shared/` (`gates/`, `skies/`, `props/`). The file list's dependency column says which bundles a prefab draws from (meshes in `3d/probuilderexport/`, materials and textures under `sourceresources/`); they are downloaded with it, except shaders and race animations, and the model is rebuilt when any of them changes. A full first build downloads about 460 MiB.
 - Every texture a model draws is embedded in it as full-size WebP (`EXT_texture_webp`), so one `.glb` opens on its own, in Blender or three.js. The game fills its course materials (turf, dirt, base) at runtime with one season and weather variant from the part's `textures/` folder; those textures are published on their own in the course's `textures/` folder (`art/racecourses/10006/textures/0000_112_turf00.webp`) and downloaded with the prefab, whose model embeds the first variant in those slots and lists every variant in the material's `extras.unity.variants` as links from the bucket root.
