@@ -6120,6 +6120,7 @@ fn load_global_news_rewards(
                 )
             })
             .or_else(|| extract_global_login_day_table_bonus(title, &text))
+            .or_else(|| extract_global_one_time_login_bonus(title, &text))
         {
             let (available_at, available_until) =
                 extract_global_login_bonus_window(&text, &posted_at).unwrap_or_else(|| {
@@ -6660,6 +6661,32 @@ fn extract_global_login_day_table_bonus(title: &str, text: &str) -> Option<(i64,
                 evidence.join("; ")
             ),
         )
+    })
+}
+
+/// A login bonus claimed once on any login of its period ("Log in during the event period for a
+/// one-time gift of 500 carats!"). Returns the Carats, one login day and the evidence.
+fn extract_global_one_time_login_bonus(title: &str, text: &str) -> Option<(i64, i64, String)> {
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains("login bonus") || !is_confirmed_global_login_notice(title, text) {
+        return None;
+    }
+
+    text.lines().map(str::trim).find_map(|line| {
+        let lower_line = line.to_ascii_lowercase();
+        let one_time_login_gift = lower_line.contains("log in")
+            && lower_line.contains("one-time")
+            && !lower_line.contains("paid carat");
+        if !one_time_login_gift {
+            return None;
+        }
+
+        let &[amount] = carat_amounts_from_line(line).as_slice() else {
+            return None;
+        };
+        (1..=10_000)
+            .contains(&amount)
+            .then(|| (amount, 1, format!("One-time login gift: {line}")))
     })
 }
 
@@ -9171,6 +9198,45 @@ mod tests {
             audit.issues[0].reason,
             "confirmed EN Carat login bonus produced no planner reward"
         );
+    }
+
+    #[test]
+    fn parses_post_1117_one_time_login_gift() {
+        // Excerpt of https://umapyoi.net/en/news/1117.
+        let message = "\u{a0}As of 10:00 p.m., Nov 5, 2026 (UTC), the Umamusume: Pretty Derby the Stage \u{2013} Sprinters' Story Login Bonus has begun!<br>\
+            \u{a0}Log in during the event period for a one-time gift of 500 carats!<br>\
+            (This bonus can only be claimed once.)<br>\
+            <h2 class=\"heading\">\u{a0}Availability Period</h2>\
+            \u{a0}10:00 p.m., Nov 5\u{2013}2:59 p.m., Nov 19, 2026 (UTC)<br>\
+            <h2 class=\"heading\">\u{a0}Important Information</h2>\
+            \u{a0}2. Only a single reward can be obtained from this event during the availability period.<br>";
+        let mut post = global_post(
+            1117,
+            "Umamusume: Pretty Derby the Stage \u{2013} Sprinters' Story Celebration now underway!",
+            message,
+        );
+        post.snapshots[0].raw["post_at"] = json!(1_793_916_000_i64);
+        let archive = GlobalNewsArchive { posts: vec![post] };
+
+        let rewards = load_global_news_rewards(
+            &archive,
+            &Archive { news: Vec::new() },
+            &json!({"events": []}),
+        );
+        let login = rewards
+            .iter()
+            .find(|reward| reward.id == "global-news-1117-login-bonus")
+            .unwrap();
+        let audit = audit_global_news_reward_posts(&archive);
+
+        assert_eq!(login.amount, Some(500));
+        assert_eq!(login.assumption, "all_login_days_global");
+        assert_eq!(login.available_at, "2026-11-05T22:00:00+00:00");
+        assert_eq!(
+            login.available_until.as_deref(),
+            Some("2026-11-19T14:59:00+00:00")
+        );
+        assert!(audit.issues.is_empty(), "{:?}", audit.issues);
     }
 
     #[test]
