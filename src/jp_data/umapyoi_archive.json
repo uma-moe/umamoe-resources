@@ -1,10 +1,10 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-17T14:37:32.871170307+00:00",
+  "fetched_at": "2026-11-18T07:25:02.357766279+00:00",
   "analysis": {
-    "news_posts": 2720,
-    "classified_news_posts": 2338,
+    "news_posts": 2721,
+    "classified_news_posts": 2339,
     "news_posts_with_images": 1795,
     "news_posts_with_banner_candidates": 1790,
     "event_type_counts": {
@@ -17,7 +17,7 @@
       "league_of_heroes": 128,
       "legend_race": 217,
       "login_bonus": 125,
-      "maintenance": 48,
+      "maintenance": 49,
       "masters_challenge": 64,
       "monthly_match": 12,
       "race_event": 223,
@@ -26,16 +26,46 @@
       "strongest_team": 37,
       "trainer_skills_test": 69,
       "training_scenario": 339,
-      "update": 818
+      "update": 819
     },
     "discovered_gacha_banner_images": 960,
     "unique_discovered_gacha_ids": 572,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-11-16T09:40:00+00:00",
+    "latest_news_at": "2026-11-18T06:15:00+00:00",
     "api_gacha_banners": 229,
     "support_cards": 568
   },
   "news": [
+    {
+      "post_id": 3554,
+      "page_url": "https://umapyoi.net/news/3554?lang=jp",
+      "title": "Notice Regarding Maintenance of Facebook's Data Integration Feature",
+      "title_jp": "Facebookによるデータ連携機能メンテナンスのお知らせ",
+      "posted_at": "2026-11-18T06:15:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update",
+        "maintenance"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3554,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "アップデートのため、Facebookによるデータ連携機能のメンテナンスを実施いたします。<br><br>■メンテナンス期間<br>11/20(金)　14:30～17:00頃<br><br>■注意事項<br>1. メンテナンス中は、Facebookによるデータ連携をご利用になることができません。<br>2. メンテナンスの開始日時、および終了予定日時は前後する場合がございます。<br><br>ご利用のお客様に、ご迷惑をおかけしますことを、お詫び申し上げます。",
+        "message_english": "We will be performing maintenance on the Facebook data integration feature to facilitate an update.<br><br> ■ Maintenance Period<br> Friday, November 20, from approximately 2:30 PM to 5:00 PM<br><br> ■Important Notes<br> 1. You will not be able to use the Facebook data integration feature during maintenance.<br> 2. The start and end times of the maintenance may vary.<br><br> We apologize for any inconvenience this may cause to our users.",
+        "post_at": 1794982500,
+        "post_platform_flag": 62,
+        "row_number": 1,
+        "title": "Facebookによるデータ連携機能メンテナンスのお知らせ",
+        "title_english": "Notice Regarding Maintenance of Facebook's Data Integration Feature",
+        "update_at": null
+      }
+    },
     {
       "post_id": 3550,
       "page_url": "https://umapyoi.net/news/3550?lang=jp",
