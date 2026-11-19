@@ -1,12 +1,12 @@
 {
   "version": 1,
   "source": "https://umapyoi.net/api/v1",
-  "fetched_at": "2026-11-19T07:22:24.961310537+00:00",
+  "fetched_at": "2026-11-19T20:33:44.324308964+00:00",
   "analysis": {
-    "news_posts": 2724,
-    "classified_news_posts": 2342,
-    "news_posts_with_images": 1797,
-    "news_posts_with_banner_candidates": 1792,
+    "news_posts": 2726,
+    "classified_news_posts": 2344,
+    "news_posts_with_images": 1798,
+    "news_posts_with_banner_candidates": 1793,
     "event_type_counts": {
       "campaign": 712,
       "career_event": 154,
@@ -17,7 +17,7 @@
       "league_of_heroes": 130,
       "legend_race": 217,
       "login_bonus": 125,
-      "maintenance": 49,
+      "maintenance": 51,
       "masters_challenge": 64,
       "monthly_match": 12,
       "race_event": 224,
@@ -26,16 +26,93 @@
       "strongest_team": 37,
       "trainer_skills_test": 69,
       "training_scenario": 339,
-      "update": 819
+      "update": 821
     },
     "discovered_gacha_banner_images": 960,
     "unique_discovered_gacha_ids": 572,
     "earliest_news_at": "2021-02-10T03:00:00+00:00",
-    "latest_news_at": "2026-11-19T03:00:00+00:00",
+    "latest_news_at": "2026-11-19T09:00:00+00:00",
     "api_gacha_banners": 229,
     "support_cards": 568
   },
   "news": [
+    {
+      "post_id": 3556,
+      "page_url": "https://umapyoi.net/news/3556?lang=jp",
+      "title": "Notice Regarding Maintenance of the User Support Page",
+      "title_jp": "ユーザーサポートページメンテナンスのお知らせ",
+      "posted_at": "2026-11-19T09:00:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update",
+        "maintenance"
+      ],
+      "images": [
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454",
+          "field_path": "$.article_image",
+          "likely_banner": true
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454",
+          "field_path": "$.message",
+          "likely_banner": false
+        },
+        {
+          "url": "https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454",
+          "field_path": "$.message_english",
+          "likely_banner": false
+        }
+      ],
+      "raw": {
+        "announce_id": 3556,
+        "announce_label": 1,
+        "article_image": "https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454",
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "PHPの脆弱性対応のため、ユーザーサポートページのメンテナンスを実施いたします。<br><br>■メンテナンス期間<br>11/19 23:00ごろ～<br><br>メンテナンス中は、よくあるご質問、お問い合わせ、ご意見BOXをご利用いただけません。<br>進捗がございましたら、本お知らせにてご報告いたします。<br><br><div aria-setsize=\"-1\"><div aria-roledescription=\"message\"><div draggable=\"false\">メンテナンス中のお問い合わせは、下記のメールアドレスにて受け付けております。</div><br><img src=\"https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454\" style=\"width:auto; height:1em;\"></div></div><br>■注意事項<br>こちらはアプリ版「ウマ娘 プリティーダービー」のお問い合わせ窓口です。<br>お問い合わせの内容によっては、お答えいたしかねる場合がございます。<br>日本語以外のお問い合わせについてはお答えいたしかねます。<br>お問い合わせへの返信は、日本語で行っております。Please understand that all information is provided in Japanese only.<br><br>ご利用のお客様にご迷惑をおかけしますことを、お詫び申し上げます。",
+        "message_english": "We will be performing maintenance on the user support page to address a PHP vulnerability.<br><br> ■Maintenance Period<br> From around 11/19 at 11:00 PM～<br><br> During maintenance, the FAQs, Contact Us, and Feedback Box will be unavailable.<br> We will provide updates on this notice as progress is made.<br><br><div aria-setsize=\"-1\"><div aria-roledescription=\"message\"><div draggable=\"false\"> During maintenance, please send inquiries to the email address below.</div><br><img src=\"https://prd-info-umamusume.akamaized.net/announce/3556/Header/info_contact.png?c=20261119171454\" style=\"width:auto; height:1em;\"></div></div><br> ■Important Notes<br> This is the support contact for the “Umamusume Pretty Derby” app.<br> Depending on the nature of your inquiry, we may be unable to respond.<br> We are unable to respond to inquiries submitted in languages other than Japanese.<br> We respond to inquiries in Japanese. Please understand that all information is provided in Japanese only.<br><br> We apologize for any inconvenience this may cause our users.",
+        "post_at": 1795078800,
+        "post_platform_flag": 62,
+        "row_number": 2,
+        "title": "ユーザーサポートページメンテナンスのお知らせ",
+        "title_english": "Notice Regarding Maintenance of the User Support Page",
+        "update_at": null
+      }
+    },
+    {
+      "post_id": 3555,
+      "page_url": "https://umapyoi.net/news/3555?lang=jp",
+      "title": "Notice of Maintenance Due to a PHP Vulnerability",
+      "title_jp": "PHPの脆弱性対応に伴うメンテナンスのお知らせ",
+      "posted_at": "2026-11-19T09:00:00+00:00",
+      "updated_at": "2026-11-19T17:14:00+00:00",
+      "label": "Game",
+      "event_types": [
+        "update",
+        "maintenance"
+      ],
+      "images": [],
+      "raw": {
+        "announce_id": 3555,
+        "announce_label": 1,
+        "article_image": null,
+        "id": 1,
+        "image": "",
+        "label_color": "#B5D913",
+        "label_name_en": "Game",
+        "message": "PHPの脆弱性対応のためのメンテナンスを実施いたします。<br><br>■メンテナンス期間<br>11/19 23:00ごろ～<br><br>■注意事項<br>メンテナンス中は、ゲームのプレイや、データ連携を含むすべての機能がご利用になれません。<br>なお、本メンテナンスの影響で、育成中のデータが削除されることはございません。<br>また、状況により開始時刻を変更する場合がございます。<br><br>進捗がございましたら、本お知らせにてご報告いたします。<br><br>【11/20 2:14追記】<br>本メンテナンスは、1:52に終了いたしました。<br>メンテナンスへのご協力のお礼といたしまして、対象のお客様へジュエル150個をプレゼントにお送りいたしました。<br><br>■受取期間<br>11/20 2:00 ～ 12/20 23:59<br><br>■対象のお客様<br>メンテナンス開始前にゲームを開始したお客様<br><br>また、本メンテナンスの対応といたしまして、対象のお客様へアビリティPtの返還を行いました。<br>お手数ではございますが、プレゼントからご確認ください。<br><br>■対象のお客様<br>メンテナンス開始時点でトレーナーアビリティが発動中の状態のお客様<br><br>■返還内容<br>メンテナンス開始時点でのトレーナーアビリティの残り有効時間に応じたアビリティPt<br><br>■注意事項<br>返還されたアビリティPtは、タイトルからログインしなおすと受け取れます。<br>返還されたアビリティPtを受け取るには、2026/12/19 23:59までにログインしていただく必要があります。<br>ご利用のお客様にご迷惑をおかけしましたことを、お詫び申し上げます。<br><br>ご利用のお客様には、ご迷惑をおかけしますことを、お詫び申し上げます。",
+        "message_english": "We will be performing maintenance to address a PHP vulnerability.<br><br> ■Maintenance Period<br> From around 11/19 at 23:00～<br><br> ■Important Notes<br> During maintenance, all features—including gameplay and data synchronization—will be unavailable.<br> Please note that data for characters currently being trained will not be deleted as a result of this maintenance.<br> Please note that the start time may be subject to change depending on circumstances.<br><br> We will provide updates on this notice as progress is made.<br><br> [Updated 11/20 at 2:14 a.m.]<br> This maintenance ended at 1:52 a.m.<br> As a token of our appreciation for your cooperation during maintenance, we have sent 150 Jewels as a gift to eligible players.<br><br> ■ Claim Period<br> November 20, 2:00 a.m. – December 20, 11:59 p.m.<br><br> ■ Eligible Players<br> Players who were logged into the game before maintenance began<br><br> Additionally, as part of our response to this maintenance, we have refunded Ability Points to eligible players.<br> We apologize for the inconvenience, but please check your “Gift” section.<br><br> ■Eligible Players<br> Players whose Trainer Abilities were active at the start of maintenance<br><br> ■ Refund Details<br> Ability Points corresponding to the remaining duration of the Trainer Ability at the start of maintenance<br><br> ■Important Notes<br> You can claim the refunded Ability Points by logging back into the game from the title screen.<br> To claim the refunded Ability Points, you must log in by 11:59 PM on December 19, 2026.<br> We apologize for any inconvenience this may have caused our users.<br><br> We apologize for any inconvenience this may cause our users.",
+        "post_at": 1795078800,
+        "post_platform_flag": 62,
+        "row_number": 1,
+        "title": "PHPの脆弱性対応に伴うメンテナンスのお知らせ",
+        "title_english": "Notice of Maintenance Due to a PHP Vulnerability",
+        "update_at": 1795108440
+      }
+    },
     {
       "post_id": 3554,
       "page_url": "https://umapyoi.net/news/3554?lang=jp",
