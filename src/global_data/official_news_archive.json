@@ -14584,6 +14584,31 @@
       ]
     },
     {
+      "announce_id": 1142,
+      "page_url": "https://umapyoi.net/en/news/1142",
+      "first_seen_at": "2026-11-19T07:22:44.141331823+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-19T07:22:44.141331823+00:00",
+          "content_hash": "3814832bcae5ccc50c795c6be9b70aed5b7b97dbedd9ef5843f5ce6247d72bc6",
+          "raw": {
+            "announce_id": 1142,
+            "announce_label": 1,
+            "article_image": null,
+            "id": 1,
+            "image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Thumbnail/banner_27300001_L1795039200.png?c=20261007044254",
+            "label_color": "#B5D913",
+            "label_name_en": "Game",
+            "message": " As of 10:00 p.m., Nov 18, 2026 (UTC), a G1 Celebration has begun!<br>\r\n See below for details of included events.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27300001_L1795039200.png?c=20261007044254\"></figure><br>\r\n Beginning from 10:00 p.m., Nov 18, 2026 (UTC), new limited-time missions are available under the Missions section on the Home screen!<br>\r\n<br>\r\n Note: After the availability period of each mission ends, it will no longer be possible to attempt that mission.<br>\r\n<br>\r\n By completing these missions, you can earn rewards including carats, monies, and Support Points!<br>\r\n<h2 class=\"heading\"> Availability Periods</h2>\r\n Kawasaki Kinen Missions<br>\r\n 10:00 p.m., Nov 18–2:59 p.m., Nov 25, 2026 (UTC)<br>\r\n<br>\r\n February Stakes Missions<br>\r\n 3:00 p.m., Nov 24–2:59 p.m., Dec 1, 2026 (UTC)<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Limited-time missions can only be cleared if the conditions are fulfilled after the time when the relevant mission is added. Fulfilling mission conditions before this time will not count towards mission completion.<br>\r\n 2. If you retry a race in Career mode, any conditions that you may have fulfilled in the original attempt will no longer count towards mission completion.<br>\r\n 3. The availability periods and details of these missions are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27300002_L1795039200.png?c=20261007044254\"></figure><br>\r\n To celebrate the G1 race season, we're sending a set of G1 Race Giveaway gifts to all our trainers!<br>\r\n<br>\r\n See below for all the details.<br>\r\n<br>\r\n • Kawasaki Kinen Giveaway<br>\r\n 10:00 p.m., Nov 24, 2026 (UTC) – Monies × 50,000<br> \r\n<br>\r\n • February Stakes Giveaway<br>\r\n 10:00 p.m., Nov 30, 2026 (UTC) – Monies × 50,000<br> \r\n<h2 class=\"heading\"> How to Receive</h2>\r\n After completing the game's tutorial, select Presents on the Home screen to find your gift.<br>\r\n If you don't see the gift in your Presents, try returning to the title screen and loading the game again.<br>\r\n<h2 class=\"heading\"> Gift Expiry</h2>\r\n Gifts will expire if not claimed within 30 days after they are sent to your Presents.<br>\r\n Expired gifts will automatically be deleted, so be sure to claim them before this happens.<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n The details of this giveaway are subject to change without notice.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/header_27300003_L1795039200.png?c=20261007044254\"></figure>\r\n To celebrate the G1 race season, we're adding bonus Star Piece rewards to certain Career races for a limited time!<br>\r\n During each reward period, you'll be able to claim bonus Star Pieces by entering the applicable race in a Career playthrough once per day.<br>\r\n You can earn bonus rewards just by entering, but you'll get more if you manage to win!<br>\r\n<br>\r\n The periods and applicable races are as follows.<br>\r\n<h2 class=\"heading\"> Races / Periods / Rewards</h2>\r\n Kawasaki Kinen<br>\r\n 3:00 p.m., Nov 23–2:59 p.m., Nov 25, 2026 (UTC)<br>\r\n [Starry Lightship] Hokko Tarumae Star Pieces<br>\r\n<br>\r\n February Stakes<br>\r\n 3:00 p.m., Nov 29–2:59 p.m., Dec 1, 2026 (UTC)<br>\r\n [Full-Color Fangirling] Agnes Digital Star Pieces<br>\r\n<h2 class=\"heading\"> Important Information</h2>\r\n 1. Bonus rewards are only available once per day for each race, regardless of whether you win or lose. If you enter the race more than once in a day, no bonus rewards are available from the second time onwards.<br>\r\n 2. Bonus availability resets at 3:00 p.m. (UTC) each day.<br>\r\n 3. The details of this bonus event are subject to change without notice.<br>",
+            "post_at": 1795039200,
+            "post_platform_flag": 62,
+            "title": "G1 Celebration now available!",
+            "update_at": null
+          }
+        }
+      ]
+    },
+    {
       "announce_id": 1145,
       "page_url": "https://umapyoi.net/en/news/1145",
       "first_seen_at": "2026-11-04T23:39:46.365623488+00:00",
