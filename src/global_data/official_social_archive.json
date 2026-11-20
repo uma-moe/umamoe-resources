@@ -5884,6 +5884,36 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2123711649437896908",
+      "status_url": "https://x.com/umamusume_eng/status/2123711649437896908",
+      "first_seen_at": "2026-11-20T20:15:14.031406535+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T20:15:14.031406535+00:00",
+          "content_hash": "c4af4d9661b0f1e52a2efe3c1cd563d94ba2cdb2e963b6298f30cff26215a74d",
+          "raw": {
+            "created_at": "2026-11-20T09:34:48.537+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\"><a href=\"https://x.com/hashtag/Umayuru?src=hash&amp;ref_src=twsrc%5Etfw\">#Umayuru</a>: Full Gate Reschedule!<br><br>Due to the PAKA LIVE TV&#39; Vol. 9 livestream, Ep. 10 will release early at 10:55 a.m., Nov 29 (UTC)! Hope you tune in! ♪<a href=\"https://t.co/Qiq1jPkYzK\">https://t.co/Qiq1jPkYzK</a><a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/q3Bkcb9IyX\">pic.twitter.com/q3Bkcb9IyX</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123711649437896908?ref_src=twsrc%5Etfw\">November 20, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123711649437896908",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123711649437896908",
+            "status_url": "https://x.com/umamusume_eng/status/2123711649437896908",
+            "text": "#Umayuru: Full Gate Reschedule!\nDue to the PAKA LIVE TV' Vol. 9 livestream, Ep. 10 will release early at 10:55 a.m., Nov 29 (UTC)! Hope you tune in! ♪https://t.co/Qiq1jPkYzK#Umamusume pic.twitter.com/q3Bkcb9IyX"
+          }
+        }
+      ]
     }
   ]
 }
