@@ -5734,6 +5734,156 @@
           }
         }
       ]
+    },
+    {
+      "status_id": "2123342092902777135",
+      "status_url": "https://x.com/umamusume_eng/status/2123342092902777135",
+      "first_seen_at": "2026-11-20T07:14:51.921898106+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:14:51.921898106+00:00",
+          "content_hash": "ceb78ef78123d10be02f10ed70154e1f17a1d9223592b8be1244ce7f088cb3a1",
+          "raw": {
+            "created_at": "2026-11-19T09:06:19.393+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📢 Maintenance Announcement: PHP Vulnerability<br><br>Maintenance will begin around 2:00 p.m., Nov 19 (UTC) to address a PHP vulnerability and ensure the game&#39;s continued secure operation. It will not be possible to play the game or use any related features such as performing a data…</p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123342092902777135?ref_src=twsrc%5Etfw\">November 19, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123342092902777135",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123342092902777135",
+            "status_url": "https://x.com/umamusume_eng/status/2123342092902777135",
+            "text": "📢 Maintenance Announcement: PHP Vulnerability\nMaintenance will begin around 2:00 p.m., Nov 19 (UTC) to address a PHP vulnerability and ensure the game's continued secure operation. It will not be possible to play the game or use any related features such as performing a data…"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2123417620653523088",
+      "status_url": "https://x.com/umamusume_eng/status/2123417620653523088",
+      "first_seen_at": "2026-11-20T07:14:51.921898106+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:14:51.921898106+00:00",
+          "content_hash": "4d7eff903f8478541cfb43c16b136489a816c7446cfe7d4040fc67d7e1012e0e",
+          "raw": {
+            "created_at": "2026-11-19T14:06:26.612+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📢 Emergency Maintenance Announcement<br><br>Emergency maintenance began at 2:00 p.m., Nov 19 (UTC) to perform necessary adjustments to server equipment. The end time is currently unknown.<br><br>Please refer to the below announcement for more details:<a href=\"https://t.co/phRf8UmkGA\">https://t.co/phRf8UmkGA</a><a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123417620653523088?ref_src=twsrc%5Etfw\">November 19, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123417620653523088",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123417620653523088",
+            "status_url": "https://x.com/umamusume_eng/status/2123417620653523088",
+            "text": "📢 Emergency Maintenance Announcement\nEmergency maintenance began at 2:00 p.m., Nov 19 (UTC) to perform necessary adjustments to server equipment. The end time is currently unknown.\nPlease refer to the below announcement for more details:https://t.co/phRf8UmkGA#Umamusume"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2123462927265218665",
+      "status_url": "https://x.com/umamusume_eng/status/2123462927265218665",
+      "first_seen_at": "2026-11-20T07:14:51.921898106+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:14:51.921898106+00:00",
+          "content_hash": "74e394098df851af7370276baca46c11fae14151cf0702b647357438ad66f271",
+          "raw": {
+            "created_at": "2026-11-19T17:06:28.550+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">📢 Maintenance Complete<br><br>As of 5:00 p.m., Nov 19 (UTC), maintenance has concluded. As appreciation for your cooperation, we have gifted trainers with 150 carats.<br><br>We sincerely apologize for any inconvenience this may have caused.<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123462927265218665?ref_src=twsrc%5Etfw\">November 19, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123462927265218665",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123462927265218665",
+            "status_url": "https://x.com/umamusume_eng/status/2123462927265218665",
+            "text": "📢 Maintenance Complete\nAs of 5:00 p.m., Nov 19 (UTC), maintenance has concluded. As appreciation for your cooperation, we have gifted trainers with 150 carats.\nWe sincerely apologize for any inconvenience this may have caused.#Umamusume"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2123536804448248155",
+      "status_url": "https://x.com/umamusume_eng/status/2123536804448248155",
+      "first_seen_at": "2026-11-20T07:14:51.921898106+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:14:51.921898106+00:00",
+          "content_hash": "57d427513d51d1ffbbf48c4bc41a90e981b79775997c385529659b656f7e0601",
+          "raw": {
+            "created_at": "2026-11-19T22:00:02.243+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">Huddle up, Trainers! Gold Ship&#39;s got a special collab announcement for you! 🏈<br><br>Watch the video to see what&#39;s cooking!<a href=\"https://x.com/hashtag/Umamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#Umamusume</a> <a href=\"https://t.co/ySkF3BBzu0\">pic.twitter.com/ySkF3BBzu0</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123536804448248155?ref_src=twsrc%5Etfw\">November 19, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123536804448248155",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123536804448248155",
+            "status_url": "https://x.com/umamusume_eng/status/2123536804448248155",
+            "text": "Huddle up, Trainers! Gold Ship's got a special collab announcement for you! 🏈\nWatch the video to see what's cooking!#Umamusume pic.twitter.com/ySkF3BBzu0"
+          }
+        }
+      ]
+    },
+    {
+      "status_id": "2123540571109380217",
+      "status_url": "https://x.com/umamusume_eng/status/2123540571109380217",
+      "first_seen_at": "2026-11-20T07:14:51.921898106+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:14:51.921898106+00:00",
+          "content_hash": "ec16a0b9d6adee71cede489c1f7696bdde575d2b58880789748c775b65288f3e",
+          "raw": {
+            "created_at": "2026-11-19T22:15:00.285+00:00",
+            "oembed": {
+              "author_name": "Umamusume: Pretty Derby",
+              "author_url": "https://x.com/umamusume_eng",
+              "cache_age": "3153600000",
+              "height": null,
+              "html": "<blockquote class=\"twitter-tweet\"><p lang=\"en\" dir=\"ltr\">We scored a collab with the Denver Broncos! 🏈<br><br>At the Dec 6 home game, look out for Umamusume displays around the stadium, including life-sized standees of Gold Ship and Mejiro McQueen! And don&#39;t miss the goodies up for grabs!<br><br>🥕<a href=\"https://t.co/cVaS2UCs2Z\">https://t.co/cVaS2UCs2Z</a><a href=\"https://x.com/hashtag/BroncosUmamusume?src=hash&amp;ref_src=twsrc%5Etfw\">#BroncosUmamusume</a> <a href=\"https://t.co/nf1UIZk1JT\">pic.twitter.com/nf1UIZk1JT</a></p>&mdash; Umamusume: Pretty Derby (@umamusume_eng) <a href=\"https://x.com/umamusume_eng/status/2123540571109380217?ref_src=twsrc%5Etfw\">November 19, 2026</a></blockquote>\n\n",
+              "provider_name": "X",
+              "provider_url": "https://x.com",
+              "type": "rich",
+              "url": "https://x.com/umamusume_eng/status/2123540571109380217",
+              "version": "1.0",
+              "width": 550
+            },
+            "status_id": "2123540571109380217",
+            "status_url": "https://x.com/umamusume_eng/status/2123540571109380217",
+            "text": "We scored a collab with the Denver Broncos! 🏈\nAt the Dec 6 home game, look out for Umamusume displays around the stadium, including life-sized standees of Gold Ship and Mejiro McQueen! And don't miss the goodies up for grabs!\n🥕https://t.co/cVaS2UCs2Z#BroncosUmamusume pic.twitter.com/nf1UIZk1JT"
+          }
+        }
+      ]
     }
   ]
 }

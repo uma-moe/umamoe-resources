@@ -18837,6 +18837,31 @@
           }
         }
       ]
+    },
+    {
+      "announce_id": 200015,
+      "page_url": "https://umapyoi.net/en/news/200015",
+      "first_seen_at": "2026-11-20T07:12:27.741921800+00:00",
+      "snapshots": [
+        {
+          "captured_at": "2026-11-20T07:12:27.741921800+00:00",
+          "content_hash": "d786db48aea9ee70a95efefc02cdc2a2a1105976cfa4b7422f5d3ea9e960154f",
+          "raw": {
+            "announce_id": 200015,
+            "announce_label": 3,
+            "article_image": "https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/2027Broncos_collaboKV_W1500H2000_white_02_L1795126500.png?c=20261119080450",
+            "id": 3,
+            "image": "",
+            "label_color": "#FF911C",
+            "label_name_en": "Media",
+            "message": " Umamusume: Pretty Derby is partnering with the NFL's Denver Broncos to hold a collaborative event! The event will take place on Sunday, Dec 6 (MST), during the Broncos' Week 13 game at Empower Field at Mile High in Denver, Colorado.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/2027Broncos_collaboKV_W1500H2000_white_02_L1795126500.png?c=20261119080450\"></figure>\r\n<br>\r\n<h2>Event Features</h2>\r\n On gameday, Umamusume will be featured on the horseshoe-shaped LED ribbon and venue screens throughout Empower Field at Mile High, home of the Denver Broncos! An Umamusume-themed fan cam will also be on the lookout during the game.<br>\r\n<br>\r\n<figure><img src=\"https://assets-webview-umamusume-en.akamaized.net/contents/assets/images/uploads/Header/2027Broncos_collabo_16-9_03_L1795126500.png?c=20261119080450\"></figure>\r\n<br>\r\n At the East Rock Garden near Gate 8 of the stadium, there will be an event-exclusive collaboration booth featuring life-sized cutouts of Gold Ship and Mejiro McQueen donning the Broncos uniform for photo opportunities. Trainers can also receive a postcard featuring the same illustration, as well as a complimentary rally flag featuring a special illustration of Gold Ship scoring a touchdown in a Broncos uniform! Both artworks were created especially for this collaboration.<br>\r\n<br>\r\n<h2>Collaboration Booth Details</h2>\r\n<ul>\r\n<li>Time: 11:05 a.m.–2:05 p.m., Dec 6, 2026 (MST)</li>\r\n<li>Location: Empower Field at Mile High – East Rock Garden (near Gate 8)</li>\r\n *A game ticket is not required to visit the collaboration booth or receive the giveaways.<br>\r\n</ul>\r\n<br>\r\n<h2>Game Details</h2>\r\n<ul>\r\n<li>Time: 2:05 p.m., Dec 6, 2026 (MST)</li>\r\n<li>Venue: Empower Field at Mile High, Denver, Colorado</li>\r\n<li>Tickets: Tickets for the game will be sold via <a href=\"https://www.ticketmaster.com/artist/805934\">Ticketmaster</a></li>\r\n</ul>\r\n<br>\r\n *Event date, times, and contents are subject to change without notice.<br>\r\n *Images and services shown are in development and may differ on the day of the event.<br>",
+            "post_at": 1795126500,
+            "post_platform_flag": 16,
+            "title": "Umamusume: Pretty Derby × Denver Broncos Collaboration Event Coming Dec 6!",
+            "update_at": null
+          }
+        }
+      ]
     }
   ]
 }
