@@ -17,14 +17,16 @@ use crate::generators::timeline_images::{
 use crate::pipeline;
 use anyhow::{Context, Result};
 use convert::{convertPictures, ConvertJob, PictureFit};
-use fetch::{isPastRetryWindow, SourceFetcher};
+use fetch::isPastRetryWindow;
+pub(super) use fetch::SourceFetcher;
 use flate2::read::GzDecoder;
 use layout::{bannerKeys, rootLink, INDEX_KEY};
 use records::{
     attempts, Attempt, BannerRecord, BannerState, TimelineArtRecords, Variant, FIT_REVISION,
 };
 use serde::Serialize;
-use site::{isWebp, SiteManifests};
+pub(super) use site::isWebp;
+use site::SiteManifests;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};

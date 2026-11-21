@@ -114,6 +114,12 @@ enum Command {
         #[arg(long)]
         compare_frontend: Option<PathBuf>,
     },
+    /// Copy the art the site served before the bucket for keys no game-art family builds yet.
+    SiteSeed {
+        /// Count the keys that would be copied and copy nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// Check the current game version, refresh master.mdb, regenerate, then purge current CDN URLs.
     Refresh {
         #[arg(long, env = "DATABASE_URL")]
@@ -366,6 +372,10 @@ async fn main() -> Result<()> {
                 assets::publishTimelineArt(&bucket, &options, &timeline_json).await?;
             }
         }
+        Command::SiteSeed { dry_run } => {
+            let bucket = assets::Bucket::fromEnv()?;
+            assets::publishSiteSeed(&bucket, dry_run).await?;
+        }
         Command::Refresh {
             database_url: _,
             master,
@@ -547,6 +557,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
     if args.publish_game_art {
         spawnGameArtLoop(args.refresh_interval_seconds, args.master.clone());
         spawnTimelineArtLoop(args.timeline_art_interval_seconds, args.data_dir.clone());
+        spawnSiteSeedLoop(args.timeline_art_interval_seconds);
     }
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
@@ -721,6 +732,36 @@ fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf) {
                     error = format!("{error:#}"),
                     "timeline art publishing failed"
                 );
+            }
+        }
+    });
+}
+
+#[allow(non_snake_case)]
+/// Copies the site seed at start and again on every interval until each file is in the bucket.
+fn spawnSiteSeedLoop(interval_seconds: u64) {
+    let bucket = match assets::Bucket::fromEnv() {
+        Ok(bucket) => bucket,
+        Err(error) => {
+            warn!(error = %error, "site seed is on but the bucket is not configured");
+            return;
+        }
+    };
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            match assets::publishSiteSeed(&bucket, false).await {
+                Ok(summary) if summary.isComplete() => {
+                    info!(files = summary.files, "site seed is complete");
+                    return;
+                }
+                Ok(_) => {}
+                Err(error) => warn!(error = format!("{error:#}"), "site seed failed"),
             }
         }
     });

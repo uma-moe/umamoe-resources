@@ -50,7 +50,7 @@ async fn readManifest(
 }
 
 /// Whether the bytes are a WebP file, as every banner on the site is.
-pub(super) fn isWebp(bytes: &[u8]) -> bool {
+pub(in crate::assets) fn isWebp(bytes: &[u8]) -> bool {
     bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"
 }
 
