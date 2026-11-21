@@ -17,7 +17,7 @@ mod umas;
 
 use super::types::ObjectChange;
 use super::{originsInFolder, publishFile, purgeOverwritten, Bucket};
-use crate::game_cdn::{self, CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
+use crate::game_cdn::{self, CdnSource, ManifestEntry, ANDROID, WINDOWS};
 use anyhow::{ensure, Context, Result};
 use build::{convertBatch, converterProcesses, downloadBatch, BuiltBatch, JobOutcome, WorkDir};
 use catalog::catalogCategories;
@@ -40,7 +40,7 @@ use types::{
     ArtDestination, ArtJob, ArtState, Catalog, StateLayout, JOBS_PER_CONVERTER, SHADER_BUNDLE,
     UPLOAD_CONCURRENCY,
 };
-pub use types::{GameArtOptions, GameArtSummary};
+pub use types::{GameArtOptions, GameArtSource, GameArtSummary};
 
 impl GameArtOptions {
     /// Reads the asset key from `GAME_ASSET_KEY` and purge origins from `ASSETS_PURGE_ORIGINS`.
@@ -79,17 +79,18 @@ impl GameArtSummary {
     }
 }
 
-/// Builds and uploads every catalogued image that is new or changed for this resource version,
-/// whose cards are read from `master`, then deletes what it published that no record lists any
-/// more. Plans again even for a version already handled, so a catalog change in a deploy takes
-/// effect without waiting for a game update.
+/// Builds and uploads every catalogued image that is new or changed for the source's resource
+/// version, whose cards are read from its master, then deletes what it published that no record
+/// lists any more. Plans again even for a version already handled, so a catalog change in a
+/// deploy takes effect without waiting for a game update. A region's tree is the bucket (or a
+/// folder of it) it is published to; trees share nothing.
 pub async fn publishGameArt(
     bucket: &Bucket,
     options: &GameArtOptions,
-    master: &Path,
-    resource_version: &str,
+    source: &GameArtSource<'_>,
     dry_run: bool,
 ) -> Result<GameArtSummary> {
+    let (master, resource_version) = (source.master, source.resource_version);
     let client = reqwest::Client::new();
     let (mut state, layout) = loadState(&client, bucket).await?;
     if let StateLayout::Outdated { obsolete_keys } = &layout {
@@ -99,7 +100,7 @@ pub async fn publishGameArt(
     }
 
     let catalog = Catalog::load(master)?;
-    let sources = listSources(&client, resource_version).await?;
+    let sources = listSources(&client, source.cdn, resource_version).await?;
     let layout = Layout::new(&catalog, &sources);
     reportClashes(&layout);
     let jobs = planJobs(&sources, &catalog, &layout, &state);
@@ -140,6 +141,7 @@ pub async fn publishGameArt(
         saveState(&client, bucket, &state, &BTreeSet::new()).await?;
     }
     info!(
+        region = source.cdn.region,
         resource_version,
         planned = jobs.len(),
         ?summary,
@@ -153,15 +155,14 @@ pub async fn publishGameArt(
 /// keeps the files served below any of these key prefixes, such as `art/umas/100101/`.
 pub async fn buildGameArtSample(
     options: &GameArtOptions,
-    master: &Path,
-    resource_version: &str,
+    source: &GameArtSource<'_>,
     folder: &Path,
     per_family: usize,
     only: &[String],
 ) -> Result<GameArtSummary> {
     let client = reqwest::Client::new();
-    let catalog = Catalog::load(master)?;
-    let sources = listSources(&client, resource_version).await?;
+    let catalog = Catalog::load(source.master)?;
+    let sources = listSources(&client, source.cdn, source.resource_version).await?;
     let layout = Layout::new(&catalog, &sources);
     reportClashes(&layout);
 
@@ -203,14 +204,10 @@ pub async fn buildGameArtSample(
 
 /// Writes the directory documents into `folder` as if every planned file converted, without
 /// downloading anything, to check the documents against the whole file list.
-pub async fn previewGameArtDirectory(
-    master: &Path,
-    resource_version: &str,
-    folder: &Path,
-) -> Result<()> {
+pub async fn previewGameArtDirectory(source: &GameArtSource<'_>, folder: &Path) -> Result<()> {
     let client = reqwest::Client::new();
-    let catalog = Catalog::load(master)?;
-    let sources = listSources(&client, resource_version).await?;
+    let catalog = Catalog::load(source.master)?;
+    let sources = listSources(&client, source.cdn, source.resource_version).await?;
     let layout = Layout::new(&catalog, &sources);
     reportClashes(&layout);
 
@@ -229,26 +226,24 @@ pub async fn previewGameArtDirectory(
     Ok(())
 }
 
-/// Every source's file list, in precedence order: its Windows files and its Android shader
-/// bundle, whose programs are GLSL ES. JP joins after Global once it has a version check of its
-/// own; Global then wins every file both list.
+/// The file list a tree is built from: the CDN's Windows files and its Android shader bundle,
+/// whose programs are GLSL ES. Each region is published as a tree of its own, so a tree has one
+/// source and never holds another region's files.
 async fn listSources(
     client: &reqwest::Client,
+    cdn: &'static CdnSource,
     resource_version: &str,
 ) -> Result<Vec<(&'static CdnSource, Vec<ManifestEntry>)>> {
-    let categories =
-        game_cdn::fetchCategories(client, &GLOBAL_CDN, WINDOWS, resource_version).await?;
+    let categories = game_cdn::fetchCategories(client, cdn, WINDOWS, resource_version).await?;
     let mut files =
-        game_cdn::fetchCategoryFiles(client, &GLOBAL_CDN, &categories, &catalogCategories())
-            .await?;
+        game_cdn::fetchCategoryFiles(client, cdn, &categories, &catalogCategories()).await?;
 
     let android_categories =
-        game_cdn::fetchCategories(client, &GLOBAL_CDN, ANDROID, resource_version).await?;
+        game_cdn::fetchCategories(client, cdn, ANDROID, resource_version).await?;
     let shaders =
-        game_cdn::fetchCategoryFiles(client, &GLOBAL_CDN, &android_categories, &[SHADER_BUNDLE])
-            .await?;
+        game_cdn::fetchCategoryFiles(client, cdn, &android_categories, &[SHADER_BUNDLE]).await?;
     files.extend(shaders);
-    Ok(vec![(&GLOBAL_CDN, files)])
+    Ok(vec![(cdn, files)])
 }
 
 /// A shard holds thousands of records and is rewritten whole, so it is saved this often, not after

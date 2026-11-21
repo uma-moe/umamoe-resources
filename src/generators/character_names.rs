@@ -20,3 +20,13 @@ pub fn generate(connection: &Connection) -> Result<Value> {
 
     Ok(names)
 }
+
+/// Every character the JP master names, by id. The bundled list and its English skin names
+/// belong to the Global set.
+pub fn generate_jp(connection: &Connection) -> Result<Value> {
+    let names = common::load_global_character_names(connection)?
+        .into_iter()
+        .map(|(chara_id, name)| (chara_id.to_string(), serde_json::json!({ "name": name })))
+        .collect::<serde_json::Map<_, _>>();
+    Ok(Value::Object(names))
+}

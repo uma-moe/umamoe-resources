@@ -51,12 +51,41 @@ struct DbSupportCard {
 }
 
 pub fn generate(connection: &Connection) -> Result<Value> {
-    let names = common::load_character_name_map(connection)?;
-    let card_text = SupportCardTextData {
+    let card_text = load_card_text(connection)?;
+    // The bundled JP list says which of these JP has, so the master's own rows start without.
+    let entries = master_entries(connection, &card_text, |_| true, false)?;
+    merge_with_jp_support_cards_db(entries, &card_text)
+}
+
+/// Every support card of the JP master, marked as released in Global when Global has it too.
+/// Nothing bundled is merged in: a JP set is the JP master alone.
+pub fn generate_jp(connection: &Connection, releases: &common::CardReleases) -> Result<Value> {
+    let card_text = load_card_text(connection)?;
+    let entries = master_entries(
+        connection,
+        &card_text,
+        |card_id| releases.in_global(card_id),
+        true,
+    )?;
+    Ok(serde_json::to_value(entries)?)
+}
+
+fn load_card_text(connection: &Connection) -> Result<SupportCardTextData> {
+    Ok(SupportCardTextData {
         card_names: load_text_data_by_category(connection, SUPPORT_CARD_NAME_CATEGORY)?,
         card_titles: load_text_data_by_category(connection, SUPPORT_CARD_TITLE_CATEGORY)?,
         card_full_names: load_text_data_by_category(connection, SUPPORT_CARD_FULL_NAME_CATEGORY)?,
-    };
+    })
+}
+
+/// The master's support cards, newest first.
+fn master_entries(
+    connection: &Connection,
+    card_text: &SupportCardTextData,
+    is_released_en: impl Fn(i64) -> bool,
+    is_released_jp: bool,
+) -> Result<Vec<SupportCardDbEntry>> {
+    let names = common::load_character_name_map(connection)?;
     let mut entries = Vec::new();
 
     for card in load_support_cards(connection)? {
@@ -79,10 +108,10 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             rarity: card.rarity,
             card_type: card.card_type,
             release_date: common::release_date(Some(card.release_timestamp)),
-            is_released_en: true,
+            is_released_en: is_released_en(card.card_id),
             is_released_tw: None,
             is_released_cn: None,
-            is_released_jp: false,
+            is_released_jp,
         });
     }
 
@@ -92,7 +121,7 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             .then_with(|| common::numeric_id(&b.id).cmp(&common::numeric_id(&a.id)))
     });
 
-    merge_with_jp_support_cards_db(entries, &card_text)
+    Ok(entries)
 }
 
 fn merge_with_jp_support_cards_db(

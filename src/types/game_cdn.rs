@@ -1,13 +1,27 @@
 /// One of the game's asset CDNs. When sources are merged, earlier ones take precedence.
 pub struct CdnSource {
     pub region: &'static str,
+    /// The folder every download path starts below, without a trailing slash.
     pub base_url: &'static str,
+    /// Whether its resource versions are `number:token`, the token naming the root manifest by
+    /// size and checksum. Otherwise a version is a number that names the root manifest's folder.
+    pub hashed_root: bool,
 }
 
 pub static GLOBAL_CDN: CdnSource = CdnSource {
     region: "global",
-    base_url: "https://assets-umamusume-en.akamaized.net",
+    base_url: "https://assets-umamusume-en.akamaized.net/dl/vertical",
+    hashed_root: false,
 };
+
+pub static JP_CDN: CdnSource = CdnSource {
+    region: "jp",
+    base_url: "https://prd-storage-game-umamusume.akamaized.net/dl",
+    hashed_root: true,
+};
+
+/// The name the root manifest is hashed under where a version names it by size and checksum.
+pub(super) const ROOT_MANIFEST_NAME: &str = "root";
 
 pub(super) const LZ4_FRAME_MAGIC: [u8; 4] = [0x04, 0x22, 0x4D, 0x18];
 
