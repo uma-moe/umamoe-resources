@@ -1,4 +1,4 @@
-use crate::pipeline::{ResourceManifest, GLOBAL_RESOURCE_PATH};
+use crate::pipeline::{ResourceManifest, GLOBAL_RESOURCE_PATH, JP_RESOURCE_PATH};
 use anyhow::{Context, Result};
 use reqwest::StatusCode;
 use serde::Serialize;
@@ -29,6 +29,32 @@ pub async fn purge_manifest_current_urls(manifest: &ResourceManifest) -> Result<
         return Ok(());
     };
 
+    let public_base_url = public_base_url.trim_end_matches('/');
+    let urls = current_paths(manifest)
+        .into_iter()
+        .map(|path| format!("{}{}", public_base_url, path))
+        .collect::<Vec<_>>();
+    purge_urls(&config, &urls).await
+}
+
+/// The paths that change when a set is regenerated: its manifest and every `current` artifact.
+/// The Global set is also purged at the paths from before the region split, and only it has a
+/// master history.
+fn current_paths(manifest: &ResourceManifest) -> Vec<String> {
+    let is_jp = manifest
+        .base_path
+        .starts_with(&format!("{JP_RESOURCE_PATH}/"));
+    if is_jp {
+        let mut paths = vec![format!("{JP_RESOURCE_PATH}/manifest.json")];
+        paths.extend(
+            manifest
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.current_path.clone()),
+        );
+        return paths;
+    }
+
     let mut paths = vec![
         format!("{GLOBAL_RESOURCE_PATH}/manifest.json"),
         "/resources/manifest.json".to_string(),
@@ -38,13 +64,7 @@ pub async fn purge_manifest_current_urls(manifest: &ResourceManifest) -> Result<
         paths.push(artifact.current_path.clone());
         paths.push(format!("/resources/current/{}.gz", artifact.name));
     }
-
-    let public_base_url = public_base_url.trim_end_matches('/');
-    let urls = paths
-        .into_iter()
-        .map(|path| format!("{}{}", public_base_url, path))
-        .collect::<Vec<_>>();
-    purge_urls(&config, &urls).await
+    paths
 }
 
 /// Purges full URLs, such as replaced images on each site origin.
@@ -92,5 +112,62 @@ impl CloudflareConfig {
             zone_id: std::env::var("CLOUDFLARE_ZONE_ID").ok()?,
             api_token: std::env::var("CLOUDFLARE_API_TOKEN").ok()?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::current_paths;
+    use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+
+    /// A set served at `set_path` with one artifact, `skills.json`.
+    fn manifest(set_path: &str) -> ResourceManifest {
+        ResourceManifest {
+            version: "v1".to_string(),
+            generated_at: String::new(),
+            base_path: format!("{set_path}/v1"),
+            master: MasterInfo {
+                marker: String::new(),
+                sha256: String::new(),
+                path: None,
+                bytes: None,
+            },
+            artifacts: vec![ResourceArtifact {
+                name: "skills.json".to_string(),
+                path: format!("{set_path}/v1/skills.json.gz"),
+                current_path: format!("{set_path}/current/skills.json.gz"),
+                content_type: String::new(),
+                content_encoding: String::new(),
+                etag: String::new(),
+                sha256: String::new(),
+                json_bytes: 0,
+                gzip_bytes: 0,
+            }],
+        }
+    }
+
+    #[test]
+    fn the_global_set_is_also_purged_at_its_old_paths() {
+        assert_eq!(
+            current_paths(&manifest("/resources/en")),
+            [
+                "/resources/en/manifest.json",
+                "/resources/manifest.json",
+                "/resources/masterdata/versions.json",
+                "/resources/en/current/skills.json.gz",
+                "/resources/current/skills.json.gz",
+            ]
+        );
+    }
+
+    #[test]
+    fn the_jp_set_purges_only_its_own_paths() {
+        assert_eq!(
+            current_paths(&manifest("/resources/jp")),
+            [
+                "/resources/jp/manifest.json",
+                "/resources/jp/current/skills.json.gz",
+            ]
+        );
     }
 }

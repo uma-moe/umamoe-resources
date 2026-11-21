@@ -903,6 +903,15 @@ pub(super) enum ArtDestination<'a> {
     Folder(&'a std::path::Path),
 }
 
+/// What one published tree is built from: a region's CDN at one resource version, and that
+/// region's master, which says which cards and outfits exist there.
+pub struct GameArtSource<'a> {
+    pub cdn: &'static CdnSource,
+    pub master: &'a std::path::Path,
+    pub resource_version: &'a str,
+}
+
+#[derive(Clone)]
 pub struct GameArtOptions {
     /// The game's asset bundle base key (UmaViewer's ABKeyText).
     pub(super) base_key: Vec<u8>,
