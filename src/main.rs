@@ -280,10 +280,12 @@ struct ServeArgs {
     #[arg(long, env = "GAME_ART_PUBLISH")]
     publish_game_art: bool,
     /// With GAME_ART_PUBLISH, also publish JP's game images as a tree of their own below `jp/`.
-    #[arg(long, env = "JP_GAME_ART_PUBLISH")]
+    /// On unless set to false.
+    #[arg(long, env = "JP_GAME_ART_PUBLISH", default_value_t = true, action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     publish_jp_game_art: bool,
     /// Also generate the JP resource set from the JP master and serve it below `/resources/jp/`.
-    #[arg(long, env = "JP_RESOURCES")]
+    /// On unless set to false.
+    #[arg(long, env = "JP_RESOURCES", default_value_t = true, action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     jp_resources: bool,
     /// How often the game art publisher also refreshes the timeline banners.
     #[arg(long, env = "TIMELINE_ART_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(60..), default_value_t = 1800)]
@@ -311,8 +313,8 @@ impl Default for ServeArgs {
             confirmed_banner_dates_path: None,
             confirmed_banner_dates_refresh_interval_seconds: 60,
             publish_game_art: false,
-            publish_jp_game_art: false,
-            jp_resources: false,
+            publish_jp_game_art: true,
+            jp_resources: true,
             timeline_art_interval_seconds: 1800,
             write_json: false,
             no_generate: false,
@@ -628,14 +630,6 @@ async fn serve(args: ServeArgs) -> Result<()> {
         cache::purge_manifest_current_urls(&manifest).await?;
     }
 
-    // JP is an addition: the Global set is served even while JP cannot be read.
-    if let Err(error) = refreshJpFromGameVersion(&args).await {
-        warn!(
-            error = format!("{error:#}"),
-            "JP refresh failed before serving"
-        );
-    }
-
     spawnRefreshLoop(args.clone());
     if args.publish_game_art {
         spawnArtPublishing(&args);
@@ -708,7 +702,7 @@ async fn refreshFromGameVersion(
 
 #[allow(non_snake_case)]
 /// Keeps the JP master current for whatever uses it, and regenerates the JP set when either
-/// master changed. It does nothing unless a JP switch is on. The refresh loop is the only
+/// master changed. It does nothing when both JP switches are off. The refresh loop is the only
 /// writer of the JP master, as it is of the Global one.
 async fn refreshJpFromGameVersion(args: &ServeArgs) -> Result<bool> {
     if !args.jp_resources && !args.publish_jp_game_art {
@@ -755,6 +749,11 @@ fn spawnRefreshLoop(args: ServeArgs) {
     );
 
     tokio::spawn(async move {
+        // JP is an addition: the Global set is served without waiting for JP's first check.
+        if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
+            warn!(error = format!("{error:#}"), "first JP refresh failed");
+        }
+
         let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
         interval.tick().await;
 
@@ -1143,4 +1142,27 @@ fn normalize_text_file(value: &str) -> String {
         normalized.push('\n');
     }
     normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn jp_is_on_unless_switched_off() {
+        let by_default = Cli::try_parse_from(["umamoe-resources"]).unwrap().server;
+        let switched_off = Cli::try_parse_from([
+            "umamoe-resources",
+            "--jp-resources",
+            "false",
+            "--publish-jp-game-art",
+            "0",
+        ])
+        .unwrap()
+        .server;
+
+        assert!(by_default.jp_resources && by_default.publish_jp_game_art);
+        assert!(!switched_off.jp_resources && !switched_off.publish_jp_game_art);
+    }
 }
