@@ -740,7 +740,7 @@ pub(super) struct StateIndex {
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub(super) struct ShardLink {
     pub(super) name: String,
-    /// From the bucket root, `/_state/game-art/chara.json`.
+    /// From the tree's root, `/_state/game-art/chara.json`.
     pub(super) path: String,
     pub(super) files: usize,
 }
@@ -800,7 +800,7 @@ pub(super) struct PublishedArt {
     /// converter changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) error: Option<String>,
-    /// The shader files its model's materials use, as links from the bucket root.
+    /// The shader files its model's materials use, as links from the tree's root.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(super) shaders: Vec<String>,
     /// MD5 of the published files a cut-in timeline links, so it is rebuilt when one moves.

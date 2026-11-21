@@ -148,7 +148,7 @@ def export_json(environment: Any, job: dict[str, Any], output: dict[str, Any]) -
 
 
 def glb_shaders(path: str) -> set[str]:
-    """The published shader files the model's materials name, as paths from the bucket root."""
+    """The published shader files the model's materials name, as paths from the tree's root."""
     with open(path, "rb") as file:
         magic, _version, _length = struct.unpack("<4sII", file.read(12))
         chunk_length, chunk_type = struct.unpack("<II", file.read(8))

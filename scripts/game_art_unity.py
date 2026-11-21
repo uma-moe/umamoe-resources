@@ -194,7 +194,7 @@ def bundle_dump(environment: Any, bundles: list[dict[str, str]]) -> dict[str, An
     """Every object of the first bundle ({"name", "bundle", "file"?}): art and binary objects by
     name, clips with their curves, everything else with its fields. A reference names its object's
     type, name and `pathId`, and the game `bundle` it is in when that is another one, with the
-    published `file` that bundle became (a path from the bucket root) when it has one; path IDs
+    published `file` that bundle became (a path from the tree's root) when it has one; path IDs
     are strings, since they do not fit a JavaScript number."""
     bundle_of_file = {
         file_name.lower(): bundle["name"]

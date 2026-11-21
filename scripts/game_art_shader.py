@@ -278,12 +278,12 @@ def write_json(path: str, document: dict[str, Any]) -> None:
 
 
 def shader_link(path: str) -> str:
-    """A shader file or index as a link from the bucket root, `/art/shaders/gallop/ui/x.json`."""
+    """A shader file or index as a link from the tree's root, `/art/shaders/gallop/ui/x.json`."""
     return "/" + quote(posixpath.join(SHADER_FOLDER, path))
 
 
 def shader_index(listed: list[dict[str, str]]) -> dict[str, Any]:
-    """The one shader index: every shader's name and its file as a link from the bucket root."""
+    """The one shader index: every shader's name and its file as a link from the tree's root."""
     shaders = [{"name": entry["name"], "file": shader_link(entry["file"])} for entry in listed]
     return {"schema": INDEX_SCHEMA, "shaders": sorted(shaders, key=lambda shader: shader["file"])}
 

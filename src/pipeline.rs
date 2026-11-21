@@ -13,6 +13,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tracing::warn;
 
+/// Where the Global set is served. Each region has a path of its own; the paths directly below
+/// `/resources` from before the split keep serving Global for older clients.
+pub const GLOBAL_RESOURCE_PATH: &str = "/resources/en";
+
 const PUBLIC_TIMELINE_GZIP_BUDGET: u64 = 300 * 1024;
 const PLANNER_MANIFEST_GZIP_BUDGET: usize = 10 * 1024;
 const PLANNER_INITIAL_GZIP_BUDGET: u64 = 150 * 1024;
@@ -136,7 +140,7 @@ pub fn generate_resources(
         generated.public,
         &version_dir,
         &version,
-        "/resources",
+        GLOBAL_RESOURCE_PATH,
         write_json,
     )?;
     enforce_named_budget(
@@ -149,7 +153,7 @@ pub fn generate_resources(
     let manifest = ResourceManifest {
         version: version.clone(),
         generated_at: generated_at.to_rfc3339(),
-        base_path: format!("/resources/{}", version),
+        base_path: format!("{GLOBAL_RESOURCE_PATH}/{version}"),
         master: MasterInfo {
             marker,
             sha256: master_sha256,

@@ -185,6 +185,9 @@ enum Command {
     },
 }
 
+/// The asset bucket folder Global's art tree is published in; each region has a folder of its own.
+const GLOBAL_ART_FOLDER: &str = "en";
+
 #[derive(Subcommand)]
 enum AssetBucketAction {
     /// Log the objects and bytes below each top folder, and their total.
@@ -326,7 +329,7 @@ async fn main() -> Result<()> {
             sample,
             only,
         } => {
-            let options = assets::GameArtOptions::fromEnv()?;
+            let options = assets::GameArtOptions::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
             master_fetch::maybeUpdateMasterMdb(&master).await?;
             let version = master_fetch::localResourceVersion(&master)
                 .context("master.mdb has no version marker")?;
@@ -339,8 +342,8 @@ async fn main() -> Result<()> {
                         .await?;
                 }
                 None => {
-                    let bucket = assets::Bucket::fromEnv()?;
-                    assets::publishGameArt(&bucket, &options, &master, &version, dry_run).await?;
+                    let tree = assets::Bucket::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
+                    assets::publishGameArt(&tree, &options, &master, &version, dry_run).await?;
                 }
             }
         }
@@ -357,7 +360,7 @@ async fn main() -> Result<()> {
                 None => assets::currentTimelinePath(&data_dir)?,
             };
             let timeline_json = assets::readTimeline(&timeline_path)?;
-            let options = assets::TimelineArtOptions::fromEnv();
+            let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
 
             if let Some(sync_dir) = compare_frontend {
                 let report = assets::compareTimelineArtWithFrontend(&timeline_json, &sync_dir)?;
@@ -368,13 +371,13 @@ async fn main() -> Result<()> {
             } else if let Some(folder) = out_dir {
                 assets::buildTimelineArtSample(&options, &timeline_json, &folder, sample).await?;
             } else {
-                let bucket = assets::Bucket::fromEnv()?;
-                assets::publishTimelineArt(&bucket, &options, &timeline_json).await?;
+                let tree = assets::Bucket::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
+                assets::publishTimelineArt(&tree, &options, &timeline_json).await?;
             }
         }
         Command::SiteSeed { dry_run } => {
-            let bucket = assets::Bucket::fromEnv()?;
-            assets::publishSiteSeed(&bucket, dry_run).await?;
+            let tree = assets::Bucket::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
+            assets::publishSiteSeed(&tree, dry_run).await?;
         }
         Command::Refresh {
             database_url: _,
@@ -555,9 +558,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
 
     spawnRefreshLoop(args.clone());
     if args.publish_game_art {
-        spawnGameArtLoop(args.refresh_interval_seconds, args.master.clone());
-        spawnTimelineArtLoop(args.timeline_art_interval_seconds, args.data_dir.clone());
-        spawnSiteSeedLoop(args.timeline_art_interval_seconds);
+        spawnArtPublishing(&args);
     }
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
@@ -600,8 +601,12 @@ async fn refreshFromGameVersion(
 ) -> Result<bool> {
     let master_updated = master_fetch::maybeUpdateMasterMdb(master).await?;
     let master_hash = hex::encode(Sha256::digest(std::fs::read(master)?));
-    let resources_match =
-        pipeline::read_manifest(out).is_ok_and(|manifest| manifest.master.sha256 == master_hash);
+    let resources_match = pipeline::read_manifest(out).is_ok_and(|manifest| {
+        let served_from_global_path = manifest
+            .base_path
+            .starts_with(&format!("{}/", pipeline::GLOBAL_RESOURCE_PATH));
+        manifest.master.sha256 == master_hash && served_from_global_path
+    });
     if !master_updated && resources_match {
         return Ok(false);
     }
@@ -651,13 +656,42 @@ fn spawnRefreshLoop(args: ServeArgs) {
 }
 
 #[allow(non_snake_case)]
+/// Starts the art publishers in Global's tree once the tree that was published at the bucket's
+/// root has been copied there; started before, they would rebuild every file.
+fn spawnArtPublishing(args: &ServeArgs) {
+    let root = match assets::Bucket::fromEnv() {
+        Ok(bucket) => bucket,
+        Err(error) => {
+            warn!(error = %error, "art publishing is on but the bucket is not configured");
+            return;
+        }
+    };
+    let tree = root.inFolder(GLOBAL_ART_FOLDER);
+    let retry_seconds = args.refresh_interval_seconds;
+    let timeline_interval_seconds = args.timeline_art_interval_seconds;
+    let (master, data_dir) = (args.master.clone(), args.data_dir.clone());
+
+    tokio::spawn(async move {
+        while let Err(error) = assets::moveRootTree(&root, &tree).await {
+            warn!(
+                error = format!("{error:#}"),
+                "moving the root art tree failed; art publishing waits"
+            );
+            tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
+        }
+
+        spawnGameArtLoop(retry_seconds, master, tree.clone());
+        spawnTimelineArtLoop(timeline_interval_seconds, data_dir, tree.clone());
+        spawnSiteSeedLoop(timeline_interval_seconds, tree);
+    });
+}
+
+#[allow(non_snake_case)]
 /// Publishes game art for the version of the local master.mdb, so the cards it reads always
 /// match the files it builds. The refresh loop moves that master to each new game version.
-fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf) {
-    let setup = assets::Bucket::fromEnv()
-        .and_then(|bucket| Ok((bucket, assets::GameArtOptions::fromEnv()?)));
-    let (bucket, options) = match setup {
-        Ok(setup) => setup,
+fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf, bucket: assets::Bucket) {
+    let options = match assets::GameArtOptions::fromEnv() {
+        Ok(options) => options.inFolder(GLOBAL_ART_FOLDER),
         Err(error) => {
             warn!(error = %error, "game art publishing is on but not configured");
             return;
@@ -693,15 +727,8 @@ fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf) {
 #[allow(non_snake_case)]
 /// Publishes the current timeline's banners at start and then on every interval, which catches
 /// new timelines, new news archives and English art uploaded around a release.
-fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf) {
-    let bucket = match assets::Bucket::fromEnv() {
-        Ok(bucket) => bucket,
-        Err(error) => {
-            warn!(error = %error, "timeline art publishing is on but not configured");
-            return;
-        }
-    };
-    let options = assets::TimelineArtOptions::fromEnv();
+fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf, bucket: assets::Bucket) {
+    let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
 
     info!(
         interval_seconds,
@@ -739,15 +766,7 @@ fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf) {
 
 #[allow(non_snake_case)]
 /// Copies the site seed at start and again on every interval until each file is in the bucket.
-fn spawnSiteSeedLoop(interval_seconds: u64) {
-    let bucket = match assets::Bucket::fromEnv() {
-        Ok(bucket) => bucket,
-        Err(error) => {
-            warn!(error = %error, "site seed is on but the bucket is not configured");
-            return;
-        }
-    };
-
+fn spawnSiteSeedLoop(interval_seconds: u64, bucket: assets::Bucket) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);

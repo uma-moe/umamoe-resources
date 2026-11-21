@@ -40,7 +40,7 @@ pub(super) fn bannerKeys<'a>(
     (keys, unplaced)
 }
 
-/// The link a document gives for a key, from the bucket root.
+/// The link a document gives for a key, from the tree's root.
 pub(super) fn rootLink(key: &str) -> String {
     format!("/{key}")
 }

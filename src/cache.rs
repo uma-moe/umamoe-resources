@@ -1,4 +1,4 @@
-use crate::pipeline::ResourceManifest;
+use crate::pipeline::{ResourceManifest, GLOBAL_RESOURCE_PATH};
 use anyhow::{Context, Result};
 use reqwest::StatusCode;
 use serde::Serialize;
@@ -30,15 +30,14 @@ pub async fn purge_manifest_current_urls(manifest: &ResourceManifest) -> Result<
     };
 
     let mut paths = vec![
+        format!("{GLOBAL_RESOURCE_PATH}/manifest.json"),
         "/resources/manifest.json".to_string(),
         "/resources/masterdata/versions.json".to_string(),
     ];
-    paths.extend(
-        manifest
-            .artifacts
-            .iter()
-            .map(|artifact| artifact.current_path.clone()),
-    );
+    for artifact in &manifest.artifacts {
+        paths.push(artifact.current_path.clone());
+        paths.push(format!("/resources/current/{}.gz", artifact.name));
+    }
 
     let public_base_url = public_base_url.trim_end_matches('/');
     let urls = paths
