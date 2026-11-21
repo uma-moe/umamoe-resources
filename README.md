@@ -530,6 +530,19 @@ docker run --rm --entrypoint /opt/game-art/bin/python -v ${PWD}/scripts:/scripts
 
 The frontend's Sync Timeline Images workflow keeps running until the site reads its banners from the bucket.
 
+## Site Seed
+
+The site showed some art that no game-art family builds: JP-only uma portraits, support cards, skill and item icons, the scenario logos and the skill point icon. `src/assets/site_seed.json` lists them as bucket key and site path, made once from the frontend's asset folders when the site switched to the bucket. The publishing server copies each listed file the bucket does not hold yet, unchanged, from `https://uma.moe`, at start and every `TIMELINE_ART_INTERVAL_SECONDS` until all are in, then stops.
+
+- New keys: `art/scenarios/<scenario id>/logo.webp` (the ids of the frontend's scenario list) and `art/ui/skill-points.webp`. The others are the game-art keys: `art/umas/<card>/portrait.webp`, `art/support-cards/<id>/{half,card}.webp`, `art/skills/icons/<id>.webp`, `art/items/<id>.webp`.
+- A key the bucket already holds is left alone, and game art overwrites a seeded copy when the game ships its own file.
+- `_state/site-seed/index.json` records which keys were copied and which the bucket already had, so a decided key is never asked again.
+- The list cannot be rebuilt once the site stops serving its asset folders.
+
+```powershell
+cargo run -- site-seed --dry-run
+```
+
 ## Local Docker
 
 For local containerized development, use [compose.yaml](compose.yaml). It builds the service image, starts Redis, mounts your local `master.mdb` and `generated-data`, and exposes the API on `127.0.0.1:3000`.
