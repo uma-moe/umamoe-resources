@@ -11,7 +11,7 @@ mod types;
 
 use crate::cache;
 use anyhow::{bail, Context, Result};
-pub use bucket_contents::{bucketInventory, clearBucket};
+pub use bucket_contents::{bucketInventory, clearBucket, moveRootTree};
 pub use game_art::{buildGameArtSample, previewGameArtDirectory, publishGameArt, GameArtOptions};
 pub use site_seed::publishSiteSeed;
 use std::path::{Path, PathBuf};
@@ -96,6 +96,15 @@ pub async fn purgeOverwritten(keys: &[String], origins: &[String]) -> Result<()>
         );
     }
     Ok(())
+}
+
+/// Purge origins for a tree published below `folder`: its files are served from that folder.
+fn originsInFolder(origins: &[String], folder: &str) -> Vec<String> {
+    let folder = folder.trim_matches('/');
+    origins
+        .iter()
+        .map(|origin| format!("{}/{folder}", origin.trim_end_matches('/')))
+        .collect()
 }
 
 async fn publishFile(
@@ -309,6 +318,7 @@ mod tests {
             name: "assets".into(),
             access_key: "test".into(),
             secret_key: "test".into(),
+            folder: String::new(),
         };
         (bucket, fake)
     }
@@ -450,6 +460,19 @@ mod tests {
                 "https://uma.moe/game-assets/textures/a%20b.webp",
                 "https://beta.uma.moe/game-assets/textures/a%20b.webp"
             ]
+        );
+    }
+
+    #[test]
+    fn aFolderedTreeIsPurgedBelowItsFolder() {
+        let origins = ["https://assets.uma.moe/".to_string()];
+        let keys = ["art/umas/100101/icon.webp".to_string()];
+
+        let urls = siteUrls(&keys, &originsInFolder(&origins, "/en/"));
+
+        assert_eq!(
+            urls,
+            ["https://assets.uma.moe/en/art/umas/100101/icon.webp"]
         );
     }
 }

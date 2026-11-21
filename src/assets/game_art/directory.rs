@@ -1,7 +1,7 @@
 //! The JSON documents that make `art/` browsable and tie related files together. One document per
 //! uma lists every file it loads, from its model and race clips to its cut-ins; character,
 //! racecourse and library documents list what lies below them. Every path is a link from the
-//! bucket root, and a document lists only files that converted.
+//! tree's root, and a document lists only files that converted.
 
 use super::catalog::{isCutinTimeline, objectName, prefabFamily};
 use super::layout::{characterKey, rootLink, umaKey, Layout, ART_ROOT, SHADER_INDEX_KEY};

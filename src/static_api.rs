@@ -76,6 +76,16 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route("/resources", get(get_manifest))
         .route("/resources/", get(get_manifest))
         .route("/resources/healthz", get(healthz))
+        .route("/resources/en/manifest.json", get(get_manifest))
+        .route(
+            "/resources/en/current/:file_name",
+            get(get_current_resource),
+        )
+        .route(
+            "/resources/en/:version/:file_name",
+            get(get_versioned_resource),
+        )
+        // Clients from before the region split read the Global set here.
         .route("/resources/manifest.json", get(get_manifest))
         .route("/resources/current/:file_name", get(get_current_resource))
         .route(
@@ -763,6 +773,83 @@ mod tests {
             assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
             task.abort();
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn theGlobalSetIsServedBelowEnAndAtItsOldPaths() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "global-resource-paths-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("test-v1")).unwrap();
+        let manifest = ResourceManifest {
+            version: "test-v1".into(),
+            generated_at: "test".into(),
+            base_path: "/resources/en/test-v1".into(),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: "a".repeat(64),
+                path: None,
+                bytes: None,
+            },
+            artifacts: vec![ResourceArtifact {
+                name: "factors.json".into(),
+                path: "/resources/en/test-v1/factors.json.gz".into(),
+                current_path: "/resources/en/current/factors.json.gz".into(),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: "\"sha256-test\"".into(),
+                sha256: "test".into(),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        std::fs::write(root.join("manifest.json"), &manifest_bytes).unwrap();
+        std::fs::write(root.join("test-v1/manifest.json"), &manifest_bytes).unwrap();
+        std::fs::write(root.join("test-v1/factors.json.gz"), b"gz").unwrap();
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: true,
+        };
+        let app = super::resource_router(state, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        let mut answers = Vec::new();
+        for path in [
+            "/resources/en/manifest.json",
+            "/resources/en/current/factors.json.gz",
+            "/resources/en/test-v1/factors.json.gz",
+            "/resources/manifest.json",
+            "/resources/current/factors.json.gz",
+            "/resources/test-v1/factors.json.gz",
+        ] {
+            let response = client.get(format!("{origin}{path}")).send().await.unwrap();
+            let status = response.status();
+            answers.push((path, status, response.bytes().await.unwrap().to_vec()));
+        }
+
+        for (path, status, body) in &answers {
+            assert_eq!(*status, StatusCode::OK, "{path}");
+            let expected = match path.ends_with("manifest.json") {
+                true => manifest_bytes.as_slice(),
+                false => b"gz".as_slice(),
+            };
+            assert_eq!(body.as_slice(), expected, "{path}");
+        }
+        task.abort();
         std::fs::remove_dir_all(root).unwrap();
     }
 

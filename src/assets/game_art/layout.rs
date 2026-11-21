@@ -81,8 +81,8 @@ pub(super) fn courseModelKey(course: &str) -> String {
     format!("{ART_ROOT}/racecourses/{number}/model.glb")
 }
 
-/// How every document and file links a key: from the bucket root, `/art/umas/100101/model.glb`,
-/// so the asset origin plus the link is the file's URL.
+/// How every document and file links a key: from the tree's root, `/art/umas/100101/model.glb`,
+/// so the tree's origin plus the link is the file's URL.
 pub(super) fn rootLink(key: &str) -> String {
     format!("/{key}")
 }

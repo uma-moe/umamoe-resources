@@ -24,7 +24,17 @@ impl Bucket {
                 .context("set ASSETS_S3_ACCESS_KEY_ID")?,
             secret_key: std::env::var("ASSETS_S3_SECRET_ACCESS_KEY")
                 .context("set ASSETS_S3_SECRET_ACCESS_KEY")?,
+            folder: String::new(),
         })
+    }
+
+    /// The same bucket seen from `folder`: every key lies below it. A tree published there keeps
+    /// the root tree's key layout without touching the root's objects.
+    pub fn inFolder(&self, folder: &str) -> Self {
+        Self {
+            folder: format!("{}/", folder.trim_matches('/')),
+            ..self.clone()
+        }
     }
 
     /// The MD5 the bucket reports for `key`, or `None` when it holds no object there. Objects are
@@ -150,6 +160,46 @@ impl Bucket {
         unreachable!("the last attempt returns or fails")
     }
 
+    /// Copies `source`'s object at `key` to the same key below this bucket's folder without
+    /// downloading it. The copy keeps the object's content type and cache lifetime.
+    pub(super) async fn copyObjectFrom(
+        &self,
+        client: &reqwest::Client,
+        source: &Bucket,
+        key: &str,
+    ) -> Result<()> {
+        let source_key = format!("{}{key}", source.folder);
+        let copy_source = format!("/{}/{}", source.name, encodeKey(&source_key));
+        for attempt in 1..=PUT_ATTEMPTS {
+            let request = self.signedRequestWith(
+                "PUT",
+                key,
+                &[],
+                &[("x-amz-copy-source", copy_source.clone())],
+            )?;
+            let response = client
+                .put(&request.url)
+                .headers(request.headers)
+                .body(Vec::new())
+                .send()
+                .await
+                .with_context(|| format!("copying {key} failed"))?;
+
+            let status = response.status();
+            let detail = response.text().await.unwrap_or_default();
+            // S3 may report a failed copy in the body of a 200 answer.
+            if status.is_success() && !detail.contains("<Error>") {
+                return Ok(());
+            }
+            if !isRetryable(status) || attempt == PUT_ATTEMPTS {
+                bail!("copying {key} returned HTTP {status}: {detail}");
+            }
+            warn!(key, %status, attempt, "the bucket refused a copy, retrying");
+            tokio::time::sleep(Duration::from_secs(1 << (attempt - 1))).await;
+        }
+        unreachable!("the last attempt returns or fails")
+    }
+
     /// Every object whose key starts with `prefix`, a page of up to 1000 at a time. Errors leave
     /// out the request URL, which names the account.
     pub(super) async fn listObjects(
@@ -162,7 +212,7 @@ impl Bucket {
         loop {
             let mut query = vec![
                 ("list-type", "2".to_string()),
-                ("prefix", prefix.to_string()),
+                ("prefix", format!("{}{prefix}", self.folder)),
             ];
             if let Some(token) = &continuation {
                 query.push(("continuation-token", token.clone()));
@@ -181,7 +231,11 @@ impl Bucket {
                 bail!("listing the bucket returned HTTP {status}");
             }
             let page = listingPage(&body)?;
-            objects.extend(page.objects);
+            objects.extend(
+                page.objects
+                    .into_iter()
+                    .filter_map(|object| self.relativeObject(object)),
+            );
             match page.continuation {
                 Some(token) => continuation = Some(token),
                 None => return Ok(objects),
@@ -190,22 +244,55 @@ impl Bucket {
     }
 
     fn signedRequest(&self, method: &str, key: &str, body: &[u8]) -> Result<SignedRequest> {
-        self.signedPath(
+        self.signedRequestWith(method, key, body, &[])
+    }
+
+    fn signedRequestWith(
+        &self,
+        method: &str,
+        key: &str,
+        body: &[u8],
+        amz_headers: &[(&'static str, String)],
+    ) -> Result<SignedRequest> {
+        let key = format!("{}{key}", self.folder);
+        self.signedPathWith(
             method,
-            &format!("/{}/{}", self.name, encodeKey(key)),
+            &format!("/{}/{}", self.name, encodeKey(&key)),
             &[],
             body,
+            amz_headers,
         )
     }
 
-    /// Signs the minimum set S3 requires: `host`, `x-amz-content-sha256` and `x-amz-date`. Content
-    /// type and cache control are not `x-amz-` headers, so they stay unsigned.
+    /// A listed object with its key as it is used from this bucket's folder.
+    fn relativeObject(&self, object: ListedObject) -> Option<ListedObject> {
+        let key = object.key.strip_prefix(&self.folder)?.to_string();
+        Some(ListedObject {
+            key,
+            size: object.size,
+        })
+    }
+
     fn signedPath(
         &self,
         method: &str,
         path: &str,
         query: &[(&str, String)],
         body: &[u8],
+    ) -> Result<SignedRequest> {
+        self.signedPathWith(method, path, query, body, &[])
+    }
+
+    /// Signs the minimum set S3 requires, `host`, `x-amz-content-sha256` and `x-amz-date`, plus
+    /// any other `x-amz-` headers the request sends. Content type and cache control are not
+    /// `x-amz-` headers, so they stay unsigned.
+    fn signedPathWith(
+        &self,
+        method: &str,
+        path: &str,
+        query: &[(&str, String)],
+        body: &[u8],
+        amz_headers: &[(&'static str, String)],
     ) -> Result<SignedRequest> {
         let endpoint = reqwest::Url::parse(&self.endpoint)
             .with_context(|| format!("invalid ASSETS_S3_ENDPOINT: {}", self.endpoint))?;
@@ -227,17 +314,23 @@ impl Bucket {
         let amz_date = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
         let date = &amz_date[..8];
 
-        // Already in the sorted order SigV4 requires.
-        let headers = [
+        let mut headers = vec![
             ("host", host),
             ("x-amz-content-sha256", payload_hash.clone()),
             ("x-amz-date", amz_date.clone()),
         ];
+        headers.extend(amz_headers.iter().cloned());
+        // SigV4 lists the signed headers sorted by name.
+        headers.sort_unstable_by_key(|(name, _)| *name);
         let canonical_headers = headers
             .iter()
             .map(|(name, value)| format!("{name}:{value}\n"))
             .collect::<String>();
-        let signed_headers = "host;x-amz-content-sha256;x-amz-date";
+        let signed_headers = headers
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>()
+            .join(";");
         let canonical_request =
             format!("{method}\n{path}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\n{payload_hash}");
 
@@ -379,7 +472,61 @@ mod tests {
             name: "assets".to_string(),
             access_key: "key".to_string(),
             secret_key: "secret".to_string(),
+            folder: String::new(),
         }
+    }
+
+    #[test]
+    fn aFolderedBucketReadsAndWritesBelowItsFolder() {
+        let root = bucket();
+        let english = root.inFolder("/en/");
+
+        let root_url = root.signedRequest("PUT", "art/umas/100101/icon.webp", &[]);
+        let english_url = english.signedRequest("PUT", "art/umas/100101/icon.webp", &[]);
+
+        assert_eq!(
+            root_url.unwrap().url,
+            "https://bucket.example/assets/art/umas/100101/icon.webp"
+        );
+        assert_eq!(
+            english_url.unwrap().url,
+            "https://bucket.example/assets/en/art/umas/100101/icon.webp"
+        );
+    }
+
+    #[test]
+    fn aFolderedBucketListsItsOwnObjectsByTheirKeysInside() {
+        let english = bucket().inFolder("en");
+        let listed = |key: &str| ListedObject {
+            key: key.to_string(),
+            size: 1,
+        };
+
+        assert_eq!(
+            english.relativeObject(listed("en/art/a.webp")),
+            Some(listed("art/a.webp"))
+        );
+        assert_eq!(english.relativeObject(listed("art/a.webp")), None);
+        assert_eq!(
+            bucket().relativeObject(listed("en/art/a.webp")),
+            Some(listed("en/art/a.webp"))
+        );
+    }
+
+    #[test]
+    fn aCopySignsItsSourceAmongTheHeaders() {
+        let copy_source = ("x-amz-copy-source", "/assets/art/a.webp".to_string());
+
+        let request = bucket()
+            .inFolder("en")
+            .signedRequestWith("PUT", "art/a.webp", &[], &[copy_source])
+            .unwrap();
+
+        let authorization = request.headers[AUTHORIZATION].to_str().unwrap();
+        assert_eq!(request.url, "https://bucket.example/assets/en/art/a.webp");
+        assert!(authorization
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-copy-source;x-amz-date,"));
+        assert_eq!(request.headers["x-amz-copy-source"], "/assets/art/a.webp");
     }
 
     #[test]

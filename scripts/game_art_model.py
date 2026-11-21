@@ -12,7 +12,7 @@ material's shader (its name and its published file) and keywords. Course materia
 dirt, base) are left empty in the game files and filled at runtime with one season and weather
 variant of their part's textures: the first variant is embedded in those slots, and every variant
 is listed in `extras.unity.variants` as links to the separately published textures. Every link is
-a path from the bucket root, `/art/...`, so the asset origin plus the link is the file's URL.
+a path from the tree's root, `/art/...`, so the tree's origin plus the link is the file's URL.
 Several prefabs, such as a racecourse's track, trees, stands and sky, are placed side by side in
 their own coordinates. Vertex colours, which
 those shaders read in their own way, are kept as `_UNITY_COLOR` rather than `COLOR_0`, so standard
@@ -175,7 +175,7 @@ def node_transform(transform: Any) -> dict[str, list[float]]:
 
 
 def root_link(bucket_key: str) -> str:
-    """How a model links a published file: from the bucket root, `/art/shaders/gallop/ui/x.json`."""
+    """How a model links a published file: from the tree's root, `/art/shaders/gallop/ui/x.json`."""
     return "/" + quote(bucket_key)
 
 

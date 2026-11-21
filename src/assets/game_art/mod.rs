@@ -16,7 +16,7 @@ mod types;
 mod umas;
 
 use super::types::ObjectChange;
-use super::{publishFile, purgeOverwritten, Bucket};
+use super::{originsInFolder, publishFile, purgeOverwritten, Bucket};
 use crate::game_cdn::{self, CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
 use anyhow::{ensure, Context, Result};
 use build::{convertBatch, converterProcesses, downloadBatch, BuiltBatch, JobOutcome, WorkDir};
@@ -61,6 +61,14 @@ impl GameArtOptions {
             base_key,
             purge_origins,
         })
+    }
+
+    /// The options for a tree published below `folder`, where the site serves its files.
+    pub fn inFolder(self, folder: &str) -> Self {
+        Self {
+            purge_origins: originsInFolder(&self.purge_origins, folder),
+            ..self
+        }
     }
 }
 

@@ -9,7 +9,7 @@ mod records;
 mod site;
 
 use super::types::{Bucket, ObjectChange, DOCUMENT_CACHE_CONTROL};
-use super::{publishFile, purgeOverwritten};
+use super::{originsInFolder, publishFile, purgeOverwritten};
 use crate::generators::timeline_images::{
     compare_with_frontend_sources, plan_banner_images, BannerImagePlan, EnglishSource,
     FrontendSources, ParityReport, PlannedBanner,
@@ -64,6 +64,14 @@ impl TimelineArtOptions {
         Self {
             purge_origins,
             site_origin,
+        }
+    }
+
+    /// The options for a tree published below `folder`, where the site serves its files.
+    pub fn inFolder(self, folder: &str) -> Self {
+        Self {
+            purge_origins: originsInFolder(&self.purge_origins, folder),
+            ..self
         }
     }
 }

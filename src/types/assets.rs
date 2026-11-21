@@ -33,6 +33,9 @@ pub struct Bucket {
     pub(super) name: String,
     pub(super) access_key: String,
     pub(super) secret_key: String,
+    /// The folder every key is read and written below, with its trailing slash; empty for the
+    /// bucket's root.
+    pub(super) folder: String,
 }
 
 pub struct PublishOptions {
