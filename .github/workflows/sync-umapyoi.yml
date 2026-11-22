@@ -74,6 +74,7 @@ jobs:
             src/jp_data/umapyoi_archive.json
             src/jp_data/jp_gachas.json
             src/jp_data/name_translations.json
+            src/jp_data/jp_names.json
             src/global_data/official_news_archive.json
             src/global_data/official_social_archive.json
           )

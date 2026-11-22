@@ -11,6 +11,10 @@ pub const GACHAS_FILE: &str = "jp_gachas.json";
 /// The file the sync job writes its translations to, below `src/jp_data`.
 pub const TRANSLATIONS_FILE: &str = "name_translations.json";
 
+/// The file the sync job writes JP's own names to, below `src/jp_data`, for resource sets built
+/// without JP's master.
+pub const JAPANESE_NAMES_FILE: &str = "jp_names.json";
+
 /// The model that translates names Global has not released.
 pub const TRANSLATION_MODEL: &str = "claude-opus-5-5";
 
@@ -62,6 +66,28 @@ pub struct NameTranslations {
 
 /// Hand-written names that replace a translation until Global ships its own, by kind and id.
 pub type NameOverrides = BTreeMap<NameKind, BTreeMap<i64, String>>;
+
+/// Names as one master has them, by kind and id.
+pub type MasterNames = BTreeMap<NameKind, BTreeMap<i64, String>>;
+
+/// The English and Japanese names of every character and card, for each resource that names
+/// them.
+#[derive(Debug, Default)]
+pub struct NameBook {
+    pub(super) english: MasterNames,
+    pub(super) japanese: MasterNames,
+    /// The character of each character card and support card, by card id.
+    pub(super) card_characters: BTreeMap<i64, i64>,
+}
+
+/// A card's character name and title in English and Japanese; titles have no brackets.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+pub struct CardNames {
+    pub name_en: Option<String>,
+    pub name_jp: Option<String>,
+    pub title_en: Option<String>,
+    pub title_jp: Option<String>,
+}
 
 /// The names the timeline reads: overrides, then translations.
 #[derive(Debug, Default)]

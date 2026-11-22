@@ -64,6 +64,8 @@ pub struct BannerTimeline {
     pub calculation: TimelineCalculation,
     pub anniversaries: Vec<TimelineAnniversary>,
     pub events: Vec<BannerTimelineEvent>,
+    /// English and Japanese names of every card an event picks up, by card id.
+    pub card_names: BTreeMap<i64, crate::jp_names::CardNames>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -550,6 +552,7 @@ struct CalendarLikelihoodModel {
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
+    names: &crate::jp_names::NameBook,
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
@@ -596,7 +599,7 @@ pub fn generate(
         &crate::generators::jp_events::legend_race_timeline_metadata()?,
     );
     let jp_names = crate::jp_names::bundledNames()?;
-    let character_names = load_timeline_character_names(connection, &jp_names)?;
+    let character_names = names.english(crate::jp_names::NameKind::UmaName).clone();
     let support_names = load_support_card_names(connection, &character_names)?;
     let support_card_names = load_support_card_specific_names(connection, &jp_names)?;
     let anchors = build_banner_confirmed_anchors(
@@ -790,6 +793,13 @@ pub fn generate(
             latest_confirmed_global_date: latest_anchor.map(|anchor| anchor.global),
         },
         anniversaries,
+        card_names: events
+            .iter()
+            .flat_map(|event| &event.pickup_card_ids)
+            .map(|card_id| (*card_id, names.card(*card_id)))
+            // Select gachas list placeholder slots, which name nothing.
+            .filter(|(_, card_names)| *card_names != crate::jp_names::CardNames::default())
+            .collect(),
         events,
     })
 }
@@ -5041,23 +5051,6 @@ fn load_support_card_names(
         }
     }
 
-    Ok(names)
-}
-
-/// Character names: translations fill in the characters no other source names, overrides
-/// replace those sources, and Global's master wins over all.
-fn load_timeline_character_names(
-    connection: &Connection,
-    jp_names: &crate::jp_names::NameLoc,
-) -> Result<BTreeMap<i64, String>> {
-    let mut names = common::load_character_name_map(connection)?;
-    for (chara_id, name) in jp_names.translations(crate::jp_names::NameKind::UmaName) {
-        names.entry(chara_id).or_insert_with(|| name.to_string());
-    }
-    for (chara_id, name) in jp_names.overrides(crate::jp_names::NameKind::UmaName) {
-        names.insert(chara_id, name.to_string());
-    }
-    names.extend(common::load_global_character_names(connection)?);
     Ok(names)
 }
 

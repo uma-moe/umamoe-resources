@@ -41,9 +41,12 @@ pub fn generate_all(
     let character_banners = banners::generate_character_banners(connection)?;
     let support_banners = banners::generate_support_banners(connection)?;
     let paid_banners = banners::generate_paid_banners(connection)?;
+    // English and Japanese names for every resource that names characters and cards.
+    let names = crate::jp_names::NameBook::load(connection, jp_connection)?;
     let mut timeline = serde_json::to_value(timeline::generate(
         connection,
         jp_connection,
+        &names,
         &character_banners,
         &support_banners,
         &paid_banners,
@@ -89,13 +92,19 @@ pub fn generate_all(
 
     public.push(output(
         "character_names.json",
-        character_names::generate(connection)?,
+        character_names::generate(connection, &names)?,
     )?);
-    public.push(output("character.json", character::generate(connection)?)?);
-    public.push(output("supports.json", supports::generate(connection)?)?);
+    public.push(output(
+        "character.json",
+        character::generate(connection, &names)?,
+    )?);
+    public.push(output(
+        "supports.json",
+        supports::generate(connection, &names)?,
+    )?);
     public.push(output(
         "support-cards-db.json",
-        support_cards_db::generate(connection)?,
+        support_cards_db::generate(connection, &names)?,
     )?);
     public.push(output("skills.json", skills::generate(connection)?)?);
 
@@ -118,11 +127,12 @@ pub fn generate_all(
 }
 
 /// The JP set: what the JP master alone describes, under the names the Global set uses, so a
-/// page can read either set. Text is Japanese. The timeline, planner and simulator resources are
+/// page can read either set. Text is Japanese, apart from the `_en` names. The timeline, planner and simulator resources are
 /// built around Global's release schedule and bundled Global data, and have no JP counterpart.
 pub fn generate_jp(jp: &Connection, global: &Connection) -> Result<Vec<ResourceOutput>> {
     let characters = common::CardReleases::jp_master(global, common::CardTable::Characters)?;
     let supports = common::CardReleases::jp_master(global, common::CardTable::Supports)?;
+    let names = crate::jp_names::NameBook::load(global, Some(jp))?;
 
     Ok(vec![
         output("factors.json", factors::generate(jp)?)?,
@@ -142,12 +152,21 @@ pub fn generate_jp(jp: &Connection, global: &Connection) -> Result<Vec<ResourceO
             banners::generate_paid_banners(jp)?,
         )?,
         output("affinity.json", affinity::generate(jp)?)?,
-        output("character_names.json", character_names::generate_jp(jp)?)?,
-        output("character.json", character::generate_for(jp, &characters)?)?,
-        output("supports.json", supports::generate_for(jp, &characters)?)?,
+        output(
+            "character_names.json",
+            character_names::generate_jp(jp, &names)?,
+        )?,
+        output(
+            "character.json",
+            character::generate_for(jp, &characters, &names)?,
+        )?,
+        output(
+            "supports.json",
+            supports::generate_for(jp, &characters, &names)?,
+        )?,
         output(
             "support-cards-db.json",
-            support_cards_db::generate_jp(jp, &supports)?,
+            support_cards_db::generate_jp(jp, &supports, &names)?,
         )?,
         output("skills.json", skills::generate(jp)?)?,
     ])

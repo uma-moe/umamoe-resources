@@ -315,7 +315,8 @@ pub fn jp_resources_version(jp_master_path: &Path, global_master_path: &Path) ->
     jp_set_version(&marker, &master_sha256, global_master_path)
 }
 
-/// Release flags come from the Global master, so a Global update changes the JP set too.
+/// Release flags and English names come from the Global master and the bundled names, so an
+/// update to either changes the JP set too.
 fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) -> Result<String> {
     let global_sha256 = sha256_hex(&fs::read(global_master_path).with_context(|| {
         format!(
@@ -323,11 +324,15 @@ fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) 
             global_master_path.display()
         )
     })?);
+    let mut names = Sha256::new();
+    crate::jp_names::hashBundled(&mut names);
+    let names_sha256 = hex::encode(names.finalize());
     Ok(sanitize_version(&format!(
-        "{}-master-{}-global-{}",
+        "{}-master-{}-global-{}-names-{}",
         marker,
         &master_sha256[..12],
         &global_sha256[..12],
+        &names_sha256[..12],
     )))
 }
 

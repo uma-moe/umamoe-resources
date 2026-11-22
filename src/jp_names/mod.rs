@@ -1,12 +1,13 @@
-//! JP's gachas and the English names of what only JP has released. The sync job reads both
-//! masters, writes them into `src/jp_data`, and translates new names with Claude; the timeline
-//! reads the bundled copies, so the servers never call the model.
+//! JP's gachas, JP's own names, and the English names of what only JP has released. The sync
+//! job reads both masters, writes them into `src/jp_data`, and translates new names with Claude;
+//! the resources read the bundled copies, so the servers never call the model.
 
 #![allow(non_snake_case)]
 
 #[path = "../types/jp_names.rs"]
 mod types;
 
+mod book;
 mod master;
 mod translate;
 
@@ -18,15 +19,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use tracing::{info, warn};
 use translate::{Translator, BATCH_SIZE};
-pub use types::{JpGacha, JpGachaData, NameKind, NameLoc};
+pub use types::{CardNames, JpGacha, JpGachaData, NameBook, NameKind, NameLoc};
 use types::{
-    MachineName, NameOverrides, NameTranslations, TranslationExample, TranslationItem, GACHAS_FILE,
-    TRANSLATIONS_FILE, TRANSLATION_MODEL,
+    MachineName, MasterNames, NameOverrides, NameTranslations, TranslationExample, TranslationItem,
+    GACHAS_FILE, JAPANESE_NAMES_FILE, TRANSLATIONS_FILE, TRANSLATION_MODEL,
 };
 
 const BUNDLED_GACHAS: &[u8] = include_bytes!("../jp_data/jp_gachas.json");
 const BUNDLED_TRANSLATIONS: &[u8] = include_bytes!("../jp_data/name_translations.json");
 const BUNDLED_OVERRIDES: &[u8] = include_bytes!("../jp_data/name_overrides.json");
+const BUNDLED_JAPANESE_NAMES: &[u8] = include_bytes!("../jp_data/jp_names.json");
 const OVERRIDES_FILE: &str = "name_overrides.json";
 
 /// Uma names first, so titles can name their character in English.
@@ -41,6 +43,7 @@ pub fn hashBundled(digest: &mut Sha256) {
     digest.update(BUNDLED_GACHAS);
     digest.update(BUNDLED_TRANSLATIONS);
     digest.update(BUNDLED_OVERRIDES);
+    digest.update(BUNDLED_JAPANESE_NAMES);
 }
 
 pub fn bundledGachaData() -> Result<JpGachaData> {
@@ -68,6 +71,10 @@ fn newerGachas(gachas: Vec<JpGacha>, known: &BTreeSet<i64>) -> Vec<JpGacha> {
         .filter(|gacha| !gacha.pickup_card_ids.is_empty())
         .filter(|gacha| newest(gacha.gacha_id / 10000).is_some_and(|id| gacha.gacha_id > id))
         .collect()
+}
+
+fn bundledJapaneseNames() -> Result<MasterNames> {
+    serde_json::from_slice(BUNDLED_JAPANESE_NAMES).context("failed to parse bundled jp_names.json")
 }
 
 pub fn bundledNames() -> Result<NameLoc> {
@@ -110,8 +117,8 @@ impl NameLoc {
     }
 }
 
-/// Writes JP's gachas from its master into `out_dir`, then translates the names only JP has
-/// released that `out_dir` has no current translation or override for.
+/// Writes JP's gachas and names from its master into `out_dir`, then translates the names only
+/// JP has released that `out_dir` has no current translation or override for.
 pub async fn syncJpData(
     global_master: &Path,
     jp_master: &Path,
@@ -126,6 +133,8 @@ pub async fn syncJpData(
         cards = gachas.card_characters.len(),
         "wrote JP gachas"
     );
+    let japanese = master::readAllNames(&jp)?;
+    writeJson(&out_dir.join(JAPANESE_NAMES_FILE), &japanese)?;
     if !translate {
         info!("translation skipped");
         return Ok(());
@@ -138,25 +147,29 @@ pub async fn syncJpData(
     let global = openMaster(global_master)?;
     let previous: NameTranslations = readJson(&out_dir.join(TRANSLATIONS_FILE))?;
     let overrides: NameOverrides = readJson(&out_dir.join(OVERRIDES_FILE))?;
-    let translations = updateTranslations(&jp, &global, previous, &overrides, api_key).await?;
+    let official = master::readAllNames(&global)?;
+    let translations = updateTranslations(
+        &official,
+        &japanese,
+        &gachas.card_characters,
+        previous,
+        &overrides,
+        api_key,
+    )
+    .await?;
     writeJson(&out_dir.join(TRANSLATIONS_FILE), &translations)
 }
 
+/// `official` holds Global's names and `japanese` JP's.
 async fn updateTranslations(
-    jp: &Connection,
-    global: &Connection,
+    official: &MasterNames,
+    japanese: &MasterNames,
+    card_characters: &BTreeMap<i64, i64>,
     previous: NameTranslations,
     overrides: &NameOverrides,
     api_key: String,
 ) -> Result<NameTranslations> {
-    let mut official = BTreeMap::new();
-    let mut japanese = BTreeMap::new();
-    for kind in KINDS {
-        official.insert(kind, master::readNames(global, kind)?);
-        japanese.insert(kind, master::readNames(jp, kind)?);
-    }
-    let card_characters = master::readCardCharacters(jp)?;
-    let examples = examples(&official, &japanese, &card_characters);
+    let examples = examples(official, japanese, card_characters);
 
     let mut translations = NameTranslations {
         model: TRANSLATION_MODEL.to_string(),
@@ -207,8 +220,8 @@ async fn updateTranslations(
                 let character = characterOf(
                     kind,
                     &ids,
-                    &card_characters,
-                    &official,
+                    card_characters,
+                    official,
                     &translations,
                     overrides,
                 );
