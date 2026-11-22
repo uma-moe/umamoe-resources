@@ -5,6 +5,7 @@ use crate::generators::jp_events::{
     LegendRaceTimelineMetadata, NewsTimelineEvent, NewsTimelineKind,
 };
 use crate::generators::planner::GlobalNewsTimelineMetadata;
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use chrono::{
     DateTime, Datelike, Duration, LocalResult, NaiveDate, NaiveDateTime, Offset, TimeZone, Utc,
@@ -30,10 +31,6 @@ const BUNDLED_TIMELINE_LEGEND_RACES_JSON: &[u8] =
     include_bytes!("../jp_data/timeline_legend_races.json");
 const BUNDLED_TIMELINE_CAMPAIGNS_JSON: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
-pub(crate) const BUNDLED_UMAPYOI_ARCHIVE_JSON: &[u8] =
-    include_bytes!("../jp_data/umapyoi_archive.json");
-pub(crate) const BUNDLED_GLOBAL_NEWS_JSON: &[u8] =
-    include_bytes!("../global_data/official_news_archive.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
 /// Support card titles in brackets; 77 holds the card's character name.
@@ -1162,9 +1159,10 @@ fn attach_umapyoi_urls(
     confirmed_dates: &ConfirmedDateLookup,
 ) -> Result<()> {
     let global: crate::global_news::GlobalNewsArchive =
-        serde_json::from_slice(BUNDLED_GLOBAL_NEWS_JSON)?;
-    let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
-        .context("failed to parse bundled umapyoi archive for timeline source links")?;
+        serde_json::from_slice(&store::bytes(StoreFile::GlobalNewsArchive))?;
+    let archive: serde_json::Value =
+        serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
+            .context("failed to parse umapyoi archive for timeline source links")?;
     let posts = archive
         .get("news")
         .and_then(serde_json::Value::as_array)
@@ -5097,8 +5095,9 @@ fn strip_title_brackets(name: &str) -> String {
 fn load_umapyoi_support_character_names(
     character_names: &BTreeMap<i64, String>,
 ) -> Result<BTreeMap<i64, String>> {
-    let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
-        .context("failed to parse bundled umapyoi archive for support character names")?;
+    let archive: serde_json::Value =
+        serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
+            .context("failed to parse umapyoi archive for support character names")?;
     Ok(archive
         .get("supports")
         .and_then(serde_json::Value::as_array)
@@ -5118,8 +5117,9 @@ fn load_umapyoi_support_character_names(
 /// The news archive's support card titles without brackets: English ones, and the Japanese ones
 /// of cards it has no English title for.
 fn load_umapyoi_support_card_names() -> Result<(BTreeMap<i64, String>, BTreeMap<i64, String>)> {
-    let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
-        .context("failed to parse bundled umapyoi archive for support card names")?;
+    let archive: serde_json::Value =
+        serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
+            .context("failed to parse umapyoi archive for support card names")?;
     let mut english = BTreeMap::new();
     let mut japanese = BTreeMap::new();
     let supports = archive

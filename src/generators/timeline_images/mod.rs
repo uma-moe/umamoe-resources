@@ -8,8 +8,8 @@ mod japanese;
 mod news_images;
 mod parity;
 
-use crate::generators::timeline::{BUNDLED_GLOBAL_NEWS_JSON, BUNDLED_UMAPYOI_ARCHIVE_JSON};
 use crate::global_news::GlobalNewsArchive;
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use serde::Deserialize;
@@ -136,12 +136,14 @@ pub struct BannerNews {
 }
 
 impl BannerNews {
-    /// The news archives built into the server.
-    pub fn bundled() -> Result<Self> {
-        let japanese: JapaneseArchive = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
-            .context("the bundled Umapyoi archive is not valid JSON")?;
-        let global: GlobalNewsArchive = serde_json::from_slice(BUNDLED_GLOBAL_NEWS_JSON)
-            .context("the bundled English news archive is not valid JSON")?;
+    /// The news archives this server last loaded from the store.
+    pub fn stored() -> Result<Self> {
+        let japanese: JapaneseArchive =
+            serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
+                .context("the Umapyoi archive is not valid JSON")?;
+        let global: GlobalNewsArchive =
+            serde_json::from_slice(&store::bytes(StoreFile::GlobalNewsArchive))
+                .context("the English news archive is not valid JSON")?;
         let recovered_campaigns = serde_json::from_slice(RECOVERED_CAMPAIGNS_JSON)
             .context("the bundled recovered campaigns are not valid JSON")?;
 
@@ -192,11 +194,11 @@ pub struct EnglishSource {
     pub campaign: bool,
 }
 
-/// The plan for a `banner_timeline.json`, picked from the bundled news.
+/// The plan for a `banner_timeline.json`, picked from the stored news.
 pub fn plan_banner_images(timeline_json: &[u8]) -> Result<BannerImagePlan> {
     let timeline: TimelineDocument =
         serde_json::from_slice(timeline_json).context("the banner timeline is not valid JSON")?;
-    Ok(plan_from_news(&timeline.events, &BannerNews::bundled()?))
+    Ok(plan_from_news(&timeline.events, &BannerNews::stored()?))
 }
 
 pub fn plan_from_news(events: &[TimelineEvent], news: &BannerNews) -> BannerImagePlan {

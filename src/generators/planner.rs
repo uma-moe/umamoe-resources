@@ -1,4 +1,5 @@
 use crate::generators::banners::{CharacterBanner, PaidBanner, SupportBanner};
+use crate::store::{self, StoreFile};
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Datelike, Months, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use rusqlite::{params, Connection};
@@ -31,9 +32,6 @@ const FRIEND_POINT_EXCHANGE_ID: i64 = 2_000;
 const CLOVER_EXCHANGE_ID: i64 = 4_000;
 const TRAINER_SKILLS_TEST_CURRENCY_CATEGORY: i64 = 165;
 const RACING_CARNIVAL_CURRENCY_CATEGORY: i64 = 166;
-const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
-const GLOBAL_NEWS_ARCHIVE: &[u8] = include_bytes!("../global_data/official_news_archive.json");
-const GLOBAL_SOCIAL_ARCHIVE: &[u8] = include_bytes!("../global_data/official_social_archive.json");
 const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
 const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
 const JP_MASTER_REWARDS: &[u8] = include_bytes!("../jp_data/planner_master_rewards.json");
@@ -580,9 +578,9 @@ struct GlobalSocialSnapshot {
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
     digest.update([ALGORITHM_VERSION]);
-    digest.update(UMAPYOI_ARCHIVE);
-    digest.update(GLOBAL_NEWS_ARCHIVE);
-    digest.update(GLOBAL_SOCIAL_ARCHIVE);
+    digest.update(store::bytes(StoreFile::UmapyoiArchive));
+    digest.update(store::bytes(StoreFile::GlobalNewsArchive));
+    digest.update(store::bytes(StoreFile::GlobalSocialArchive));
     digest.update(TIMELINE_CAMPAIGNS);
     digest.update(JP_MISSION_REWARDS);
     digest.update(JP_MASTER_REWARDS);
@@ -1719,11 +1717,12 @@ fn apply_free_pulls(
 }
 
 fn load_archive() -> Result<Archive> {
-    serde_json::from_slice(UMAPYOI_ARCHIVE).context("failed to parse Umapyoi archive")
+    serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
+        .context("failed to parse Umapyoi archive")
 }
 
 fn load_global_news_archive() -> Result<GlobalNewsArchive> {
-    serde_json::from_slice(GLOBAL_NEWS_ARCHIVE)
+    serde_json::from_slice(&store::bytes(StoreFile::GlobalNewsArchive))
         .context("failed to parse official Global news archive")
 }
 
@@ -1908,7 +1907,7 @@ fn is_confirmed_global_direct_reward_claim(text: &str) -> bool {
 }
 
 fn load_global_social_archive() -> Result<GlobalSocialArchive> {
-    serde_json::from_slice(GLOBAL_SOCIAL_ARCHIVE)
+    serde_json::from_slice(&store::bytes(StoreFile::GlobalSocialArchive))
         .context("failed to parse official Global social archive")
 }
 
