@@ -682,20 +682,28 @@ async fn serve(args: ServeArgs) -> Result<()> {
     }
     .await;
     // A server that already has resources serves them while the refresh loop retries, so a store
-    // that is unavailable for a while does not keep it restarting.
+    // that is unavailable for a while does not keep it restarting. The publisher runs without
+    // any: its sync loop collects the files the refresh loop then generates from.
     if let Err(error) = startup {
-        if pipeline::read_manifest(&args.data_dir).is_err() {
+        if pipeline::read_manifest(&args.data_dir).is_ok() {
+            warn!(
+                error = format!("{error:#}"),
+                "startup generation failed; serving the existing resources until a refresh succeeds"
+            );
+        } else if args.publish_game_art {
+            warn!(
+                error = format!("{error:#}"),
+                "startup generation failed; serving nothing until the store is collected and a refresh succeeds"
+            );
+        } else {
             return Err(error);
         }
-        warn!(
-            error = format!("{error:#}"),
-            "startup generation failed; serving the existing resources until a refresh succeeds"
-        );
     }
 
     if confirmed_dates_refreshed_before_serve {
-        let manifest = pipeline::read_manifest(&args.data_dir)?;
-        cache::purge_manifest_current_urls(&manifest).await?;
+        if let Ok(manifest) = pipeline::read_manifest(&args.data_dir) {
+            cache::purge_manifest_current_urls(&manifest).await?;
+        }
     }
 
     if args.publish_game_art {

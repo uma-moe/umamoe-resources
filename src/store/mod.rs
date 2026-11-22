@@ -98,9 +98,11 @@ impl StoreFile {
         )
     }
 
-    /// Whether generation reads the file, so nothing can be generated without it.
+    /// Whether nothing can be generated without the file. Only tests read the race parameters,
+    /// and the name translations exist only once something was translated: a publisher without
+    /// the Anthropic key never writes them.
     fn isRequired(self) -> bool {
-        self != Self::RaceParamsGlobal
+        !matches!(self, Self::RaceParamsGlobal | Self::NameTranslations)
     }
 
     /// Gzipped files are stored as they are.
