@@ -16,8 +16,9 @@ use chrono::DateTime;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use tracing::{info, warn};
-use types::{BLOB_FOLDER, KEPT_VERSIONS, MASTER_FOLDER, RESERVED_FOLDERS};
+use types::{BLOB_FOLDER, KEPT_VERSIONS, MASTER_FOLDER, MIN_UNREFERENCED_AGE, RESERVED_FOLDERS};
 
 /// Where an artifact with this JSON hash is stored.
 pub fn blobFile(data_dir: &Path, sha256: &str) -> PathBuf {
@@ -81,16 +82,23 @@ pub fn masterPath(data_dir: &Path, version: &str, sha256: &str, compressed: bool
 }
 
 /// Removes the versions of the sets in `set_dirs` beyond the newest few, then every stored file
-/// no remaining manifest of any set refers to. Called under the generation lock, so nothing is
-/// written meanwhile. Retention is housekeeping, so a failure is logged and never fails the
-/// generation; a manifest that cannot be read stops the step that needs it from deleting.
+/// no remaining manifest of any set refers to and that is older than `MIN_UNREFERENCED_AGE`.
+/// Called under the generation lock, so this process writes nothing meanwhile; the age keeps what
+/// another process may have just written. Retention is housekeeping, so a failure is logged and
+/// never fails the generation; a manifest that cannot be read stops the step that needs it from
+/// deleting.
 pub fn pruneVersions(data_dir: &Path, set_dirs: &[&Path]) {
+    pruneVersionsAt(data_dir, set_dirs, SystemTime::now());
+}
+
+/// `pruneVersions` with the time the age of stored files is measured from.
+fn pruneVersionsAt(data_dir: &Path, set_dirs: &[&Path], now: SystemTime) {
     for set_dir in set_dirs {
         if let Err(error) = pruneSetVersions(set_dir) {
             warn!(set = %set_dir.display(), error = %error, "skipped pruning old versions");
         }
     }
-    if let Err(error) = pruneUnreferencedFiles(data_dir) {
+    if let Err(error) = pruneUnreferencedFiles(data_dir, now) {
         warn!(error = %error, "skipped pruning unreferenced stored files");
     }
 }
@@ -121,8 +129,9 @@ fn pruneSetVersions(set_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Deletes the blobs and master snapshots that no manifest of the three sets lists.
-fn pruneUnreferencedFiles(data_dir: &Path) -> Result<()> {
+/// Deletes the blobs and master snapshots that no manifest of the three sets lists, unless they
+/// were written recently, since another process may be about to list them.
+fn pruneUnreferencedFiles(data_dir: &Path, now: SystemTime) -> Result<()> {
     let mut blobs = HashSet::new();
     let mut masters = HashSet::new();
     for set_dir in [
@@ -142,8 +151,8 @@ fn pruneUnreferencedFiles(data_dir: &Path) -> Result<()> {
         }
     }
 
-    removeUnlisted(&data_dir.join(BLOB_FOLDER), &blobs)?;
-    removeUnlisted(&data_dir.join(MASTER_FOLDER), &masters)
+    removeUnlisted(&data_dir.join(BLOB_FOLDER), &blobs, now)?;
+    removeUnlisted(&data_dir.join(MASTER_FOLDER), &masters, now)
 }
 
 /// The current manifest of a set, when it has one, and the manifest of each of its versions.
@@ -189,8 +198,8 @@ fn versionManifests(set_dir: &Path) -> Result<Vec<(String, ResourceManifest)>> {
     Ok(versions)
 }
 
-/// Removes the files of `folder` whose names are not in `kept`.
-fn removeUnlisted(folder: &Path, kept: &HashSet<String>) -> Result<()> {
+/// Removes the files of `folder` whose names are not in `kept` and that are old enough.
+fn removeUnlisted(folder: &Path, kept: &HashSet<String>, now: SystemTime) -> Result<()> {
     let entries = match fs::read_dir(folder) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
@@ -206,7 +215,7 @@ fn removeUnlisted(folder: &Path, kept: &HashSet<String>) -> Result<()> {
             .file_name()
             .to_str()
             .is_some_and(|name| kept.contains(name));
-        if listed || !entry.file_type()?.is_file() {
+        if listed || !entry.file_type()?.is_file() || !isOldEnough(&entry, now) {
             continue;
         }
         match fs::remove_file(entry.path()) {
@@ -222,6 +231,17 @@ fn removeUnlisted(folder: &Path, kept: &HashSet<String>) -> Result<()> {
     Ok(())
 }
 
+/// Whether a file was last written at least `MIN_UNREFERENCED_AGE` before `now`. A time that
+/// cannot be read, or one after `now`, keeps the file.
+fn isOldEnough(entry: &fs::DirEntry, now: SystemTime) -> bool {
+    entry
+        .metadata()
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| now.duration_since(modified).ok())
+        .is_some_and(|age| age >= MIN_UNREFERENCED_AGE)
+}
+
 /// File names are built from manifest hashes, so anything else never becomes a path.
 fn isSha256(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -229,9 +249,15 @@ fn isSha256(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{blobFile, masterFile, pruneVersions};
+    use super::{blobFile, masterFile, pruneVersionsAt, MIN_UNREFERENCED_AGE};
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::time::{Duration, SystemTime};
+
+    /// A time from which every file written by the test is old enough to be removed.
+    fn later() -> SystemTime {
+        SystemTime::now() + MIN_UNREFERENCED_AGE + Duration::from_secs(60)
+    }
 
     fn temporaryDirectory(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
@@ -328,7 +354,7 @@ mod tests {
     fn pruningKeepsTheNewestVersionsAndTheCurrentOneAndTheFilesTheyUse() {
         let root = dataDirectory("prune");
 
-        pruneVersions(&root, &[&root, &root.join("planner")]);
+        pruneVersionsAt(&root, &[&root, &root.join("planner")], later());
 
         let mut expected: Vec<String> = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
             .iter()
@@ -375,7 +401,7 @@ mod tests {
             names(&root.join("masters")),
         ];
 
-        pruneVersions(&root, &[&root, &root.join("planner")]);
+        pruneVersionsAt(&root, &[&root, &root.join("planner")], later());
 
         let after = [
             names(&root),
@@ -383,6 +409,29 @@ mod tests {
             names(&root.join("masters")),
         ];
         assert_eq!(before, after);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recentlyWrittenUnreferencedFilesSurviveUntilTheyAreOldEnough() {
+        let root = temporaryDirectory("recent");
+        writeVersion(&root, "v1", 0, 1);
+        fs::write(root.join("manifest.json"), manifestJson("v1", 0, 1)).unwrap();
+        fs::create_dir_all(root.join("blobs")).unwrap();
+        fs::write(blobFile(&root, &hash(1)), b"gz").unwrap();
+        // Another process's blob, and its temporary, whose manifest is not written yet.
+        fs::write(blobFile(&root, &hash(2)), b"gz").unwrap();
+        fs::write(
+            root.join("blobs").join(format!("{}.json.next", hash(3))),
+            b"gz",
+        )
+        .unwrap();
+
+        pruneVersionsAt(&root, &[&root], SystemTime::now());
+        assert_eq!(names(&root.join("blobs")).len(), 3);
+
+        pruneVersionsAt(&root, &[&root], later());
+        assert_eq!(names(&root.join("blobs")), [format!("{}.json.gz", hash(1))]);
         fs::remove_dir_all(root).unwrap();
     }
 }

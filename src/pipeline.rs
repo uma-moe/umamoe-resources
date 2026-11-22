@@ -156,10 +156,7 @@ fn global_version(
 fn versionName(marker: &str, inputs: &BTreeMap<String, String>) -> String {
     let mut digest = Sha256::new();
     for (name, hash) in inputs {
-        digest.update(format!(
-            "{name}={hash}
-"
-        ));
+        digest.update(format!("{name}={hash}\n"));
     }
     let hash = hex::encode(digest.finalize());
     sanitize_version(&format!("{marker}-{}", &hash[..12]))
@@ -730,7 +727,7 @@ mod tests {
         ]);
         let version = versionName("1.35.5:10008790", &inputs);
         assert!(version.starts_with("1.35.5-10008790-"));
-        assert_eq!(version.len(), "1.35.5-10008790-".len() + 12);
+        assert_eq!(version, "1.35.5-10008790-964879571c51");
         assert_eq!(version, versionName("1.35.5:10008790", &inputs.clone()));
 
         let mut changed = inputs.clone();
