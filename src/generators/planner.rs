@@ -3333,10 +3333,10 @@ fn load_master_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>
 }
 
 /// Uma Sanpo ("Let's Go! Uma Outing!") walking campaigns. The JP master lists every
-/// campaign and links it to the news event of its JP start date. A campaign the Global
-/// master also has uses the Global rows and dates; any other is projected onto that event,
-/// or keeps its JP end date when the timeline has no such event. Without a JP master there
-/// are no walking rewards.
+/// campaign, which links to the timeline event of its JP start date. A campaign the Global
+/// master also has uses the Global rows and dates, linked or not; any other is projected
+/// onto its event and left out when it has none. Without a JP master there are no walking
+/// rewards.
 #[allow(non_snake_case)]
 fn loadWalkingCampaignRewards(
     connection: &Connection,
@@ -3348,41 +3348,33 @@ fn loadWalkingCampaignRewards(
         return Ok(());
     };
     let global_campaigns = walkingCampaignDates(connection)?;
-    let timeline_ends = timeline
-        .get("events")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|event| {
-            Some((
-                event.get("id")?.as_str()?.to_string(),
-                event
-                    .get("estimated_end_date")
-                    .or_else(|| event.get("global_release_date"))?
-                    .as_str()?
-                    .to_string(),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let event_links = walkingEventLinks(timeline);
 
-    for (campaign_id, (jp_start, jp_end)) in walkingCampaignDates(jp_connection)? {
+    for (campaign_id, (jp_start, _)) in walkingCampaignDates(jp_connection)? {
         let Some(jp_start) = DateTime::from_timestamp(jp_start, 0) else {
             continue;
         };
-        let key = format!("uma-sanpo-{}", jp_start.format("%Y-%m-%d"));
-        let event_id = format!("news-event-{key}");
-        let global_end = global_campaigns.get(&campaign_id).map(|(_, end)| *end);
-        let (source, region, provenance, confidence) = match global_end {
-            Some(_) => (connection, "Global", "global_master", "exact_source"),
-            None => (jp_connection, "JP", "jp_master", "projected_parity"),
-        };
-        let available_at = match global_end {
-            Some(end) => timestamp_to_rfc3339(end),
-            None => timeline_ends
-                .get(&event_id)
-                .cloned()
-                .unwrap_or_else(|| timestamp_to_rfc3339(jp_end)),
-        };
+        let jp_day = jp_start.format("%Y-%m-%d").to_string();
+        let link = event_links.get(&jp_day);
+        let (source, region, provenance, confidence, available_at) =
+            match (global_campaigns.get(&campaign_id), link) {
+                (Some(&(_, end)), _) => (
+                    connection,
+                    "Global",
+                    "global_master",
+                    "exact_source",
+                    timestamp_to_rfc3339(end),
+                ),
+                (None, Some((_, end))) => (
+                    jp_connection,
+                    "JP",
+                    "jp_master",
+                    "projected_parity",
+                    end.clone(),
+                ),
+                // A JP-only campaign without a timeline event has nothing to project onto.
+                (None, None) => continue,
+            };
         let (reward_set_ids, items) = walkingCampaignItems(source, campaign_id)?;
         let reward_set_ids = reward_set_ids
             .iter()
@@ -3390,13 +3382,13 @@ fn loadWalkingCampaignRewards(
             .collect::<Vec<_>>()
             .join(", ");
 
-        // The ids carry the prefix of the hand-written catalogue they replace, so reward
-        // toggles the planner stored for them keep applying.
-        let id_prefix = format!("campaign-catalog-{key}");
+        // The ids keep the prefix of the hand-written catalogue they replace and the JP start
+        // date whatever event they link to, so reward toggles the planner stored stay valid.
+        let id_prefix = format!("campaign-catalog-uma-sanpo-{jp_day}");
         let template = PlannerReward {
             id: String::new(),
             label: "Let's Go! Uma Outing! rewards".to_string(),
-            event_id: Some(event_id),
+            event_id: link.map(|(event_id, _)| event_id.clone()),
             gacha_id: None,
             currency: "free_jewels",
             amount: None,
@@ -3444,6 +3436,54 @@ fn loadWalkingCampaignRewards(
         }
     }
     Ok(())
+}
+
+/// The timeline event a walking campaign starting on each JP day (`YYYY-MM-DD`) links to,
+/// with the date its rewards become available: `news-event-uma-sanpo-<day>`, else a
+/// campaign starting that JP day with "sanpo" in its title. Some campaigns are named as
+/// variants, such as the Gyaru-Sanpo and KFC Sanpo campaigns, and an unrelated campaign
+/// can start the same day, so the date alone is not enough.
+#[allow(non_snake_case)]
+fn walkingEventLinks(timeline: &Value) -> BTreeMap<String, (String, String)> {
+    let mut links = BTreeMap::new();
+    for event in timeline
+        .get("events")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let (Some(event_id), Some(end)) = (
+            event.get("id").and_then(Value::as_str),
+            event
+                .get("estimated_end_date")
+                .or_else(|| event.get("global_release_date"))
+                .and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let link = (event_id.to_string(), end.to_string());
+        if let Some(jp_day) = event_id.strip_prefix("news-event-uma-sanpo-") {
+            links.insert(jp_day.to_string(), link);
+            continue;
+        }
+
+        let is_sanpo_campaign = event.get("type").and_then(Value::as_str) == Some("campaign")
+            && event
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.to_lowercase().contains("sanpo"));
+        if !is_sanpo_campaign {
+            continue;
+        }
+        if let Some(jp_day) = event
+            .get("jp_release_date")
+            .and_then(Value::as_str)
+            .and_then(|date| date.get(..10))
+        {
+            links.entry(jp_day.to_string()).or_insert(link);
+        }
+    }
+    links
 }
 
 /// The start and end of every walking campaign the master has, by campaign id. Empty when
@@ -8813,7 +8853,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn walkingCampaignsSumTheirRewardSetsAndProjectOntoTheTimeline() {
+    fn walkingCampaignsSumTheirRewardSetsOntoTheirNewsEvent() {
         let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
         let global = Connection::open_in_memory().unwrap();
         let timeline = json!({"events": [{
@@ -8863,12 +8903,52 @@ mod tests {
             // Money is 20,000 claimable twice in set 1 plus 10,000 in set 2.
             vec![(91, 59, 50_000), (21, 34, 5)]
         );
+    }
 
-        // No timeline event for the second campaign: it keeps its JP end date.
-        let unmatched = reward("campaign-catalog-uma-sanpo-2023-01-20-free-jewels");
-        assert_eq!(unmatched.amount, Some(50));
-        assert_eq!(unmatched.available_at, "2023-01-30T02:59:59+00:00");
-        assert_eq!(rewards.len(), 5);
+    #[test]
+    #[allow(non_snake_case)]
+    fn walkingCampaignsLinkSanpoVariantsByTitle() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = Connection::open_in_memory().unwrap();
+        let campaign = |id: &str, title: &str, end: &str| {
+            json!({
+                "id": id,
+                "type": "campaign",
+                "title": title,
+                "jp_release_date": "2023-01-20T03:00:00Z",
+                "global_release_date": "2027-01-09T22:00:00Z",
+                "estimated_end_date": end
+            })
+        };
+        // An unrelated campaign starts the same JP day.
+        let timeline = json!({"events": [
+            campaign("news-event-campaign-1299", "Gal Week Campaign", "2027-01-20T22:00:00Z"),
+            campaign("news-event-campaign-1310", "Held \"Gyaru-Sanpo Campaign", "2027-01-23T22:00:00Z")
+        ]});
+        let mut rewards = Vec::new();
+
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &timeline, &mut rewards).unwrap();
+
+        let linked = rewards
+            .iter()
+            .find(|reward| reward.id == "campaign-catalog-uma-sanpo-2023-01-20-free-jewels")
+            .expect("the variant campaign should link by its title");
+        assert_eq!(linked.event_id.as_deref(), Some("news-event-campaign-1310"));
+        assert_eq!(linked.available_at, "2027-01-23T22:00:00Z");
+        assert_eq!(linked.label, "Let's Go! Uma Outing! rewards");
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn jpOnlyWalkingCampaignsWithoutAnEventAreSkipped() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = Connection::open_in_memory().unwrap();
+        let mut rewards = Vec::new();
+
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &json!({"events": []}), &mut rewards)
+            .unwrap();
+
+        assert!(rewards.is_empty());
     }
 
     #[test]
@@ -8880,39 +8960,27 @@ mod tests {
             "(226, 1788300000, 1789052399)",
             "(1, 1, 1, 90, 43, 60), (4, 2, 1, 90, 43, 60)",
         );
-        let timeline = json!({"events": [{
-            "id": "news-event-uma-sanpo-2022-10-19",
-            "type": "campaign",
-            "global_release_date": "2026-09-01T22:00:00Z",
-            "estimated_end_date": "2026-09-10T14:59:00Z"
-        }]});
         let mut rewards = Vec::new();
 
-        super::loadWalkingCampaignRewards(&global, Some(&jp), &timeline, &mut rewards).unwrap();
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &json!({"events": []}), &mut rewards)
+            .unwrap();
 
-        let shared = rewards
-            .iter()
-            .filter(|reward| {
-                reward
-                    .id
-                    .starts_with("campaign-catalog-uma-sanpo-2022-10-19")
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(shared.len(), 1);
-        assert_eq!(shared[0].amount, Some(120));
-        assert_eq!(shared[0].available_at, "2026-09-10T14:59:59+00:00");
-        assert_eq!(shared[0].provenance, "global_master");
-        assert_eq!(shared[0].confidence, "exact_source");
+        // Emitted without a timeline event; the JP-only campaign has none to project onto.
+        assert_eq!(rewards.len(), 1);
+        let jewels = &rewards[0];
         assert_eq!(
-            shared[0].evidence.as_deref(),
+            jewels.id,
+            "campaign-catalog-uma-sanpo-2022-10-19-free-jewels"
+        );
+        assert_eq!(jewels.event_id, None);
+        assert_eq!(jewels.amount, Some(120));
+        assert_eq!(jewels.available_at, "2026-09-10T14:59:59+00:00");
+        assert_eq!(jewels.provenance, "global_master");
+        assert_eq!(jewels.confidence, "exact_source");
+        assert_eq!(
+            jewels.evidence.as_deref(),
             Some("Global master walking reward sets 1, 2")
         );
-        // A campaign only JP has stays a JP projection.
-        let jp_only = rewards
-            .iter()
-            .find(|reward| reward.id == "campaign-catalog-uma-sanpo-2023-01-20-free-jewels")
-            .unwrap();
-        assert_eq!(jp_only.provenance, "jp_master");
     }
 
     #[test]
