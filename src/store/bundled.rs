@@ -51,6 +51,9 @@ pub(super) fn bundled(file: StoreFile) -> &'static [u8] {
             static PACKED: OnceLock<Vec<u8>> = OnceLock::new();
             PACKED.get_or_init(|| packCourseEventParams(GLOBAL_COURSE_EVENT_PARAM_OVERRIDES))
         }
+        StoreFile::RaceParamsGlobal => {
+            include_bytes!("../global_data/raceparams/10006800.json")
+        }
     }
 }
 

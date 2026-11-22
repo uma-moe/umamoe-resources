@@ -41,6 +41,9 @@ pub enum StoreFile {
     CourseEventParamsJp,
     /// Global course event tables that replace JP's, packed like the JP ones.
     CourseEventParamsGlobal,
+    /// The decoded Global race parameter asset. Only tests read it, to check the simulator's
+    /// constants against the game's.
+    RaceParamsGlobal,
 }
 
 /// A store file's content: what this server last loaded, or the copy built into the binary
