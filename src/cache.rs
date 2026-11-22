@@ -132,6 +132,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: "skills.json".to_string(),
                 path: format!("{set_path}/v1/skills.json.gz"),

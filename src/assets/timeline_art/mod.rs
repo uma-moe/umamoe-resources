@@ -32,7 +32,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-const TIMELINE_FILE: &str = "banner_timeline.json.gz";
+const TIMELINE_FILE: &str = "banner_timeline.json";
 
 /// Pictures converted and published together; records are saved after each batch.
 const BATCH_SIZE: usize = 32;
@@ -94,7 +94,17 @@ pub struct TimelineArtSummary {
 /// The current timeline in the generated data folder.
 pub fn currentTimelinePath(data_dir: &Path) -> Result<PathBuf> {
     let manifest = pipeline::read_manifest(data_dir)?;
-    Ok(data_dir.join(manifest.version).join(TIMELINE_FILE))
+    let artifact = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.name == TIMELINE_FILE)
+        .with_context(|| format!("the current manifest lists no {TIMELINE_FILE}"))?;
+    Ok(crate::resource_storage::artifactPath(
+        data_dir,
+        data_dir,
+        &manifest.version,
+        artifact,
+    ))
 }
 
 /// The timeline's JSON, from a `.json` or `.json.gz` file.
