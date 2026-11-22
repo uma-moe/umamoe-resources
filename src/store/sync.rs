@@ -27,7 +27,7 @@ pub fn spawnSyncLoop(dir: PathBuf, bucket: Option<Bucket>, master: PathBuf, inte
     if bucket.is_none() {
         warn!("the store has no bucket; this server's news and translations stay on this server");
     }
-    if std::env::var_os("ANTHROPIC_API_KEY").is_none() {
+    if jp_names::translationKey().is_none() {
         warn!("ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated");
     }
     info!(interval_seconds, "store synchronization enabled");
@@ -200,7 +200,7 @@ impl TranslationRun {
     /// keeps; without either there is nothing to do.
     async fn run(&mut self, master: &Path, path: &Path) -> Result<()> {
         let jp_master = master_fetch::jpMasterPath(master);
-        if std::env::var_os("ANTHROPIC_API_KEY").is_none() || !jp_master.is_file() {
+        if jp_names::translationKey().is_none() || !jp_master.is_file() {
             return Ok(());
         }
         let masters = [masterMark(master), masterMark(&jp_master)];
