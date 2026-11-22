@@ -18,6 +18,7 @@ mod jp_names;
 mod master_fetch;
 mod master_history;
 mod pipeline;
+mod resource_storage;
 mod static_api;
 mod store;
 mod umapyoi;
