@@ -6,7 +6,7 @@ consumers; they must not read an installed game cache at runtime.
 
 ## Source Contract
 
-`src/global_data/simulator_course_geometry.json.gz` contains canonical JSON in gzip
+The store's `simulator_course_geometry.json.gz` contains canonical JSON in gzip
 containing all normal-race `CourseLaneAnim` records available for the current
 course master. Each course has 1,001 values for position X/Y/Z and quaternion
 rotation X/Y/Z/W, plus its course identity, distance, and source asset path.
@@ -55,12 +55,11 @@ hidden by an older generated `simulator_courses.json.gz`. Use the matching
 current Global cache, configuration, and asset manifest:
 
 ```powershell
-python scripts/extract_simulator_course_geometry.py --region global --client-root "$env:USERPROFILE\AppData\LocalLow\Cygames\Umamusume" --sqlite3mc "C:\path\to\UmaViewer_Data\Plugins\x86_64\sqlite3mc_x64.dll" --umaviewer-config "C:\path\to\UmaViewer\Config.json" --master master.mdb --out "src\global_data\simulator_course_geometry.json.gz"
+python scripts/extract_simulator_course_geometry.py --region global --client-root "$env:USERPROFILE\AppData\LocalLow\Cygames\Umamusume" --sqlite3mc "C:\path\to\UmaViewer_Data\Plugins\x86_64\sqlite3mc_x64.dll" --umaviewer-config "C:\path\to\UmaViewer\Config.json" --master master.mdb --out "generated-data\store\simulator_course_geometry.json.gz"
 ```
 
 Servers read the file from the shared store, so upload the result with
-`cargo run --release -- store put simulator_course_geometry.json.gz src/global_data/simulator_course_geometry.json.gz`;
-the git copy is only the seed.
+`cargo run --release -- store put simulator_course_geometry.json.gz generated-data/store/simulator_course_geometry.json.gz`.
 
 Use repeatable `--course-id` arguments only for diagnostics. A release refresh
 must omit that filter so the source covers every playable course in the current master.
@@ -122,7 +121,7 @@ ratio-update ordering.
 
 ## Finish-line continuation lanes
 
-`src/global_data/simulator_course_lanes.json.gz` retains the existing Global
+The store's `simulator_course_lanes.json.gz` retains the existing Global
 `course-lanes.json` continuation data: each course's `courseId` and `overrun`
 asset path, plus the referenced assets with their original transform samples.
 Normal course transforms remain in `simulator_course_geometry.json.gz`.
@@ -132,7 +131,7 @@ assets; `source_sha256` identifies the full retained input.
 Maintainers can regenerate it without game-cache or third-party dependencies:
 
 ```sh
-python scripts/export_simulator_course_lanes.py /path/to/course-lanes.json src/global_data/simulator_course_lanes.json.gz
+python scripts/export_simulator_course_lanes.py /path/to/course-lanes.json generated-data/store/simulator_course_lanes.json.gz
 ```
 
 Then upload it with `store put simulator_course_lanes.json.gz <path>`, as for the geometry.
