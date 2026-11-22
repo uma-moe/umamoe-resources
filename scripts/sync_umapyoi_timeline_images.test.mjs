@@ -4,8 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { officialEnglishJobs } from './sync_umapyoi_timeline_images.mjs';
 
-const archive = JSON.parse(readFileSync(new URL('../src/jp_data/umapyoi_archive.json', import.meta.url)));
-const posts = JSON.parse(readFileSync(new URL('../src/global_data/official_news_archive.json', import.meta.url)))
+const archive = JSON.parse(readFileSync(new URL('../generated-data/store/umapyoi_archive.json', import.meta.url)));
+const posts = JSON.parse(readFileSync(new URL('../generated-data/store/official_news_archive.json', import.meta.url)))
   .posts.map(post => post.snapshots.at(-1).raw);
 const frontend = path.resolve('test-frontend');
 const jobsFor = events => officialEnglishJobs({ events }, archive, posts, [], frontend);

@@ -60,18 +60,19 @@ def parse_args() -> argparse.Namespace:
         "--catalog",
         type=Path,
         default=Path(__file__).resolve().parents[1]
-        / "src"
-        / "jp_data"
+        / "generated-data"
+        / "store"
         / "timeline_campaigns.json",
+        help="local store copy of the catalogue; upload the result with `store put`",
     )
     parser.add_argument(
         "--planner-rewards",
         type=Path,
         default=Path(__file__).resolve().parents[1]
-        / "src"
-        / "jp_data"
+        / "generated-data"
+        / "store"
         / "planner_mission_rewards.json",
-        help="protected planner-only JP mission reward catalogue",
+        help="protected planner-only JP mission reward catalogue, in the local store copy",
     )
     return parser.parse_args()
 

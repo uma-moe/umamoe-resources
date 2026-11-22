@@ -70,7 +70,7 @@ struct TimelineDocument {
     events: Vec<TimelineEvent>,
 }
 
-/// A post of the Japanese news archive (`src/jp_data/umapyoi_archive.json`).
+/// A post of the Japanese news archive (the store's `umapyoi_archive.json`).
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct JapanesePost {

@@ -1,7 +1,7 @@
 # Global Race Parameters
 
-The decoded source asset in this directory is the authoritative Global client
-input for simulator-wide serialized race constants.
+The store's `race_params_global.json` is the decoded source asset and the
+authoritative Global client input for simulator-wide serialized race constants.
 
 ## Global 10006800
 
@@ -12,9 +12,9 @@ input for simulator-wide serialized race constants.
 - Logical asset: `Race/RaceMain/ast_race_paramdefine`
 - Bundle hash: `GQFJZWZJDWLTBRKLLW5VYVPZSUSQBDM6`
 - Asset `paramDefineVersion`: `20180828`
-- Decoded source: `10006800.json`
+- Decoded source: `race_params_global.json` in the store
 
-`10006800.json` is the Unity MonoBehaviour type tree after the installed
+`race_params_global.json` is the Unity MonoBehaviour type tree after the installed
 client's asset wrapper was decoded. Numeric values preserve the serialized
 single-precision payload as JSON numbers. The simulator generator selects only
 fields used by race mechanics; camera, presentation, audio, and commentary
