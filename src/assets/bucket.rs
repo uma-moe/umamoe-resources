@@ -46,6 +46,15 @@ impl Bucket {
         }
     }
 
+    /// The same bucket reached with another key.
+    pub fn withKey(&self, access_key: &str, secret_key: &str) -> Self {
+        Self {
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            ..self.clone()
+        }
+    }
+
     /// The MD5 the bucket reports for `key`, or `None` when it holds no object there. Objects are
     /// written in a single PUT, so their ETag is the MD5 of their bytes.
     pub(crate) async fn objectEtag(
