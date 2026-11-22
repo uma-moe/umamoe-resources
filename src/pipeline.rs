@@ -17,6 +17,12 @@ use tracing::warn;
 /// `/resources` from before the split keep serving Global for older clients.
 pub const GLOBAL_RESOURCE_PATH: &str = "/resources/en";
 
+/// Where the JP set is served, beside Global's.
+pub const JP_RESOURCE_PATH: &str = "/resources/jp";
+
+/// The folder of the data directory that holds the JP set.
+const JP_DATA_FOLDER: &str = "jp";
+
 const PUBLIC_TIMELINE_GZIP_BUDGET: u64 = 300 * 1024;
 const PLANNER_MANIFEST_GZIP_BUDGET: usize = 10 * 1024;
 const PLANNER_INITIAL_GZIP_BUDGET: u64 = 150 * 1024;
@@ -229,6 +235,102 @@ pub fn generate_resources(
     Ok(manifest)
 }
 
+/// Where the JP set is written: a data directory of its own inside the Global one.
+pub fn jp_data_dir(out_dir: &Path) -> PathBuf {
+    out_dir.join(JP_DATA_FOLDER)
+}
+
+/// Generates the JP set from the JP master into `jp/` of the data directory, apart from the
+/// Global export and with a manifest of its own. The Global master only says which JP cards
+/// Global has released.
+pub fn generate_jp_resources(
+    jp_master_path: &Path,
+    global_master_path: &Path,
+    out_dir: &Path,
+    write_json: bool,
+) -> Result<ResourceManifest> {
+    let _generation = GENERATION_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))?;
+    let master_bytes = fs::read(jp_master_path)
+        .with_context(|| format!("failed to read JP master at {}", jp_master_path.display()))?;
+    let master_sha256 = sha256_hex(&master_bytes);
+    let marker = read_master_marker(jp_master_path)
+        .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
+    let version = jp_set_version(&marker, &master_sha256, global_master_path)?;
+
+    let jp = Connection::open_with_flags(jp_master_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("failed to open JP master at {}", jp_master_path.display()))?;
+    let global = Connection::open_with_flags(global_master_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| {
+            format!(
+                "failed to open Global master at {}",
+                global_master_path.display()
+            )
+        })?;
+    let outputs = generators::generate_jp(&jp, &global)?;
+
+    let jp_dir = jp_data_dir(out_dir);
+    let version_dir = jp_dir.join(&version);
+    fs::create_dir_all(&version_dir)
+        .with_context(|| format!("failed to create {}", version_dir.display()))?;
+    let artifacts = write_outputs(
+        outputs,
+        &version_dir,
+        &version,
+        JP_RESOURCE_PATH,
+        write_json,
+    )?;
+
+    let manifest = ResourceManifest {
+        version: version.clone(),
+        generated_at: Utc::now().to_rfc3339(),
+        base_path: format!("{JP_RESOURCE_PATH}/{version}"),
+        master: MasterInfo {
+            marker,
+            sha256: master_sha256,
+            path: None,
+            bytes: Some(master_bytes.len() as u64),
+        },
+        artifacts,
+    };
+    let manifest_json = serde_json::to_vec_pretty(&manifest)?;
+    writeAtomic(&version_dir.join("manifest.json"), &manifest_json)
+        .with_context(|| format!("failed to write manifest in {}", version_dir.display()))?;
+    writeAtomic(&jp_dir.join("manifest.json"), &manifest_json)
+        .with_context(|| format!("failed to write manifest in {}", jp_dir.display()))?;
+
+    Ok(manifest)
+}
+
+/// The version the JP set would have for these two masters, to tell whether the set on disk is
+/// current without generating it.
+pub fn jp_resources_version(jp_master_path: &Path, global_master_path: &Path) -> Result<String> {
+    let master_sha256 =
+        sha256_hex(&fs::read(jp_master_path).with_context(|| {
+            format!("failed to read JP master at {}", jp_master_path.display())
+        })?);
+    let marker = read_master_marker(jp_master_path)
+        .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
+    jp_set_version(&marker, &master_sha256, global_master_path)
+}
+
+/// Release flags come from the Global master, so a Global update changes the JP set too.
+fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) -> Result<String> {
+    let global_sha256 = sha256_hex(&fs::read(global_master_path).with_context(|| {
+        format!(
+            "failed to read Global master at {}",
+            global_master_path.display()
+        )
+    })?);
+    Ok(sanitize_version(&format!(
+        "{}-master-{}-global-{}",
+        marker,
+        &master_sha256[..12],
+        &global_sha256[..12],
+    )))
+}
+
 fn write_outputs(
     outputs: Vec<generators::ResourceOutput>,
     version_dir: &Path,
@@ -412,6 +514,67 @@ mod tests {
             json_bytes: gzip_bytes,
             gzip_bytes,
         }
+    }
+
+    /// The bundled Global master stands in for both masters: the queries and the layout are
+    /// what is checked, and every card of a master is released where that master is from.
+    #[test]
+    fn jp_set_is_written_apart_with_its_own_manifest() {
+        use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
+
+        let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");
+        let out = std::env::temp_dir().join(format!("jp-resource-set-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+
+        let manifest = generate_jp_resources(&master, &master, &out, false).unwrap();
+
+        assert_eq!(
+            manifest.base_path,
+            format!("/resources/jp/{}", manifest.version)
+        );
+        assert_eq!(
+            manifest.version,
+            jp_resources_version(&master, &master).unwrap()
+        );
+        assert!(!out.join("manifest.json").exists());
+        let jp_dir = jp_data_dir(&out);
+        assert_eq!(read_manifest(&jp_dir).unwrap().version, manifest.version);
+
+        let names: Vec<&str> = manifest
+            .artifacts
+            .iter()
+            .map(|artifact| artifact.name.as_str())
+            .collect();
+        assert!(names.contains(&"character.json") && names.contains(&"skills.json"));
+        // Built around Global's schedule; a JP set has neither.
+        assert!(!names.contains(&"banner_timeline.json"));
+        assert!(!names.iter().any(|name| name.starts_with("planner_")));
+        for artifact in &manifest.artifacts {
+            assert_eq!(
+                artifact.current_path,
+                format!("/resources/jp/current/{}.gz", artifact.name)
+            );
+            assert!(jp_dir
+                .join(&manifest.version)
+                .join(format!("{}.gz", artifact.name))
+                .is_file());
+        }
+
+        let gzipped = std::fs::read(jp_dir.join(&manifest.version).join("character.json.gz"));
+        let mut json = Vec::new();
+        std::io::Read::read_to_end(
+            &mut flate2::read::GzDecoder::new(gzipped.unwrap().as_slice()),
+            &mut json,
+        )
+        .unwrap();
+        let characters: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        let characters = characters.as_array().unwrap();
+        assert!(!characters.is_empty());
+        assert!(characters
+            .iter()
+            .all(|card| card["isReleased_jp"] == true && card["isReleased_en"] == true));
+
+        std::fs::remove_dir_all(&out).unwrap();
     }
 
     #[test]

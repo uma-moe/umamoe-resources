@@ -3,7 +3,7 @@
 #![allow(non_snake_case)]
 
 use anyhow::{bail, Context, Result};
-use data_encoding::BASE32_NOPAD;
+use data_encoding::{BASE32_NOPAD, BASE64};
 use sha1::Digest;
 use std::io::Read;
 
@@ -11,9 +11,9 @@ use std::io::Read;
 mod types;
 use types::{
     BsvParser, BsvValue, ASSET_BUNDLE_HEADER_SIZE, BSV_FORMAT_ANONYMOUS, BSV_FORMAT_VERSION,
-    BSV_MAGIC, BSV_RAW_U64, LZ4_FRAME_MAGIC, USER_AGENT,
+    BSV_MAGIC, BSV_RAW_U64, LZ4_FRAME_MAGIC, ROOT_MANIFEST_NAME, USER_AGENT,
 };
-pub use types::{CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, WINDOWS};
+pub use types::{CdnSource, ManifestEntry, ANDROID, GLOBAL_CDN, JP_CDN, WINDOWS};
 
 impl BsvValue {
     fn asStr(&self) -> Result<&str> {
@@ -257,16 +257,47 @@ fn isLz4Compressed(data: &[u8]) -> bool {
     data.len() >= 4 && data[..4] == LZ4_FRAME_MAGIC
 }
 
-fn rootManifestUrl(source: &CdnSource, resource_version: &str) -> String {
-    format!(
-        "{}/dl/vertical/{}/manifests/manifestdat/root.manifest.bsv.lz4",
-        source.base_url, resource_version
-    )
+/// Where a resource version's root manifest is. A Global version is a number that names the
+/// folder holding it. A JP version is `number:token`, and the CDN stores the root manifest like
+/// any other manifest, under the name its size and checksum in the token hash to.
+fn rootManifestUrl(source: &CdnSource, resource_version: &str) -> Result<String> {
+    if !source.hashed_root {
+        return Ok(format!(
+            "{}/{}/manifests/manifestdat/root.manifest.bsv.lz4",
+            source.base_url, resource_version
+        ));
+    }
+
+    let (_, token) = resource_version.split_once(':').with_context(|| {
+        format!(
+            "{} resource version {resource_version} has no root manifest token",
+            source.region
+        )
+    })?;
+    let (size, checksum) = rootManifestIdentity(token)
+        .with_context(|| format!("invalid resource version {resource_version}"))?;
+    let hname = calcHname(checksum, size, ROOT_MANIFEST_NAME.as_bytes());
+    Ok(resourceUrl(source, "Manifest", &hname))
+}
+
+/// The root manifest's size and checksum from a version token: base64 of the size, written like
+/// a manifest's numbers, then the checksum's eight bytes. Only one-byte sizes have been seen.
+fn rootManifestIdentity(token: &str) -> Result<(u64, u64)> {
+    let bytes = BASE64
+        .decode(token.as_bytes())
+        .context("the version token is not base64")?;
+    let mut parser = BsvParser::new(&bytes);
+    let size = parser.readVlq();
+    let checksum = parser.readUnum(8)?;
+    if parser.offset != bytes.len() {
+        bail!("the version token has bytes after its checksum");
+    }
+    Ok((size, checksum))
 }
 
 fn resourceUrl(source: &CdnSource, folder: &str, hname: &str) -> String {
     format!(
-        "{}/dl/vertical/resources/{}/{}/{}",
+        "{}/resources/{}/{}/{}",
         source.base_url,
         folder,
         &hname[..2],
@@ -319,7 +350,7 @@ pub async fn fetchCategories(
     platform: &'static str,
     resource_version: &str,
 ) -> Result<Vec<ManifestEntry>> {
-    let root_data = download(client, &rootManifestUrl(source, resource_version)).await?;
+    let root_data = download(client, &rootManifestUrl(source, resource_version)?).await?;
     let root_entries = parseRootManifest(&decompressLz4(&root_data)?)?;
     let platform_entry = root_entries
         .iter()
@@ -402,6 +433,40 @@ mod tests {
     fn vlq(value: u8) -> u8 {
         assert!(value < 0x80);
         value
+    }
+
+    #[test]
+    fn globalVersionsNameTheFolderOfTheirRootManifest() {
+        assert_eq!(
+            rootManifestUrl(&GLOBAL_CDN, "10008010").unwrap(),
+            "https://assets-umamusume-en.akamaized.net/dl/vertical/10008010/manifests/manifestdat/root.manifest.bsv.lz4"
+        );
+    }
+
+    #[test]
+    fn jpVersionsNameTheirRootManifestBySizeAndChecksum() {
+        // A live JP version; its root manifest is 77 bytes and was served under this name.
+        assert_eq!(
+            rootManifestIdentity("TZH99sxhsgYr").unwrap(),
+            (77, 0x91FD_F6CC_61B2_062B)
+        );
+        assert_eq!(
+            rootManifestUrl(&JP_CDN, "10021450:TZH99sxhsgYr").unwrap(),
+            "https://prd-storage-game-umamusume.akamaized.net/dl/resources/Manifest/7R/7RFTYUPGQLGCONV3YBUA3KTCBCF7T4EB"
+        );
+    }
+
+    #[test]
+    fn malformedVersionTokensAreRejected() {
+        // No token, not base64, too short for a checksum, and bytes left over after it.
+        for version in [
+            "10021450",
+            "10021450:%%%",
+            "10021450:TZH9",
+            "10021450:TZH99sxhsgYrAAAA",
+        ] {
+            assert!(rootManifestUrl(&JP_CDN, version).is_err(), "{version}");
+        }
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 use super::types::{GameVersionHistory, MasterRelease, MasterSnapshot, SHORT_HASH_LENGTH};
 use super::{readReleases, versionsPath, writeDiffFile, writeReleases};
+use crate::game_cdn::GLOBAL_CDN;
 use crate::master_fetch::fetchMasterMdb;
 use anyhow::{bail, Context, Result};
 use chrono::NaiveDateTime;
@@ -53,7 +54,9 @@ async fn backfillFromVersions(
     for version in versions {
         let master_path = scratch_dir.join(format!("{}.mdb", version.resource_version));
         // A missing version only widens the next diff, which still names the master it starts from.
-        if let Err(error) = fetchMasterMdb(&version.resource_version, &master_path).await {
+        if let Err(error) =
+            fetchMasterMdb(&GLOBAL_CDN, &version.resource_version, &master_path).await
+        {
             warn!(
                 resource_version = version.resource_version,
                 error = %error,

@@ -1,5 +1,5 @@
 use crate::master_history::{self, sqliteValueToJson};
-use crate::pipeline::{read_manifest, read_version_manifest, ResourceManifest};
+use crate::pipeline::{jp_data_dir, read_manifest, read_version_manifest, ResourceManifest};
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
@@ -91,6 +91,15 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
+        )
+        .route("/resources/jp/manifest.json", get(get_jp_manifest))
+        .route(
+            "/resources/jp/current/:file_name",
+            get(get_current_jp_resource),
+        )
+        .route(
+            "/resources/jp/:version/:file_name",
+            get(get_versioned_jp_resource),
         )
         .route(
             "/resources/masterdata/versions.json",
@@ -203,8 +212,26 @@ async fn get_manifest(
     State(state): State<AppState>,
     request: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let manifest_path = state.data_dir.join("manifest.json");
-    let manifest_bytes = fs::read(&manifest_path).await.map_err(|error| {
+    manifest_response(&state.data_dir.join("manifest.json"), &request).await
+}
+
+/// The JP set's manifest. The set is public like the Global one and served the same way.
+async fn get_jp_manifest(
+    State(state): State<AppState>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    manifest_response(
+        &jp_data_dir(&state.data_dir).join("manifest.json"),
+        &request,
+    )
+    .await
+}
+
+async fn manifest_response(
+    manifest_path: &FsPath,
+    request: &HeaderMap,
+) -> Result<Response, ApiError> {
+    let manifest_bytes = fs::read(manifest_path).await.map_err(|error| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             format!("failed to read {}: {}", manifest_path.display(), error),
@@ -349,6 +376,38 @@ async fn get_current_resource(
         true,
     )
     .await
+}
+
+async fn get_current_jp_resource(
+    State(state): State<AppState>,
+    Path(file_name): Path<String>,
+) -> Result<Response, ApiError> {
+    let jp_dir = jp_data_dir(&state.data_dir);
+    let manifest = read_manifest(&jp_dir).map_err(internal_error)?;
+    resource_response(
+        &jp_dir,
+        &manifest,
+        &manifest.version,
+        &file_name,
+        false,
+        false,
+        true,
+    )
+    .await
+}
+
+async fn get_versioned_jp_resource(
+    State(state): State<AppState>,
+    Path((version, file_name)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let jp_dir = jp_data_dir(&state.data_dir);
+    let current_manifest = read_manifest(&jp_dir).map_err(internal_error)?;
+    let manifest = if version == current_manifest.version {
+        current_manifest
+    } else {
+        read_version_manifest(&jp_dir, &version).map_err(internal_error)?
+    };
+    resource_response(&jp_dir, &manifest, &version, &file_name, true, false, true).await
 }
 
 async fn get_planner_manifest(State(state): State<AppState>) -> Result<Response, ApiError> {
@@ -702,6 +761,110 @@ impl IntoResponse for ApiError {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn jpSetIsServedBelowItsOwnPathBesideTheGlobalOne() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "jp-resource-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let manifest = |route: &str, file: &str| ResourceManifest {
+            version: "v1".into(),
+            generated_at: "test".into(),
+            base_path: format!("{route}/v1"),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: "a".repeat(64),
+                path: None,
+                bytes: None,
+            },
+            artifacts: vec![ResourceArtifact {
+                name: file.into(),
+                path: format!("{route}/v1/{file}.gz"),
+                current_path: format!("{route}/current/{file}.gz"),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: "\"sha256-test\"".into(),
+                sha256: "test".into(),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        // Each set has a file the other lacks, so a mixed-up folder would show.
+        for (folder, route, file, body) in [
+            (root.clone(), "/resources/en", "skills.json", "global"),
+            (root.join("jp"), "/resources/jp", "factors.json", "jp"),
+        ] {
+            std::fs::create_dir_all(folder.join("v1")).unwrap();
+            let bytes = serde_json::to_vec(&manifest(route, file)).unwrap();
+            std::fs::write(folder.join("manifest.json"), &bytes).unwrap();
+            std::fs::write(folder.join("v1/manifest.json"), &bytes).unwrap();
+            std::fs::write(folder.join(format!("v1/{file}.gz")), body).unwrap();
+        }
+
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: true,
+        };
+        let app = super::resource_router(state, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let get = |path: &str| client.get(format!("{origin}{path}")).send();
+
+        let response = get("/resources/jp/manifest.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let etag = response.headers()[super::ETAG].clone();
+        let served: ResourceManifest = response.json().await.unwrap();
+        assert_eq!(served.base_path, "/resources/jp/v1");
+        let response = client
+            .get(format!("{origin}/resources/jp/manifest.json"))
+            .header(super::IF_NONE_MATCH, etag)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = get("/resources/jp/current/factors.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"jp");
+        let response = get("/resources/jp/v1/factors.json").await.unwrap();
+        assert_eq!(
+            response.headers()[super::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"jp");
+
+        // Neither set answers for the other's file.
+        let response = get("/resources/jp/current/skills.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        for global_path in ["/resources/en", "/resources"] {
+            let response = get(&format!("{global_path}/current/factors.json"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{global_path}");
+            let response = get(&format!("{global_path}/current/skills.json"))
+                .await
+                .unwrap();
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                b"global",
+                "{global_path}"
+            );
+        }
+
+        task.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     #[allow(non_snake_case)]
     async fn masterDatabaseIsPublicAndManifestSupportsConditionalChecks() {
