@@ -36,7 +36,8 @@ pub(crate) const BUNDLED_GLOBAL_NEWS_JSON: &[u8] =
     include_bytes!("../global_data/official_news_archive.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
-const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
+/// Support card titles in brackets; 77 holds the card's character name.
+const SUPPORT_CARD_NAME_CATEGORY: i64 = 76;
 
 const JP_LAUNCH_YEAR: i32 = 2021;
 const JP_LAUNCH_MONTH: u32 = 2;
@@ -315,6 +316,7 @@ struct TimelineSupportBanner {
     gacha_id: i64,
     year: i32,
     image: String,
+    image_path: String,
     start_at: DateTime<Utc>,
     end_at: DateTime<Utc>,
     pickup_card_ids: Vec<i64>,
@@ -327,6 +329,7 @@ struct TimelinePaidBanner {
     card_type: String,
     year: i32,
     image: String,
+    image_path: String,
     start_at: DateTime<Utc>,
     end_at: DateTime<Utc>,
     pickup_card_ids: Vec<i64>,
@@ -551,9 +554,14 @@ pub fn generate(
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
 ) -> Result<BannerTimeline> {
-    let timeline_character_banners = load_timeline_character_banners()?;
-    let timeline_support_banners = load_timeline_support_banners()?;
-    let timeline_paid_banners = load_timeline_paid_banners()?;
+    let mut timeline_character_banners = load_timeline_character_banners()?;
+    let mut timeline_support_banners = load_timeline_support_banners()?;
+    let mut timeline_paid_banners = load_timeline_paid_banners()?;
+    append_jp_master_banners(
+        &mut timeline_character_banners,
+        &mut timeline_support_banners,
+        &mut timeline_paid_banners,
+    )?;
     let timeline_story_events = load_timeline_story_events(jp_connection)?;
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
@@ -587,9 +595,10 @@ pub fn generate(
         &mut timeline_legend_races,
         &crate::generators::jp_events::legend_race_timeline_metadata()?,
     );
-    let character_names = common::load_character_name_map(connection)?;
+    let jp_names = crate::jp_names::bundledNames()?;
+    let character_names = load_timeline_character_names(connection, &jp_names)?;
     let support_names = load_support_card_names(connection, &character_names)?;
-    let support_card_names = load_support_card_specific_names(connection)?;
+    let support_card_names = load_support_card_specific_names(connection, &jp_names)?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
         &timeline_support_banners,
@@ -893,7 +902,7 @@ fn support_event(
         card_type: Some("support".to_string()),
         year: Some(banner.year),
         image: banner.image.clone(),
-        image_path: Some(format!("assets/images/support/banner/{}", banner.image)),
+        image_path: Some(banner.image_path.clone()),
         title: title_from_names(&names, "Support Card Banner"),
         description: None,
         jp_release_date: banner.start_at,
@@ -1693,7 +1702,7 @@ fn paid_event(
         card_type: Some(banner.card_type.to_string()),
         year: Some(banner.year),
         image: banner.image.clone(),
-        image_path: Some(format!("assets/images/paid/banner/{}", banner.image)),
+        image_path: Some(banner.image_path.clone()),
         title,
         description: None,
         jp_release_date: banner.start_at,
@@ -3962,10 +3971,12 @@ fn load_timeline_support_banners() -> Result<Vec<TimelineSupportBanner>> {
     raw_banners
         .into_iter()
         .map(|banner| {
+            let image = webp_image_reference(&banner.image);
             Ok(TimelineSupportBanner {
                 gacha_id: banner.gacha_id,
                 year: banner.year,
-                image: webp_image_reference(&banner.image),
+                image_path: format!("assets/images/support/banner/{image}"),
+                image,
                 start_at: parse_timeline_date(&banner.start_date)?,
                 end_at: parse_timeline_date(&banner.end_date)?,
                 pickup_card_ids: banner.pickup_card_ids,
@@ -3982,18 +3993,86 @@ fn load_timeline_paid_banners() -> Result<Vec<TimelinePaidBanner>> {
     raw_banners
         .into_iter()
         .map(|banner| {
+            let image = webp_image_reference(&banner.image);
             Ok(TimelinePaidBanner {
                 gacha_id: banner.gacha_id,
                 gacha_type: banner.gacha_type,
                 card_type: banner.card_type,
                 year: banner.year,
-                image: webp_image_reference(&banner.image),
+                image_path: format!("assets/images/paid/banner/{image}"),
+                image,
                 start_at: parse_timeline_date(&banner.start_date)?,
                 end_at: parse_timeline_date(&banner.end_date)?,
                 pickup_card_ids: banner.pickup_card_ids,
             })
         })
         .collect()
+}
+
+/// Adds JP's gachas the curated lists have not reached yet, from JP's master. Their pictures
+/// keep the paths the news archive gave them, so pictures already published stay linked.
+fn append_jp_master_banners(
+    characters: &mut Vec<TimelineCharacterBanner>,
+    supports: &mut Vec<TimelineSupportBanner>,
+    paid: &mut Vec<TimelinePaidBanner>,
+) -> Result<()> {
+    let known: BTreeSet<i64> = characters
+        .iter()
+        .map(|banner| banner.gacha_id)
+        .chain(supports.iter().map(|banner| banner.gacha_id))
+        .chain(paid.iter().map(|banner| banner.gacha_id))
+        .collect();
+
+    for gacha in crate::jp_names::gachasAfter(&known)? {
+        let year = gacha
+            .start_date
+            .with_timezone(&chrono_tz::Asia::Tokyo)
+            .year();
+        let image = format!("{}.webp", gacha.gacha_id);
+        let card_type = if gacha.card_type == 1 {
+            "character"
+        } else {
+            "support"
+        };
+        let family = if gacha.gacha_id >= 50000 {
+            "paid"
+        } else {
+            card_type
+        };
+        let image_path = format!("assets/timeline-images/gacha/{family}/{image}");
+        match family {
+            "character" => characters.push(TimelineCharacterBanner {
+                gacha_id: gacha.gacha_id,
+                year,
+                image,
+                image_path,
+                start_at: gacha.start_date,
+                end_at: gacha.end_date,
+                pickup_card_ids: gacha.pickup_card_ids,
+            }),
+            "support" => supports.push(TimelineSupportBanner {
+                gacha_id: gacha.gacha_id,
+                year,
+                image,
+                image_path,
+                start_at: gacha.start_date,
+                end_at: gacha.end_date,
+                pickup_card_ids: gacha.pickup_card_ids,
+            }),
+            _ => paid.push(TimelinePaidBanner {
+                gacha_id: gacha.gacha_id,
+                gacha_type: gacha.gacha_type,
+                card_type: card_type.to_string(),
+                year,
+                image,
+                image_path,
+                start_at: gacha.start_date,
+                end_at: gacha.end_date,
+                pickup_card_ids: gacha.pickup_card_ids,
+            }),
+        }
+    }
+    Ok(())
 }
 
 fn load_timeline_story_events(
@@ -4955,17 +5034,62 @@ fn load_support_card_names(
         }
     }
 
+    // JP's master knows the character of the cards no other source names yet.
+    for (card_id, chara_id) in crate::jp_names::bundledGachaData()?.card_characters {
+        if let Some(name) = character_names.get(&chara_id) {
+            names.entry(card_id).or_insert_with(|| name.clone());
+        }
+    }
+
     Ok(names)
 }
 
-fn load_support_card_specific_names(connection: &Connection) -> Result<BTreeMap<i64, String>> {
-    let mut names = load_bundled_support_card_specific_names()?;
-    names.extend(load_umapyoi_support_card_names()?);
-    names.extend(load_text_data_by_category(
-        connection,
-        SUPPORT_CARD_NAME_CATEGORY,
-    )?);
+/// Character names: translations fill in the characters no other source names, overrides
+/// replace those sources, and Global's master wins over all.
+fn load_timeline_character_names(
+    connection: &Connection,
+    jp_names: &crate::jp_names::NameLoc,
+) -> Result<BTreeMap<i64, String>> {
+    let mut names = common::load_character_name_map(connection)?;
+    for (chara_id, name) in jp_names.translations(crate::jp_names::NameKind::UmaName) {
+        names.entry(chara_id).or_insert_with(|| name.to_string());
+    }
+    for (chara_id, name) in jp_names.overrides(crate::jp_names::NameKind::UmaName) {
+        names.insert(chara_id, name.to_string());
+    }
+    names.extend(common::load_global_character_names(connection)?);
     Ok(names)
+}
+
+/// Support card titles without brackets. Translations rank above the Japanese title the news
+/// archive falls back to, below every English source.
+fn load_support_card_specific_names(
+    connection: &Connection,
+    jp_names: &crate::jp_names::NameLoc,
+) -> Result<BTreeMap<i64, String>> {
+    let kind = crate::jp_names::NameKind::SupportTitle;
+    let (english, japanese) = load_umapyoi_support_card_names()?;
+    let mut names = load_bundled_support_card_specific_names()?;
+    names.extend(english);
+    for (card_id, name) in jp_names.translations(kind) {
+        names
+            .entry(card_id)
+            .or_insert_with(|| strip_title_brackets(name));
+    }
+    for (card_id, name) in japanese {
+        names.entry(card_id).or_insert(name);
+    }
+    for (card_id, name) in jp_names.overrides(kind) {
+        names.insert(card_id, strip_title_brackets(name));
+    }
+    for (card_id, name) in load_text_data_by_category(connection, SUPPORT_CARD_NAME_CATEGORY)? {
+        names.insert(card_id, strip_title_brackets(&name));
+    }
+    Ok(names)
+}
+
+fn strip_title_brackets(name: &str) -> String {
+    name.trim().trim_matches(['[', ']']).trim().to_string()
 }
 
 fn load_umapyoi_support_character_names(
@@ -4989,24 +5113,37 @@ fn load_umapyoi_support_character_names(
         .collect())
 }
 
-fn load_umapyoi_support_card_names() -> Result<BTreeMap<i64, String>> {
+/// The news archive's support card titles without brackets: English ones, and the Japanese ones
+/// of cards it has no English title for.
+fn load_umapyoi_support_card_names() -> Result<(BTreeMap<i64, String>, BTreeMap<i64, String>)> {
     let archive: serde_json::Value = serde_json::from_slice(BUNDLED_UMAPYOI_ARCHIVE_JSON)
         .context("failed to parse bundled umapyoi archive for support card names")?;
-    Ok(archive
+    let mut english = BTreeMap::new();
+    let mut japanese = BTreeMap::new();
+    let supports = archive
         .get("supports")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|support| {
-            let support_id = support.get("support_id")?.as_i64()?;
-            let name = support
-                .pointer("/raw/title_en")
+        .and_then(serde_json::Value::as_array);
+    for support in supports.into_iter().flatten() {
+        let Some(support_id) = support
+            .get("support_id")
+            .and_then(serde_json::Value::as_i64)
+        else {
+            continue;
+        };
+        let title = |pointer: &str| {
+            support
+                .pointer(pointer)
                 .and_then(serde_json::Value::as_str)
-                .filter(|name| !name.trim().is_empty())
-                .or_else(|| support.get("title_jp").and_then(serde_json::Value::as_str))?;
-            Some((support_id, name.trim().trim_matches(['[', ']']).to_string()))
-        })
-        .collect())
+                .map(strip_title_brackets)
+                .filter(|name| !name.is_empty())
+        };
+        if let Some(name) = title("/raw/title_en") {
+            english.insert(support_id, name);
+        } else if let Some(name) = title("/title_jp") {
+            japanese.insert(support_id, name);
+        }
+    }
+    Ok((english, japanese))
 }
 
 fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
@@ -5478,14 +5615,30 @@ mod tests {
         ]);
         let names = load_umapyoi_support_character_names(&character_names)
             .expect("umapyoi support character names should parse");
-        let card_names =
+        let (english, japanese) =
             load_umapyoi_support_card_names().expect("umapyoi support card names should parse");
         assert_eq!(names.get(&30_304).map(String::as_str), Some("Meisho Doto"));
         assert_eq!(
             names.get(&30_305).map(String::as_str),
             Some("Tazuna Hayakawa")
         );
-        assert!(card_names.get(&30_304).is_some_and(|name| !name.is_empty()));
+        let title = english.get(&30_304).or_else(|| japanese.get(&30_304));
+        assert!(title.is_some_and(|name| !name.is_empty()));
+        assert!(english.keys().all(|id| !japanese.contains_key(id)));
+    }
+
+    #[test]
+    fn global_support_titles_come_from_the_title_category() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"CREATE TABLE text_data (category INTEGER, "index" INTEGER, text TEXT);
+                   INSERT INTO text_data VALUES (76, 30003, '[Global Title]'), (77, 30003, 'Special Week');"#,
+            )
+            .unwrap();
+        let jp_names = crate::jp_names::bundledNames().unwrap();
+        let names = super::load_support_card_specific_names(&connection, &jp_names).unwrap();
+        assert_eq!(names.get(&30_003).map(String::as_str), Some("Global Title"));
     }
 
     #[test]
@@ -6856,7 +7009,7 @@ mod tests {
             .filter_map(|(id, entry)| Some((id.parse().ok()?, entry["name"].as_str()?.to_string())))
             .collect::<BTreeMap<_, _>>();
         let support_names = load_umapyoi_support_character_names(&character_names).unwrap();
-        let banners = crate::generators::jp_events::additional_gacha_banner_events().unwrap();
+        let banners = crate::generators::jp_events::curated_gacha_banner_events().unwrap();
         for (id, expected, count) in [
             (50224, "Maruzensky + 85 more", 86),
             (50225, "Hokko Tarumae + 71 more", 72),
@@ -7003,6 +7156,7 @@ mod tests {
             gacha_id,
             year: 2022,
             image: format!("2022_{gacha_id}.webp"),
+            image_path: format!("assets/images/support/banner/2022_{gacha_id}.webp"),
             start_at: utc_date(2022, 10, 17, 3),
             end_at: utc_date(2022, 10, 24, 2),
             pickup_card_ids,

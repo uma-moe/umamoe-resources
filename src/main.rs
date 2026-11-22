@@ -14,6 +14,7 @@ mod game_cdn;
 mod generators;
 mod global_news;
 mod global_social;
+mod jp_names;
 mod master_fetch;
 mod master_history;
 mod pipeline;
@@ -196,6 +197,18 @@ enum Command {
         oembed_endpoint: String,
         #[arg(long, default_value = "src/global_data/official_social_archive.json")]
         out: PathBuf,
+    },
+    /// Refresh both masters, write JP's gachas into the bundled data, and translate the names
+    /// only JP has released with Claude (needs ANTHROPIC_API_KEY).
+    SyncJpData {
+        /// The Global master; the JP one is kept beside it as `jp-<name>`.
+        #[arg(long, default_value = "master.mdb")]
+        master: PathBuf,
+        #[arg(long, default_value = "src/jp_data")]
+        out_dir: PathBuf,
+        /// Write the gachas only, without translating.
+        #[arg(long)]
+        skip_translation: bool,
     },
 }
 
@@ -493,6 +506,16 @@ async fn main() -> Result<()> {
             for error in summary.source_errors {
                 warn!(error, "umapyoi source could not be fully synchronized");
             }
+        }
+        Command::SyncJpData {
+            master,
+            out_dir,
+            skip_translation,
+        } => {
+            let jp_master = master_fetch::jpMasterPath(&master);
+            master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
+            master_fetch::maybeUpdateMasterMdb(&JP_CDN, &jp_master).await?;
+            jp_names::syncJpData(&master, &jp_master, &out_dir, !skip_translation).await?;
         }
         Command::SyncGlobalNews { endpoint, out } => {
             let summary = global_news::sync(&endpoint, &out).await?;
