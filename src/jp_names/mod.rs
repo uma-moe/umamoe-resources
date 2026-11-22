@@ -36,11 +36,13 @@ const KINDS: [NameKind; 3] = [
     NameKind::SupportTitle,
 ];
 
-/// Feeds the translations and overrides into a resource version, so a new name regenerates the
-/// resources.
+/// Feeds the translations, overrides and the name lists the book reads into a resource version, so
+/// a new name regenerates the resources.
 pub fn hashNames(digest: &mut Sha256) {
     digest.update(crate::store::bytes(StoreFile::NameTranslations));
     digest.update(BUNDLED_OVERRIDES);
+    digest.update(crate::store::bytes(StoreFile::CharacterNames));
+    digest.update(crate::store::bytes(StoreFile::SupportCardsDb));
 }
 
 /// JP's pickup gachas, oldest first.

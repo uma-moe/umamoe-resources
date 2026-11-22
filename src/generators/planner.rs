@@ -32,10 +32,6 @@ const FRIEND_POINT_EXCHANGE_ID: i64 = 2_000;
 const CLOVER_EXCHANGE_ID: i64 = 4_000;
 const TRAINER_SKILLS_TEST_CURRENCY_CATEGORY: i64 = 165;
 const RACING_CARNIVAL_CURRENCY_CATEGORY: i64 = 166;
-const TIMELINE_CAMPAIGNS: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
-const JP_MISSION_REWARDS: &[u8] = include_bytes!("../jp_data/planner_mission_rewards.json");
-const JP_MASTER_REWARDS: &[u8] = include_bytes!("../jp_data/planner_master_rewards.json");
-const JP_GACHA_RATES: &[u8] = include_bytes!("../jp_data/planner_gacha_rates.json");
 const JP_CAMPAIGN_REWARDS: &[u8] = include_bytes!("../jp_data/planner_campaign_rewards.json");
 
 #[derive(Debug)]
@@ -354,13 +350,14 @@ pub struct PlannerStep {
     pub selectable: bool,
 }
 
-pub fn bundled_step_ups() -> BTreeMap<i64, PlannerStepUp> {
+pub fn bundled_step_ups() -> Result<BTreeMap<i64, PlannerStepUp>> {
     let catalog: BTreeMap<i64, GachaAccumulator> =
-        serde_json::from_slice(JP_GACHA_RATES).expect("valid bundled JP gacha catalog");
-    catalog
+        serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
+            .context("failed to parse store file planner_gacha_rates.json")?;
+    Ok(catalog
         .into_iter()
         .filter_map(|(id, gacha)| gacha.step_up.map(|steps| (id, steps)))
-        .collect()
+        .collect())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -581,17 +578,17 @@ pub fn version_hash() -> String {
     digest.update(store::bytes(StoreFile::UmapyoiArchive));
     digest.update(store::bytes(StoreFile::GlobalNewsArchive));
     digest.update(store::bytes(StoreFile::GlobalSocialArchive));
-    digest.update(TIMELINE_CAMPAIGNS);
-    digest.update(JP_MISSION_REWARDS);
-    digest.update(JP_MASTER_REWARDS);
-    digest.update(JP_GACHA_RATES);
+    digest.update(store::bytes(StoreFile::TimelineCampaigns));
+    digest.update(store::bytes(StoreFile::PlannerMissionRewards));
+    digest.update(store::bytes(StoreFile::PlannerMasterRewards));
+    digest.update(store::bytes(StoreFile::PlannerGachaRates));
     digest.update(JP_CAMPAIGN_REWARDS);
     hex::encode(digest.finalize())
 }
 
 pub fn jp_master_reward_catalog_version_hash() -> String {
     let mut digest = Sha256::new();
-    digest.update(JP_MASTER_REWARDS);
+    digest.update(store::bytes(StoreFile::PlannerMasterRewards));
     hex::encode(digest.finalize())
 }
 
@@ -1601,7 +1598,7 @@ fn load_gachas_with_jp(
         load_gachas(jp_connection, timeline_links)?
     } else {
         let mut bundled: BTreeMap<i64, GachaAccumulator> =
-            serde_json::from_slice(JP_GACHA_RATES)
+            serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
                 .context("failed to parse bundled JP gacha rates")?;
         for gacha in bundled.values_mut() {
             gacha.provenance = Some("global_master");
@@ -3327,8 +3324,9 @@ fn load_master_rewards(
 /// timeline rewards do not silently disappear in that case. Released Global
 /// master rows always win over this projected catalogue.
 fn load_master_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>) -> Result<()> {
-    let rows: Vec<PlannerRewardCatalogRow> = serde_json::from_slice(JP_MASTER_REWARDS)
-        .context("failed to parse bundled JP planner reward catalogue")?;
+    let rows: Vec<PlannerRewardCatalogRow> =
+        serde_json::from_slice(&store::bytes(StoreFile::PlannerMasterRewards))
+            .context("failed to parse bundled JP planner reward catalogue")?;
     append_master_reward_catalog_rows(timeline, rewards, rows)
 }
 
@@ -4372,10 +4370,12 @@ fn load_mission_campaign_rewards(
     timeline: &Value,
     rewards: &mut Vec<PlannerReward>,
 ) -> Result<()> {
-    let campaign_links: Vec<CampaignLink> = serde_json::from_slice(TIMELINE_CAMPAIGNS)
-        .context("failed to parse timeline campaign links for planner")?;
-    let jp_reward_groups: Vec<JpMissionRewardGroup> = serde_json::from_slice(JP_MISSION_REWARDS)
-        .context("failed to parse planner JP mission reward catalogue")?;
+    let campaign_links: Vec<CampaignLink> =
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineCampaigns))
+            .context("failed to parse timeline campaign links for planner")?;
+    let jp_reward_groups: Vec<JpMissionRewardGroup> =
+        serde_json::from_slice(&store::bytes(StoreFile::PlannerMissionRewards))
+            .context("failed to parse planner JP mission reward catalogue")?;
     let campaign_by_mission = campaign_links
         .iter()
         .filter_map(|campaign| {
@@ -8526,7 +8526,7 @@ mod tests {
             serde_json::to_value(&master[&50078].step_up).unwrap(),
             serde_json::to_value(schedule).unwrap()
         );
-        assert_eq!(super::bundled_step_ups()[&50099].rounds, 2);
+        assert_eq!(super::bundled_step_ups().unwrap()[&50099].rounds, 2);
         connection.execute_batch("ALTER TABLE gacha_data ADD COLUMN draw_guarantee_num INTEGER DEFAULT 1;
             INSERT INTO gacha_data VALUES (50002, 2, 5, 150, 92, 1, 3, 0, 1);
             INSERT INTO gacha_available VALUES (50002, 30001, 0, 3, 15000), (50002, 30002, 0, 3, 15000);").unwrap();
