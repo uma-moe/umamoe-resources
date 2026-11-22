@@ -35,7 +35,7 @@ pub struct GeneratedResources {
 
 /// `jp_connection` is the JP master the planner reads its rewards from, given only when the
 /// bundled reward catalogue is refreshed. `jp_names` is the JP master the server keeps, for
-/// Japanese names and JP's newest banners.
+/// Japanese names, JP's newest banners and tying the Global master's schedules to JP events.
 pub fn generate_all(
     connection: &Connection,
     jp_connection: Option<&Connection>,
@@ -54,6 +54,7 @@ pub fn generate_all(
     let mut timeline = serde_json::to_value(timeline::generate(
         connection,
         jp_connection,
+        jp_names,
         &names,
         &master_gachas,
         &character_banners,

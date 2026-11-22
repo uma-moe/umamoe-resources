@@ -15,10 +15,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::{env, fs, path::Path};
 
-const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
-    include_str!("../jp_data/confirmed_global_banner_dates.csv");
 /// Support card titles in brackets; 77 holds the card's character name.
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 76;
 
@@ -532,9 +529,12 @@ struct CalendarLikelihoodModel {
     default_month_day_probability: f64,
 }
 
+/// `jp_master` is the JP master the server keeps beside the Global one; its ids tie the Global
+/// master's schedules to the JP events the timeline lists.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
+    jp_master: Option<&Connection>,
     names: &crate::jp_names::NameBook,
     master_gachas: &[crate::jp_names::JpGacha],
     character_banners: &[CharacterBanner],
@@ -556,6 +556,19 @@ pub fn generate(
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
     let additional_gacha_banners =
         crate::generators::jp_events::additional_gacha_banner_events(&from_master)?;
+    let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
+    merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
+    let master_dates = match jp_master {
+        Some(jp_master) => globalMasterConfirmations(
+            connection,
+            jp_master,
+            &timeline_champions_meetings,
+            &timeline_story_events,
+            &timeline_legend_races,
+            &news_timeline_events,
+        )?,
+        None => Vec::new(),
+    };
     let mut confirmed_dates = build_confirmed_date_lookup(
         character_banners,
         support_banners,
@@ -564,9 +577,8 @@ pub fn generate(
         &timeline_support_banners,
         &timeline_paid_banners,
         &additional_gacha_banners,
+        master_dates,
     )?;
-    let mut news_timeline_events = crate::generators::jp_events::timeline_events()?;
-    merge_champions_meeting_news(&mut timeline_champions_meetings, &mut news_timeline_events);
     let mut news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
     news_campaigns.retain(|campaign| include_jp_campaign(campaign, &confirmed_dates));
     let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
@@ -3046,6 +3058,169 @@ fn build_anniversary_schedule_anchors(
     monotonic_schedule_anchors(&anchors)
 }
 
+/// The dates the Global master gives Champions Meetings, story events, Legend Races and Uma Sanpo
+/// campaigns the timeline lists from JP data. The JP master ties the two together: a Global
+/// schedule keeps its JP id, and the JP schedule under that id runs when the JP event did.
+#[allow(non_snake_case)]
+fn globalMasterConfirmations(
+    connection: &Connection,
+    jp_master: &Connection,
+    champions_meetings: &[TimelineChampionsMeeting],
+    story_events: &[TimelineStoryEvent],
+    legend_races: &[TimelineLegendRace],
+    news_events: &[NewsTimelineEvent],
+) -> Result<Vec<ConfirmedTimelineDate>> {
+    let since = global_launch_date().timestamp();
+    let schedules = |tables: &[&str], sql: &str| -> Result<_> {
+        Ok((
+            masterSchedule(connection, tables, sql, since)?,
+            masterSchedule(jp_master, tables, sql, 0)?,
+        ))
+    };
+    let confirmed = |kind, key, (start, end)| ConfirmedTimelineDate {
+        kind,
+        key,
+        global_date: Some(start),
+        global_end_date: Some(end),
+    };
+    let mut dates = Vec::new();
+
+    let (global, jp) = schedules(
+        &["champions_schedule"],
+        "SELECT id, MIN(start_date), MAX(end_date) FROM champions_schedule
+         GROUP BY id HAVING MIN(start_date) >= ?1",
+    )?;
+    for (id, &schedule) in &global {
+        let Some(&(jp_start, jp_end)) = jp.get(id) else {
+            continue;
+        };
+        // The timeline dates a meeting by its race start, inside the schedule's window.
+        let Some(meeting) = champions_meetings
+            .iter()
+            .find(|meeting| meeting.start_at >= jp_start && meeting.start_at < jp_end)
+        else {
+            continue;
+        };
+        dates.push(confirmed(
+            ConfirmedTimelineKind::Champions,
+            champions_key(meeting.index),
+            schedule,
+        ));
+    }
+
+    let (global, jp) = schedules(
+        &["story_event_data"],
+        "SELECT story_event_id, MIN(start_date), MAX(ending_date) FROM story_event_data
+         GROUP BY story_event_id HAVING MIN(start_date) >= ?1",
+    )?;
+    for (id, &schedule) in &global {
+        let Some(&(jp_start, _)) = jp.get(id) else {
+            continue;
+        };
+        // Events the JP master lists itself are not confirmed by the Global one.
+        let Some(event) = story_events.iter().find(|event| {
+            event.master_event_id.is_none() && event.start_at.date_naive() == jp_start.date_naive()
+        }) else {
+            continue;
+        };
+        dates.push(confirmed(
+            ConfirmedTimelineKind::Story,
+            image_key(&event.image),
+            schedule,
+        ));
+    }
+
+    // A Legend Race runs one group after another; the race spans every group it holds.
+    let (global, jp) = schedules(
+        &["legend_race"],
+        "SELECT group_id, MIN(start_date), MAX(end_date) FROM legend_race
+         GROUP BY group_id HAVING MIN(start_date) >= ?1",
+    )?;
+    for race in legend_races {
+        let span = global
+            .iter()
+            .filter(|(id, _)| {
+                jp.get(id).is_some_and(|&(jp_start, _)| {
+                    jp_start >= race.start_at && jp_start <= race.end_at
+                })
+            })
+            .map(|(_, &schedule)| schedule)
+            .reduce(|(start, end), (group_start, group_end)| {
+                (start.min(group_start), end.max(group_end))
+            });
+        let Some(span) = span else {
+            continue;
+        };
+        dates.push(confirmed(
+            ConfirmedTimelineKind::Legend,
+            legend_key(race.index),
+            span,
+        ));
+    }
+
+    let (global, jp) = schedules(
+        &["campaign_walking_data", "campaign_data"],
+        "SELECT walking.campaign_id, MIN(campaign.start_time), MAX(campaign.end_time)
+         FROM campaign_walking_data walking
+         JOIN campaign_data campaign ON campaign.campaign_id = walking.campaign_id
+         GROUP BY walking.campaign_id HAVING MIN(campaign.start_time) >= ?1",
+    )?;
+    for (id, &schedule) in &global {
+        let Some(&(jp_start, _)) = jp.get(id) else {
+            continue;
+        };
+        let Some(event) = news_events.iter().find(|event| {
+            event.kind == NewsTimelineKind::UmaSanpo
+                && event.start_at.date_naive() == jp_start.date_naive()
+        }) else {
+            continue;
+        };
+        dates.push(confirmed(
+            ConfirmedTimelineKind::Campaign,
+            image_key(&event.key),
+            schedule,
+        ));
+    }
+
+    Ok(dates)
+}
+
+/// The start and end of each schedule `sql` selects by id, counting those that start at `since`
+/// or later. Empty when the master lacks one of `tables`.
+#[allow(non_snake_case)]
+fn masterSchedule(
+    connection: &Connection,
+    tables: &[&str],
+    sql: &str,
+    since: i64,
+) -> Result<BTreeMap<i64, (DateTime<Utc>, DateTime<Utc>)>> {
+    for table in tables {
+        if !timeline_table_exists(connection, table)? {
+            return Ok(BTreeMap::new());
+        }
+    }
+
+    let mut statement = connection.prepare(sql)?;
+    let rows = statement.query_map([since], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
+    let mut schedule = BTreeMap::new();
+    for row in rows {
+        let (id, start, end) = row?;
+        // Masters end a schedule on the second before the reset, so the end is the reset itself.
+        let end = master_timestamp(end)? + Duration::seconds(1);
+        schedule.insert(id, (master_timestamp(start)?, end));
+    }
+    Ok(schedule)
+}
+
+/// Confirmations in order of precedence, the last winning: the Global master's gachas, its other
+/// schedules (`master_dates`), then the maintainers' corrections in the store, which can still
+/// override or hide any of them.
 fn build_confirmed_date_lookup(
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
@@ -3054,6 +3229,7 @@ fn build_confirmed_date_lookup(
     timeline_support_banners: &[TimelineSupportBanner],
     timeline_paid_banners: &[TimelinePaidBanner],
     additional_gacha_banners: &[AdditionalGachaBanner],
+    master_dates: Vec<ConfirmedTimelineDate>,
 ) -> Result<ConfirmedDateLookup> {
     let mut lookup = ConfirmedDateLookup {
         character: BTreeMap::new(),
@@ -3112,15 +3288,26 @@ fn build_confirmed_date_lookup(
         }
     }
 
-    for confirmed_dates_csv in confirmed_banner_dates_csv_sources()? {
-        applyConfirmedDatesCsv(&mut lookup, &confirmed_dates_csv)?;
-    }
+    applyConfirmedDates(&mut lookup, master_dates);
+    let corrections = store::bytes(StoreFile::ConfirmedGlobalBannerDates);
+    let corrections = std::str::from_utf8(&corrections)
+        .context("store file confirmed_global_banner_dates.csv must be UTF-8 text")?;
+    applyConfirmedDatesCsv(&mut lookup, corrections)?;
 
     Ok(lookup)
 }
 
+#[allow(non_snake_case)]
 fn applyConfirmedDatesCsv(lookup: &mut ConfirmedDateLookup, input: &str) -> Result<()> {
-    for confirmed_date in parse_confirmed_banner_dates(input)? {
+    applyConfirmedDates(lookup, parse_confirmed_banner_dates(input)?);
+    Ok(())
+}
+
+/// Applies confirmations in order, so a later one for the same event replaces an earlier one,
+/// its end date included: without one, the event falls back to its projected end.
+#[allow(non_snake_case)]
+fn applyConfirmedDates(lookup: &mut ConfirmedDateLookup, dates: Vec<ConfirmedTimelineDate>) {
+    for confirmed_date in dates {
         let entry_key = (confirmed_date.kind, confirmed_date.key.clone());
         let Some(global_date) = confirmed_date.global_date else {
             lookup.end_dates.remove(&entry_key);
@@ -3193,7 +3380,6 @@ fn applyConfirmedDatesCsv(lookup: &mut ConfirmedDateLookup, input: &str) -> Resu
             }
         }
     }
-    Ok(())
 }
 
 impl ConfirmedDateLookup {
@@ -3300,11 +3486,7 @@ pub(crate) fn confirmed_dates_version_hash() -> Result<String> {
         "timeline_algorithm_version={}\n",
         TIMELINE_ALGORITHM_VERSION
     ));
-    hasher.update(
-        confirmed_banner_dates_csv_sources()?
-            .join("\n# external confirmed dates\n")
-            .as_bytes(),
-    );
+    hasher.update(store::bytes(StoreFile::ConfirmedGlobalBannerDates));
     hasher.update(b"\n# bundled mission campaigns\n");
     hasher.update(store::bytes(StoreFile::TimelineCampaigns));
     Ok(hex::encode(hasher.finalize()))
@@ -3312,23 +3494,6 @@ pub(crate) fn confirmed_dates_version_hash() -> Result<String> {
 
 pub(crate) fn validate_confirmed_dates_csv(input: &str) -> Result<()> {
     parse_confirmed_banner_dates(input).map(|_| ())
-}
-
-fn confirmed_banner_dates_csv_sources() -> Result<Vec<String>> {
-    let mut sources = vec![CONFIRMED_GLOBAL_BANNER_DATES_CSV.to_string()];
-
-    if let Ok(path) = env::var("CONFIRMED_BANNER_DATES_PATH") {
-        let path = path.trim();
-        if !path.is_empty() && Path::new(path).exists() {
-            sources.push(
-                fs::read_to_string(path).with_context(|| {
-                    format!("failed to read confirmed banner dates from {path}")
-                })?,
-            );
-        }
-    }
-
-    Ok(sources)
 }
 
 fn parse_confirmed_banner_dates(input: &str) -> Result<Vec<ConfirmedTimelineDate>> {
@@ -4562,7 +4727,7 @@ fn timeline_table_exists(connection: &Connection, table: &str) -> Result<bool> {
 fn master_timestamp(timestamp: i64) -> Result<DateTime<Utc>> {
     Utc.timestamp_opt(timestamp, 0)
         .single()
-        .with_context(|| format!("invalid legend_race master timestamp {timestamp}"))
+        .with_context(|| format!("invalid master timestamp {timestamp}"))
 }
 
 fn normalize_master_legend_card_id(image_id: i64) -> i64 {
@@ -5325,11 +5490,12 @@ fn round_rate(rate: f64) -> f64 {
 mod tests {
     use super::{
         alias_campaign_post_rows, align_paid_banners_with_releases, annotate_calendar_likelihoods,
-        annotate_rerun_banners, append_unmatched_campaign_news, applyConfirmedDatesCsv,
-        apply_closed_schedule_adjustment, apply_family_adjustment, apply_grouped_event_adjustment,
-        build_anniversary_schedule_anchors, build_banner_confirmed_anchors,
-        build_confirmed_date_lookup, calculate_global_date, calculate_recent_acceleration_rate,
-        first_release_after_global_month, gacha_type_name, include_jp_campaign,
+        annotate_rerun_banners, append_unmatched_campaign_news, applyConfirmedDates,
+        applyConfirmedDatesCsv, apply_closed_schedule_adjustment, apply_family_adjustment,
+        apply_grouped_event_adjustment, build_anniversary_schedule_anchors,
+        build_banner_confirmed_anchors, build_confirmed_date_lookup, calculate_global_date,
+        calculate_recent_acceleration_rate, champions_key, first_release_after_global_month,
+        gacha_type_name, globalMasterConfirmations, include_jp_campaign,
         latest_closed_global_month, legend_boss_metadata, load_bundled_support_card_names,
         load_timeline_campaigns, load_timeline_champions_meetings, load_timeline_character_banners,
         load_timeline_legend_races, load_timeline_paid_banners, load_timeline_story_events,
@@ -5338,9 +5504,10 @@ mod tests {
         merge_legend_race_news, mission_signature_fingerprint, monotonic_schedule_anchors,
         news_timeline_event, parse_confirmed_banner_dates, standardized_jp_mission_title,
         timeline_anniversaries_through, utc_date, BannerTimelineEvent, BannerTimelineEventType,
-        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
-        DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
-        PredictionInfo, PredictionKind, TimelineCampaign, TimelineCharacterBanner,
+        CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineDate,
+        ConfirmedTimelineKind, DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels,
+        FamilyAdjustmentSample, PredictionInfo, PredictionKind, TimelineCampaign,
+        TimelineChampionsMeeting, TimelineCharacterBanner, TimelineLegendRace, TimelineStoryEvent,
         TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
@@ -5660,6 +5827,7 @@ mod tests {
             ],
             &[],
             &[],
+            Vec::new(),
         )
         .expect("test confirmation lookup should build");
 
@@ -5677,6 +5845,220 @@ mod tests {
             lookup.paid.is_empty(),
             "paid CSV rows must not add confirmations"
         );
+    }
+
+    /// A master holding the schedules the Global master confirms timeline events from, with
+    /// `rows` inserted.
+    #[allow(non_snake_case)]
+    fn scheduleMaster(rows: &str) -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(&format!(
+                "CREATE TABLE champions_schedule (id INTEGER, start_date INTEGER, end_date INTEGER);
+                 CREATE TABLE story_event_data (story_event_id INTEGER, start_date INTEGER, ending_date INTEGER);
+                 CREATE TABLE legend_race (id INTEGER, group_id INTEGER, start_date INTEGER, end_date INTEGER);
+                 CREATE TABLE campaign_walking_data (id INTEGER, campaign_id INTEGER);
+                 CREATE TABLE campaign_data (campaign_id INTEGER, start_time INTEGER, end_time INTEGER);
+                 {rows}"
+            ))
+            .unwrap();
+        connection
+    }
+
+    /// A master timestamp: `hour` UTC on the day, or the second before it as masters end.
+    fn at(year: i32, month: u32, day: u32, hour: u32) -> i64 {
+        utc_date(year, month, day, hour).timestamp()
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn globalMasterSchedulesConfirmTheJpEventsOfTheirIds() {
+        let jp = scheduleMaster(&format!(
+            "INSERT INTO champions_schedule VALUES (7, {}, {});
+             INSERT INTO story_event_data VALUES (1009, {}, {}), (1010, {}, {});
+             INSERT INTO legend_race VALUES (1, 101406, {}, {}), (2, 100106, {}, {}), (3, 100306, {}, {});
+             INSERT INTO campaign_walking_data VALUES (1, 279);
+             INSERT INTO campaign_data VALUES (279, {}, {});",
+            at(2021, 11, 19, 3),
+            at(2021, 11, 29, 3) - 1,
+            at(2021, 12, 31, 3),
+            at(2022, 1, 11, 3) - 1,
+            at(2022, 1, 28, 3),
+            at(2022, 2, 8, 3) - 1,
+            at(2021, 3, 16, 3),
+            at(2021, 3, 18, 20) - 1,
+            at(2021, 3, 18, 20),
+            at(2021, 3, 21, 20) - 1,
+            at(2021, 3, 21, 20),
+            at(2021, 3, 24, 20) - 1,
+            at(2023, 1, 20, 3),
+            at(2023, 1, 30, 3) - 1,
+        ));
+        // Global did not run group 100306: its row keeps JP's dates. Meeting 8 has no JP row.
+        let global = scheduleMaster(&format!(
+            "INSERT INTO champions_schedule VALUES (7, {}, {}), (8, {}, {});
+             INSERT INTO story_event_data VALUES (1009, {}, {}), (1010, {}, {});
+             INSERT INTO legend_race VALUES (1, 101406, {}, {}), (2, 100106, {}, {}), (3, 100306, {}, {});
+             INSERT INTO campaign_walking_data VALUES (1, 279);
+             INSERT INTO campaign_data VALUES (279, {}, {});",
+            at(2025, 12, 28, 22),
+            at(2026, 1, 7, 22) - 1,
+            at(2026, 1, 19, 22),
+            at(2026, 1, 29, 22) - 1,
+            at(2026, 1, 29, 22),
+            at(2026, 2, 9, 22) - 1,
+            at(2026, 2, 18, 22),
+            at(2026, 3, 1, 22) - 1,
+            at(2025, 7, 6, 22),
+            at(2025, 7, 9, 15) - 1,
+            at(2025, 7, 9, 15),
+            at(2025, 7, 12, 15) - 1,
+            at(2021, 3, 21, 20),
+            at(2021, 3, 24, 20) - 1,
+            at(2026, 11, 5, 22),
+            at(2026, 11, 15, 22) - 1,
+        ));
+        let meeting = TimelineChampionsMeeting {
+            index: 6,
+            name: "Sagittarius Cup".to_string(),
+            start_at: utc_date(2021, 11, 24, 3),
+            schedule_days: 10,
+            track: None,
+            distance: None,
+            conditions: None,
+            image_url: None,
+            image_path: None,
+        };
+        let story = |master_event_id, image: &str, start_at| TimelineStoryEvent {
+            master_event_id,
+            event_name: String::new(),
+            image: image.to_string(),
+            start_at,
+            end_at: start_at + Duration::days(11),
+        };
+        let race = TimelineLegendRace {
+            index: 0,
+            race_name: "Satsuki Sho Legend Race".to_string(),
+            start_at: utc_date(2021, 3, 16, 3),
+            end_at: utc_date(2021, 3, 24, 20),
+            course: None,
+            bosses: Vec::new(),
+            image_url: None,
+            image_path: None,
+            source_post_id: None,
+        };
+        let walk = NewsTimelineEvent {
+            key: "uma-sanpo-2023-01-20".to_string(),
+            kind: NewsTimelineKind::UmaSanpo,
+            title: "Uma Sanpo".to_string(),
+            start_at: utc_date(2023, 1, 20, 3),
+            end_at: utc_date(2023, 1, 30, 3),
+            image_url: None,
+            description: None,
+            source_post_id: 1,
+        };
+
+        let dates = globalMasterConfirmations(
+            &global,
+            &jp,
+            &[meeting],
+            &[
+                story(None, "12_karuta_banner.png", utc_date(2021, 12, 31, 3)),
+                // The JP master lists this one itself, so the Global master does not confirm it.
+                story(Some(1010), "01_listed_banner.png", utc_date(2022, 1, 28, 3)),
+            ],
+            &[race],
+            &[walk],
+        )
+        .unwrap();
+        let dates = dates
+            .iter()
+            .map(|date| {
+                (
+                    date.kind,
+                    date.key.as_str(),
+                    date.global_date,
+                    date.global_end_date,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let day = |year, month, day, hour| Some(utc_date(year, month, day, hour));
+        assert_eq!(
+            dates,
+            [
+                (
+                    ConfirmedTimelineKind::Champions,
+                    "champions_meeting_6",
+                    day(2025, 12, 28, 22),
+                    day(2026, 1, 7, 22)
+                ),
+                (
+                    ConfirmedTimelineKind::Story,
+                    "12_karuta_banner",
+                    day(2026, 1, 29, 22),
+                    day(2026, 2, 9, 22)
+                ),
+                (
+                    ConfirmedTimelineKind::Legend,
+                    "legend_race_0",
+                    day(2025, 7, 6, 22),
+                    day(2025, 7, 12, 15)
+                ),
+                (
+                    ConfirmedTimelineKind::Campaign,
+                    "uma-sanpo-2023-01-20",
+                    day(2026, 11, 5, 22),
+                    day(2026, 11, 15, 22)
+                ),
+            ]
+        );
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn globalMasterConfirmsNothingWithoutItsSchedules() {
+        let empty = Connection::open_in_memory().unwrap();
+        let dates = globalMasterConfirmations(&empty, &empty, &[], &[], &[], &[]).unwrap();
+        assert!(dates.is_empty());
+    }
+
+    #[allow(non_snake_case)]
+    #[test]
+    fn correctionsOverrideAndHideMasterDates() {
+        let champions = ConfirmedTimelineKind::Champions;
+        let master = |index, start, end| ConfirmedTimelineDate {
+            kind: champions,
+            key: champions_key(index),
+            global_date: Some(start),
+            global_end_date: Some(end),
+        };
+        let mut lookup = empty_confirmed_date_lookup();
+        applyConfirmedDates(
+            &mut lookup,
+            vec![
+                master(0, utc_date(2025, 8, 17, 22), utc_date(2025, 8, 27, 22)),
+                master(1, utc_date(2025, 9, 7, 22), utc_date(2025, 9, 17, 22)),
+                master(2, utc_date(2025, 10, 7, 22), utc_date(2025, 10, 16, 22)),
+                master(3, utc_date(2025, 10, 30, 22), utc_date(2025, 11, 9, 22)),
+            ],
+        );
+        applyConfirmedDatesCsv(
+            &mut lookup,
+            "champions,0,2025-08-18,2025-08-29\nchampions,1,hidden\nchampions,2,2025-10-08\n",
+        )
+        .unwrap();
+
+        let start = |index| lookup.champions.get(&champions_key(index)).copied();
+        let end = |index| lookup.confirmed_end_date(champions, &champions_key(index));
+        assert_eq!(start(0), Some(utc_date(2025, 8, 18, 22)));
+        assert_eq!(end(0), Some(utc_date(2025, 8, 29, 22)));
+        assert_eq!((start(1), end(1)), (None, None));
+        // A correction without an end leaves the event to its projected end.
+        assert_eq!(start(2), Some(utc_date(2025, 10, 8, 22)));
+        assert_eq!(end(2), None);
+        assert_eq!(start(3), Some(utc_date(2025, 10, 30, 22)));
+        assert_eq!(end(3), Some(utc_date(2025, 11, 9, 22)));
     }
 
     #[test]

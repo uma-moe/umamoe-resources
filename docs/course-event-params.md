@@ -6,12 +6,9 @@ assets used by the current Global client (`1.35.2`, resource version
 simulator course IDs on the JP set (`course_event_params_jp.json`), so a Global
 build never silently inherits JP course-event boundaries.
 
-`course-event-params-manifest.json`, beside this file, records the current race
-asset inventory's SHA-256, decoded JSON hashes, decrypted bundle hashes, and
-current CDN asset identities. Its paths name where the tables were kept in git
-before they moved to the store. The 108 previously bundled event tables were
-checked against the `10008010` manifest and are unchanged; the 11 Kawasaki,
-Funabashi, and Morioka tables are now included.
+The 108 previously bundled event tables were checked against the `10008010`
+race asset inventory and are unchanged; the 11 Kawasaki, Funabashi, and Morioka
+tables are now included.
 
 The current master has 121 rows. Longchamp `11201` and `11202` are unused
 placeholders without normal-race path assets; `11201` also has an unfinished

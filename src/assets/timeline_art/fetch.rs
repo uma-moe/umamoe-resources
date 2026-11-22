@@ -16,7 +16,7 @@ const ATTEMPTS: u32 = 4;
 /// How long after its release a missing English header is still expected to appear.
 const ENGLISH_RETRY_DAYS: i64 = 7;
 
-pub(in crate::assets) struct SourceFetcher {
+pub(super) struct SourceFetcher {
     client: reqwest::Client,
     last_request: Option<Instant>,
     /// Campaign headers by the thumbnail banner preferred over them, when one exists.
@@ -24,7 +24,7 @@ pub(in crate::assets) struct SourceFetcher {
 }
 
 impl SourceFetcher {
-    pub(in crate::assets) fn new() -> Result<Self> {
+    pub(super) fn new() -> Result<Self> {
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .connect_timeout(Duration::from_secs(10))
@@ -38,7 +38,7 @@ impl SourceFetcher {
     }
 
     /// The picture's bytes, or `None` when the host answers 403 or 404.
-    pub(in crate::assets) async fn download(&mut self, url: &str) -> Result<Option<Vec<u8>>> {
+    pub(super) async fn download(&mut self, url: &str) -> Result<Option<Vec<u8>>> {
         let Some(response) = self.request(reqwest::Method::GET, url).await? else {
             return Ok(None);
         };
