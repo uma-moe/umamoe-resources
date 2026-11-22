@@ -109,6 +109,14 @@ impl NameLoc {
     }
 }
 
+/// The Anthropic key names are translated with, when this server has one. An empty value counts
+/// as none.
+pub fn translationKey() -> Option<String> {
+    std::env::var("ANTHROPIC_API_KEY")
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+}
+
 /// Translates the names only JP has released that the translations at `translations_path` do
 /// not cover and no override names, and writes the translations back.
 pub async fn translateNames(
@@ -116,10 +124,7 @@ pub async fn translateNames(
     jp_master: &Path,
     translations_path: &Path,
 ) -> Result<()> {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
-        .ok()
-        .filter(|key| !key.trim().is_empty())
-        .context("ANTHROPIC_API_KEY is not set")?;
+    let api_key = translationKey().context("ANTHROPIC_API_KEY is not set")?;
     let jp = openMaster(jp_master)?;
     let global = openMaster(global_master)?;
     let previous: NameTranslations = readJson(translations_path)?;
