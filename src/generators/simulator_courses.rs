@@ -1593,7 +1593,7 @@ mod tests {
     #[test]
     fn simulator_initialization_fields_match_global_source() {
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let parameters = SimulatorRaceParameters::current();
         for (actual, source) in parameters
             .course_set_adjust
@@ -1658,7 +1658,7 @@ mod tests {
     #[test]
     fn compete_fight_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let compete_fight = &asset["CompeteFight"];
 
         for (field, expected) in [
@@ -1695,7 +1695,7 @@ mod tests {
     #[test]
     fn base_motion_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
         for (field, expected) in [
             ("raceBaseSpeedBaseSpeed", RACE_BASE_SPEED),
@@ -1760,7 +1760,7 @@ mod tests {
     #[test]
     fn acceleration_constants_match_decoded_global_asset() {
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
         assert_eq!(
             asset["accelPowCoef"].as_f64().map(|value| value as f32),

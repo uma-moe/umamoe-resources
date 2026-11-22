@@ -30,7 +30,7 @@ use types::{BUCKET_FOLDER, CACHE_CONTROL};
 static LOADED: RwLock<BTreeMap<StoreFile, Arc<[u8]>>> = RwLock::new(BTreeMap::new());
 
 impl StoreFile {
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::UmapyoiArchive,
         Self::GlobalNewsArchive,
         Self::GlobalSocialArchive,
@@ -52,6 +52,7 @@ impl StoreFile {
         Self::SimulatorCourseLanes,
         Self::CourseEventParamsJp,
         Self::CourseEventParamsGlobal,
+        Self::RaceParamsGlobal,
     ];
 
     /// The file's name in the bucket and in a server's copy.
@@ -78,6 +79,7 @@ impl StoreFile {
             Self::SimulatorCourseLanes => "simulator_course_lanes.json.gz",
             Self::CourseEventParamsJp => "course_event_params_jp.json",
             Self::CourseEventParamsGlobal => "course_event_params_global.json",
+            Self::RaceParamsGlobal => "race_params_global.json",
         }
     }
 
