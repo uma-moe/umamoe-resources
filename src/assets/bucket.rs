@@ -37,9 +37,27 @@ impl Bucket {
         }
     }
 
+    /// Another bucket reached with the same endpoint and key, seen from its root.
+    pub fn named(&self, name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            folder: String::new(),
+            ..self.clone()
+        }
+    }
+
+    /// The same bucket reached with another key.
+    pub fn withKey(&self, access_key: &str, secret_key: &str) -> Self {
+        Self {
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            ..self.clone()
+        }
+    }
+
     /// The MD5 the bucket reports for `key`, or `None` when it holds no object there. Objects are
     /// written in a single PUT, so their ETag is the MD5 of their bytes.
-    pub(super) async fn objectEtag(
+    pub(crate) async fn objectEtag(
         &self,
         client: &reqwest::Client,
         key: &str,
@@ -69,7 +87,7 @@ impl Bucket {
     }
 
     /// The object's bytes, or `None` when the bucket holds nothing at `key`.
-    pub(super) async fn getObject(
+    pub(crate) async fn getObject(
         &self,
         client: &reqwest::Client,
         key: &str,
@@ -125,7 +143,7 @@ impl Bucket {
 
     /// Writes the object, waiting 1, 2, 4 and 8 seconds before retrying a write the bucket
     /// refused for load.
-    pub(super) async fn putObjectWithCache(
+    pub(crate) async fn putObjectWithCache(
         &self,
         client: &reqwest::Client,
         key: &str,
