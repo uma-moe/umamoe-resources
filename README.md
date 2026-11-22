@@ -263,6 +263,10 @@ Generation emits `character_names.json` from the bundled `src/character_names.js
 
 `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` are generated from `master.mdb` and the bundled character-name mapping only. No external frontend data directory is read during generation.
 
+Both resource sets also name every character and card in English and Japanese, whatever the set's own language: `character_names.json` entries carry `name_en` and `name_jp`; `character.json`, `supports.json` and `support-cards-db.json` entries carry `name_en`, `name_jp`, `title_en` and `title_jp` (the character, and the outfit or card title without brackets); `banner_timeline.json` has a `card_names` map with the same four fields for every card an event picks up. A field is `null` when no source names it. English names come from Global's master, then the hand-written `src/jp_data/name_overrides.json`, then the bundled character names, then `src/jp_data/name_translations.json`. Japanese names come from JP's master: the JP set's own, and for the Global set the JP master the server keeps beside the Global one (`jp-master.mdb`, kept current while `JP_RESOURCES` or `JP_GAME_ART_PUBLISH` is on). The Global timeline also takes JP's banners past the curated banner lists from that master. Its hash is part of the Global version, so a new JP master regenerates the Global set; without it the Global set has no Japanese names and those banners come from the news archive.
+
+`translate-names` refreshes both masters and asks Claude for English names of what only JP has released (`name_translations.json`). It needs `ANTHROPIC_API_KEY`. The news sync workflow runs it with the key from the `sync` environment and commits the file, so the servers never call the model. To correct a translation, add the name to `name_overrides.json` under its kind (`uma_name`, `outfit_title` or `support_title`) and id.
+
 Confirmed global timeline dates and visibility overrides for `banner_timeline.json` live in `src/jp_data/confirmed_global_banner_dates.csv`. To confirm a newly announced schedule entry, append one line:
 
 ```csv

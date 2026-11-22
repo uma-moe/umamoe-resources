@@ -1,4 +1,5 @@
 use crate::generators::common;
+use crate::jp_names::{CardNames, NameBook};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
@@ -22,6 +23,9 @@ pub struct SupportCardDbEntry {
     card_title: Option<String>,
     #[serde(rename = "card_full_name", skip_serializing_if = "Option::is_none")]
     card_full_name: Option<String>,
+    /// The character and card title in both languages; the fields above are in the master's.
+    #[serde(flatten)]
+    language_names: CardNames,
     rarity: i64,
     #[serde(rename = "type")]
     card_type: String,
@@ -50,20 +54,25 @@ struct DbSupportCard {
     release_timestamp: i64,
 }
 
-pub fn generate(connection: &Connection) -> Result<Value> {
+pub fn generate(connection: &Connection, card_names: &NameBook) -> Result<Value> {
     let card_text = load_card_text(connection)?;
     // The bundled JP list says which of these JP has, so the master's own rows start without.
-    let entries = master_entries(connection, &card_text, |_| true, false)?;
-    merge_with_jp_support_cards_db(entries, &card_text)
+    let entries = master_entries(connection, &card_text, card_names, |_| true, false)?;
+    merge_with_jp_support_cards_db(entries, &card_text, card_names)
 }
 
 /// Every support card of the JP master, marked as released in Global when Global has it too.
 /// Nothing bundled is merged in: a JP set is the JP master alone.
-pub fn generate_jp(connection: &Connection, releases: &common::CardReleases) -> Result<Value> {
+pub fn generate_jp(
+    connection: &Connection,
+    releases: &common::CardReleases,
+    card_names: &NameBook,
+) -> Result<Value> {
     let card_text = load_card_text(connection)?;
     let entries = master_entries(
         connection,
         &card_text,
+        card_names,
         |card_id| releases.in_global(card_id),
         true,
     )?;
@@ -82,6 +91,7 @@ fn load_card_text(connection: &Connection) -> Result<SupportCardTextData> {
 fn master_entries(
     connection: &Connection,
     card_text: &SupportCardTextData,
+    card_names: &NameBook,
     is_released_en: impl Fn(i64) -> bool,
     is_released_jp: bool,
 ) -> Result<Vec<SupportCardDbEntry>> {
@@ -105,6 +115,7 @@ fn master_entries(
             card_name,
             card_title,
             card_full_name,
+            language_names: card_names.card(card.card_id),
             rarity: card.rarity,
             card_type: card.card_type,
             release_date: common::release_date(Some(card.release_timestamp)),
@@ -127,6 +138,7 @@ fn master_entries(
 fn merge_with_jp_support_cards_db(
     generated_entries: Vec<SupportCardDbEntry>,
     card_text: &SupportCardTextData,
+    card_names: &NameBook,
 ) -> Result<Value> {
     let jp_entries: Value = serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
         .context("failed to parse bundled src/jp_data/support-cards-db.json")?;
@@ -161,6 +173,9 @@ fn merge_with_jp_support_cards_db(
                 &card_text.card_full_names,
                 card_id,
             );
+            if let Value::Object(language_names) = serde_json::to_value(card_names.card(card_id))? {
+                object.extend(language_names);
+            }
         }
         object.insert("isReleased_en".to_string(), Value::Bool(false));
         object.insert("isReleased_tw".to_string(), Value::Null);
