@@ -97,8 +97,8 @@ async fn syncFile(
     collected
 }
 
-/// Takes the bucket's copy of a provided file, seeding the bucket when it holds none. Without a
-/// bucket, this server's own copy is what generation reads.
+/// Takes the bucket's copy of a provided file. Without a bucket, this server's own copy is what
+/// generation reads.
 async fn syncProvided(
     file: StoreFile,
     dir: &Path,
@@ -106,7 +106,7 @@ async fn syncProvided(
     client: &reqwest::Client,
 ) -> Result<()> {
     let changed = match bucket {
-        Some(bucket) => pullProvided(bucket, client, dir, file, true).await?,
+        Some(bucket) => pullProvided(bucket, client, dir, file).await?,
         None => {
             ensureLocal(None, client, dir, file).await?;
             install(dir, file)?
@@ -146,7 +146,11 @@ async fn collectUmapyoi(path: &Path) -> Result<()> {
 /// a post it cannot read never reaches generation.
 async fn collectGlobalNews(path: &Path) -> Result<()> {
     let pending = path.with_file_name("official_news_archive.pending.json");
-    std::fs::copy(path, &pending).with_context(|| format!("failed to copy {}", path.display()))?;
+    // Without a copy, the sync builds the pending file from its source.
+    if path.exists() {
+        std::fs::copy(path, &pending)
+            .with_context(|| format!("failed to copy {}", path.display()))?;
+    }
     let checked = async {
         let summary = global_news::sync(global_news::ENDPOINT, &pending).await?;
         auditGlobalNews(&pending)?;

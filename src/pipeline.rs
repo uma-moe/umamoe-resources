@@ -104,6 +104,7 @@ fn file_sha256(path: &Path) -> Result<String> {
 /// The version the Global set would get from the masters and bundled data on disk now, so a
 /// refresh can tell whether anything it reads changed.
 pub fn resources_version(master_path: &Path) -> Result<String> {
+    store::requireLoaded()?;
     let master_sha256 = file_sha256(master_path)?;
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
@@ -184,6 +185,7 @@ pub fn generate_resources(
     out_dir: &Path,
     write_json: bool,
 ) -> Result<ResourceManifest> {
+    store::requireLoaded()?;
     // Background refreshers publish complete exports in order.
     let _generation = lockGeneration()?;
     let jp_master_path = planner_jp_master()?;
@@ -342,6 +344,7 @@ pub fn generate_jp_resources(
     out_dir: &Path,
     write_json: bool,
 ) -> Result<ResourceManifest> {
+    store::requireLoaded()?;
     let _generation = lockGeneration()?;
     let master_bytes = fs::read(jp_master_path)
         .with_context(|| format!("failed to read JP master at {}", jp_master_path.display()))?;
@@ -400,6 +403,7 @@ pub fn generate_jp_resources(
 /// The version the JP set would have for these two masters, to tell whether the set on disk is
 /// current without generating it.
 pub fn jp_resources_version(jp_master_path: &Path, global_master_path: &Path) -> Result<String> {
+    store::requireLoaded()?;
     let master_sha256 =
         sha256_hex(&fs::read(jp_master_path).with_context(|| {
             format!("failed to read JP master at {}", jp_master_path.display())
@@ -634,6 +638,7 @@ mod tests {
     /// from.
     #[test]
     fn jp_set_is_written_apart_with_its_own_manifest() {
+        crate::store::requireStoreData!();
         use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
 
         let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");

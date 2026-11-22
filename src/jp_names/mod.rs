@@ -71,9 +71,7 @@ pub fn gachasAfter(gachas: &[JpGacha], known: &BTreeSet<i64>) -> Vec<JpGacha> {
 }
 
 pub fn bundledNames() -> Result<NameLoc> {
-    let translations: NameTranslations =
-        serde_json::from_slice(&crate::store::bytes(StoreFile::NameTranslations))
-            .context("failed to parse name_translations.json")?;
+    let translations = parseTranslations(&crate::store::bytes(StoreFile::NameTranslations))?;
     let overrides: NameOverrides = serde_json::from_slice(BUNDLED_OVERRIDES)
         .context("failed to parse bundled name_overrides.json")?;
     Ok(NameLoc {
@@ -89,6 +87,15 @@ pub fn bundledNames() -> Result<NameLoc> {
             .collect(),
         overrides,
     })
+}
+
+/// The store's translations. The file is empty, or missing, until something was translated, and a
+/// publisher without the Anthropic key never writes it.
+fn parseTranslations(bytes: &[u8]) -> Result<NameTranslations> {
+    if bytes.is_empty() {
+        return Ok(NameTranslations::default());
+    }
+    serde_json::from_slice(bytes).context("failed to parse name_translations.json")
 }
 
 impl NameLoc {
@@ -346,6 +353,12 @@ mod tests {
     use super::*;
     use chrono::DateTime;
 
+    #[test]
+    fn missingTranslationsReadAsNone() {
+        assert!(parseTranslations(b"").unwrap().names.is_empty());
+        assert!(parseTranslations(b"{").is_err());
+    }
+
     fn gacha(gacha_id: i64, pickup_card_ids: Vec<i64>) -> JpGacha {
         let date = DateTime::from_timestamp(0, 0).unwrap();
         JpGacha {
@@ -382,6 +395,7 @@ mod tests {
 
     #[test]
     fn bundledNamesParse() {
+        crate::store::requireStoreData!();
         bundledNames().unwrap();
     }
 }

@@ -144,17 +144,17 @@ fn merge_with_jp_support_cards_db(
         .context("failed to parse store file support-cards-db.json")?;
     let jp_entries = jp_entries
         .as_array()
-        .context("src/jp_data/support-cards-db.json must be a JSON array")?;
+        .context("the store's support-cards-db.json must be a JSON array")?;
 
     let mut merged_by_id = BTreeMap::new();
     for entry in jp_entries {
         let object = entry
             .as_object()
-            .context("src/jp_data/support-cards-db.json entries must be JSON objects")?;
+            .context("the store's support-cards-db.json entries must be JSON objects")?;
         let id = object
             .get("id")
             .and_then(Value::as_str)
-            .context("src/jp_data/support-cards-db.json entries must have string id")?;
+            .context("the store's support-cards-db.json entries must have string id")?;
         let mut object = object.clone();
         if !object.contains_key("character_name") {
             if let Some(name) = object.get("name").and_then(Value::as_str) {

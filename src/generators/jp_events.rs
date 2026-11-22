@@ -1178,6 +1178,7 @@ mod tests {
 
     #[test]
     fn bundled_archive_is_valid_json() {
+        crate::store::requireStoreData!();
         let archive = super::generate().expect("bundled umapyoi archive should parse");
         assert!(archive
             .get("news")
@@ -1199,6 +1200,7 @@ mod tests {
 
     #[test]
     fn extracts_only_reliable_recurring_timeline_families() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         assert!(
             events
@@ -1233,6 +1235,7 @@ mod tests {
 
     #[test]
     fn extracts_player_facing_campaign_families() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         let uma_sanpo = events
             .iter()
@@ -1255,6 +1258,7 @@ mod tests {
 
     #[test]
     fn exposes_additional_banner_candidates_for_timeline_merge() {
+        crate::store::requireStoreData!();
         let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
@@ -1263,6 +1267,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn extractsCardListsWithoutTreatingRestrictionsOrRewardsAsNames() {
+        crate::store::requireStoreData!();
         let names = super::names_from_gacha_section(
             "SSR support cards are only available for Wisdom-type cards.<br>\
              [Title One] Air Groove<br>SSR [Title Two] Tokai Teio<br>\
@@ -1310,6 +1315,7 @@ mod tests {
 
     #[test]
     fn uses_primary_event_thumbnails_and_concise_titles() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         let champions = events
             .iter()
@@ -1334,6 +1340,7 @@ mod tests {
 
     #[test]
     fn splits_combined_character_and_support_gacha_content() {
+        crate::store::requireStoreData!();
         let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let character = banners
@@ -1355,6 +1362,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn leavesGachasWithMasterPickupsToTheMaster() {
+        crate::store::requireStoreData!();
         let banners = super::additional_gacha_banner_events(&BTreeSet::from([30_449])).unwrap();
         assert!(banners.iter().all(|banner| banner.gacha_id != 30_449));
         // A gacha the master lists without pickups still comes from the news.
@@ -1363,6 +1371,7 @@ mod tests {
 
     #[test]
     fn extracts_campaign_banner_content() {
+        crate::store::requireStoreData!();
         let campaigns = super::campaign_timeline_metadata()
             .expect("campaign metadata should extract from news");
         let gi_campaign = campaigns
@@ -1433,6 +1442,7 @@ mod tests {
 
     #[test]
     fn extracts_only_event_specific_legend_race_banners() {
+        crate::store::requireStoreData!();
         let races = super::legend_race_timeline_metadata()
             .expect("legend race metadata should extract from live news posts");
         assert!(races.len() >= 43);
@@ -1446,6 +1456,7 @@ mod tests {
 
     #[test]
     fn extracts_type_12_select_pickup_rerun_metadata() {
+        crate::store::requireStoreData!();
         let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let banner = banners

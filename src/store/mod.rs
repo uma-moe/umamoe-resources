@@ -9,7 +9,6 @@
 #[path = "../types/store.rs"]
 mod types;
 
-mod bundled;
 mod commands;
 mod sync;
 
@@ -18,15 +17,14 @@ pub use sync::{auditGlobalNews, spawnSyncLoop};
 pub use types::{StoreBytes, StoreFile, LOCAL_FOLDER};
 
 use crate::assets::Bucket;
-use anyhow::{Context, Result};
-use bundled::bundled;
+use anyhow::{bail, Context, Result};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError, RwLock};
 use tracing::{info, warn};
 use types::{BUCKET_FOLDER, CACHE_CONTROL};
 
-/// What generation reads. A file missing here is read from the bundled copy.
+/// What generation reads: the files this server has loaded.
 static LOADED: RwLock<BTreeMap<StoreFile, Arc<[u8]>>> = RwLock::new(BTreeMap::new());
 
 impl StoreFile {
@@ -100,6 +98,13 @@ impl StoreFile {
         )
     }
 
+    /// Whether nothing can be generated without the file. Only tests read the race parameters,
+    /// and the name translations exist only once something was translated: a publisher without
+    /// the Anthropic key never writes them.
+    fn isRequired(self) -> bool {
+        !matches!(self, Self::RaceParamsGlobal | Self::NameTranslations)
+    }
+
     /// Gzipped files are stored as they are.
     fn contentType(self) -> &'static str {
         match self.fileName().ends_with(".gz") {
@@ -109,30 +114,37 @@ impl StoreFile {
     }
 }
 
-impl std::ops::Deref for StoreBytes {
-    type Target = [u8];
-
-    fn deref(&self) -> &[u8] {
-        match self {
-            Self::Loaded(bytes) => bytes,
-            Self::Bundled(bytes) => bytes,
-        }
-    }
-}
-
-impl AsRef<[u8]> for StoreBytes {
-    fn as_ref(&self) -> &[u8] {
-        self
-    }
-}
-
-/// The file's content as generation reads it now.
+/// The file's content as generation reads it now; empty when this server never loaded it.
+/// Whatever generates checks `requireLoaded` first.
 pub fn bytes(file: StoreFile) -> StoreBytes {
-    let loaded = LOADED.read().unwrap_or_else(PoisonError::into_inner);
-    match loaded.get(&file) {
-        Some(bytes) => StoreBytes::Loaded(bytes.clone()),
-        None => StoreBytes::Bundled(bundled(file)),
+    if let Some(bytes) = LOADED
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(&file)
+    {
+        return bytes.clone();
     }
+    #[cfg(test)]
+    if let Some(bytes) = loadTestCopy(file) {
+        return bytes;
+    }
+    StoreBytes::from([])
+}
+
+/// Fails, naming them, while any file generation reads is not loaded.
+pub fn requireLoaded() -> Result<()> {
+    let missing = StoreFile::ALL
+        .into_iter()
+        .filter(|file| file.isRequired() && bytes(*file).is_empty())
+        .map(StoreFile::fileName)
+        .collect::<Vec<_>>();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    bail!(
+        "the store copy lacks {}; fetch the store with `umamoe-resources store pull`, which needs the store bucket's credentials",
+        missing.join(", ")
+    )
 }
 
 /// The bucket the store lives in, when this server has the asset bucket's credentials: the
@@ -162,14 +174,13 @@ pub fn bucketFromEnv() -> Option<Bucket> {
 /// Readies this server's copy before its first generation. A reader takes what the bucket holds,
 /// and so does the publisher for provided files. For collected files, and for every file when it
 /// has no bucket, the publisher keeps its own files and only fills in those it lacks. A file that
-/// cannot be readied is read from the bundled copy until a later attempt succeeds.
+/// cannot be readied is read from this server's copy, when it has one, until a later attempt
+/// succeeds.
 pub async fn open(dir: &Path, bucket: Option<&Bucket>, publishes: bool) {
     let client = reqwest::Client::new();
     for file in StoreFile::ALL {
         let readied = match (file.isProvided(), publishes, bucket) {
-            (true, _, Some(bucket)) => pullProvided(bucket, &client, dir, file, publishes)
-                .await
-                .map(|_| ()),
+            (true, _, Some(bucket)) => pullProvided(bucket, &client, dir, file).await.map(|_| ()),
             (_, true, _) => ensureLocal(bucket, &client, dir, file).await,
             (false, false, Some(bucket)) => pullFile(bucket, &client, dir, file).await.map(|_| ()),
             (_, _, None) => Ok(()),
@@ -180,6 +191,8 @@ pub async fn open(dir: &Path, bucket: Option<&Bucket>, publishes: bool) {
                 error = format!("{error:#}"),
                 "store file could not be readied"
             );
+            // Generation keeps reading this server's copy while the bucket cannot give one.
+            let _ = install(dir, file);
         }
     }
 }
@@ -234,18 +247,19 @@ async fn fetchFile(
     Ok(true)
 }
 
-/// Takes the bucket's copy of a provided file. The publisher first seeds a bucket that holds none
-/// from the bundled copy; a bucket that cannot be asked is an error, never a reason to seed.
+/// Takes the bucket's copy of a provided file. A bucket that holds none is an error: only a
+/// maintainer provides the file.
 async fn pullProvided(
     bucket: &Bucket,
     client: &reqwest::Client,
     dir: &Path,
     file: StoreFile,
-    publishes: bool,
 ) -> Result<bool> {
-    if publishes && bucket.objectEtag(client, file.fileName()).await?.is_none() {
-        upload(bucket, client, file, bundled(file).to_vec()).await?;
-        info!(?file, "store file seeded from the bundled copy");
+    if bucket.objectEtag(client, file.fileName()).await?.is_none() {
+        bail!(
+            "the store's bucket has no {name}; a maintainer uploads it with `store put {name} <path>`",
+            name = file.fileName()
+        );
     }
     pullFile(bucket, client, dir, file).await
 }
@@ -285,9 +299,10 @@ async fn push(
     Ok(true)
 }
 
-/// Gives the publisher a copy of the file to continue from when it has none: the bucket's, or
-/// the bundled one when the bucket holds none. A bucket that cannot be asked is an error, so a
-/// sync never restarts from the bundled copy and overwrites newer data with it.
+/// Gives the publisher the bucket's copy of the file to continue from when it has none. A
+/// collected file the bucket holds none of starts from nothing, and its sync builds it; a
+/// provided one is an error, as only a maintainer provides it. A bucket that cannot be asked is
+/// an error, so a sync never restarts from nothing and overwrites newer data.
 async fn ensureLocal(
     bucket: Option<&Bucket>,
     client: &reqwest::Client,
@@ -304,7 +319,11 @@ async fn ensureLocal(
     };
     match stored {
         Some(bytes) => writeLocal(&path, &bytes),
-        None => writeLocal(&path, bundled(file)),
+        None if file.isProvided() => bail!(
+            "neither this server nor the store's bucket has {name}; a maintainer uploads it with `store put {name} <path>`",
+            name = file.fileName()
+        ),
+        None => Ok(()),
     }
 }
 
@@ -324,6 +343,42 @@ fn install(dir: &Path, file: StoreFile) -> Result<bool> {
         .insert(file, Arc::from(local));
     Ok(true)
 }
+
+/// Loads a file of the repository's local store copy for tests, which have no server to ready
+/// one. It takes no generation lock, as tests read the store while a generation holds it.
+#[cfg(test)]
+fn loadTestCopy(file: StoreFile) -> Option<StoreBytes> {
+    let bytes = StoreBytes::from(std::fs::read(localPath(&testCopyDir(), file)).ok()?);
+    let mut loaded = LOADED.write().unwrap_or_else(PoisonError::into_inner);
+    Some(loaded.entry(file).or_insert(bytes).clone())
+}
+
+#[cfg(test)]
+fn testCopyDir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join(types::TEST_COPY_DIR)
+}
+
+/// Whether the repository holds a complete local store copy for the tests that read it.
+#[cfg(test)]
+pub fn hasTestCopy() -> bool {
+    let dir = testCopyDir();
+    StoreFile::ALL
+        .into_iter()
+        .all(|file| localPath(&dir, file).is_file())
+}
+
+/// Returns from a test that reads store data when the repository has no local store copy.
+#[cfg(test)]
+macro_rules! requireStoreData {
+    () => {
+        if !crate::store::hasTestCopy() {
+            println!("skipped: no local store copy (run `umamoe-resources store pull`)");
+            return;
+        }
+    };
+}
+#[cfg(test)]
+pub(crate) use requireStoreData;
 
 fn localPath(dir: &Path, file: StoreFile) -> PathBuf {
     dir.join(file.fileName())
@@ -356,7 +411,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn everyFileHasAParseableBundledCopy() {
+    fn everyFileOfTheLocalCopyParses() {
+        requireStoreData!();
         for file in StoreFile::ALL {
             commands::checkParses(file, &bytes(file))
                 .unwrap_or_else(|error| panic!("{file:?}: {error:#}"));
@@ -364,22 +420,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn thePublisherSeedsAFileItLacksAndKeepsOneItHas() {
+    async fn thePublisherStartsACollectedFileFromNothingAndKeepsOneItHas() {
         let dir = std::env::temp_dir().join(format!("umamoe-store-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let client = reqwest::Client::new();
         let file = StoreFile::NameTranslations;
 
         ensureLocal(None, &client, &dir, file).await.unwrap();
-        assert_eq!(
-            readLocal(&localPath(&dir, file)).unwrap().unwrap(),
-            bundled(file)
-        );
+        assert!(readLocal(&localPath(&dir, file)).unwrap().is_none());
 
         writeLocal(&localPath(&dir, file), b"{}").unwrap();
         ensureLocal(None, &client, &dir, file).await.unwrap();
         assert_eq!(readLocal(&localPath(&dir, file)).unwrap().unwrap(), b"{}");
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn aProvidedFileNobodyHasIsAnError() {
+        let dir =
+            std::env::temp_dir().join(format!("umamoe-store-test-provided-{}", std::process::id()));
+        let client = reqwest::Client::new();
+
+        let error = ensureLocal(None, &client, &dir, StoreFile::TimelineCampaigns)
+            .await
+            .unwrap_err();
+        assert!(format!("{error:#}").contains("store put timeline_campaigns.json"));
+        assert!(!dir.join("timeline_campaigns.json").exists());
     }
 }
