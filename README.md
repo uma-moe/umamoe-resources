@@ -7,7 +7,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `factors.json` generation from `text_data` category `147`
 - `race_program.json` generation from `single_mode_program`
 - `character_banners.json`, `supports_banners.json`, and `paid_gacha_banners.json` generation from `gacha_data` + `gacha_available`
-- `banner_timeline.json` generation from the store's JP banner/event history plus Global dates confirmed by `master.mdb` and the official Global news, corrected by the store's `confirmed_global_banner_dates.csv`
+- `banner_timeline.json` generation from the store's JP banner/event history plus Global dates confirmed by `master.mdb` and the official Global news
 - `jp_news_events.json` from an incremental umapyoi.net archive of every JP news post and detailed gacha record, including event-family tags and discovered image/banner URLs
 - `planner_rewards.json` Global gift rewards from durable, revision-preserving archives of the official English news API and `@umamusume_eng` social posts
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
@@ -261,60 +261,21 @@ Both resource sets also name every character and card in English and Japanese, w
 
 The publisher asks Claude for English names of what only JP has released and keeps them in the store's `name_translations.json`, so every server names a card the same way and only the publisher calls the model. It needs `ANTHROPIC_API_KEY`; without it those names stay untranslated. It translates on its first sync and whenever a master changed, and otherwise retries names the model left out at most every 6 hours. `translate-names` does the same for a local copy (`generated-data/store/name_translations.json` by default). To correct a translation, add the name to the store's `name_overrides.json` under its kind (`uma_name`, `outfit_title` or `support_title`) and id, and upload it with `store put name_overrides.json <path>`.
 
-The Global master confirms most of the timeline's Global dates by id: character, support and paid gachas, and Champions Meetings, story events, Legend Races and Uma Sanpo campaigns, each with its end. A Global schedule keeps its JP id, and the JP master the server keeps beside the Global one ties it to the JP event the timeline lists: the Champions Meeting whose race starts inside the JP schedule of that id, the story event or Uma Sanpo campaign that started on the JP schedule's day, and the Legend Race spanning every group whose JP start falls inside it. Only schedules starting on or after the Global launch count, as the Global master keeps JP's dates for what Global has not run. The official Global news confirms the events it announces. Without the JP master, as on a first start before the JP refresh has fetched it, only the gachas are confirmed from the master.
+Every confirmed Global date in `banner_timeline.json` is inferred on the server from the masters and the official Global news. There is no hand-kept file of dates: a new master or news post updates the timeline on its own.
 
-Corrections to these dates, and dates no source gives, live in the store's `confirmed_global_banner_dates.csv`, applied after every other source. Edit it with `store put confirmed_global_banner_dates.csv <path>`, which uploads it only once every row parses, or in the R2 dashboard (the `store/` folder of the store's bucket). Every server takes it on its next refresh check (`MASTER_REFRESH_INTERVAL_SECONDS`), regenerates, and purges the mutable Cloudflare URLs where `PURGE_ON_REFRESH` is set, as on both deployed servers. A row confirms an event or replaces its date:
+The Global master confirms most dates by id. Its character, support and paid gachas confirm the timeline banners with the same gacha id and pickup cards. Its schedules confirm Champions Meetings, story events, Legend Races and Uma Sanpo campaigns, each with its end. A Global schedule keeps its JP id, and the JP master the server keeps beside the Global one ties it to the JP event the timeline lists: the Champions Meeting whose race starts inside the JP schedule of that id, the story event or Uma Sanpo campaign that started on the JP schedule's day, and the Legend Race spanning every group whose JP start falls inside it. Only schedules starting on or after the Global launch count, as the Global master keeps JP's dates for what Global has not run. The official Global news confirms the events it announces, and mission campaigns are confirmed by the Global master's missions. Without the JP master, as on a first start before the JP refresh has fetched it, the schedules confirm nothing; the gachas, the anniversaries and the rules below still apply.
 
-```csv
-character,30104,2026-07-02
-support,30105,2026-07-02
-paid,50009,2026-07-08
-story,07_uma_musume_summer_story_banner,2025-10-14
-champions,14,2026-06-21
-legend,12,2026-06-07
-league_of_heroes,2023-05-12,2026-08-15
-masters_challenge,2023-12-28,2026-09-01
-trainer_skills_test,2024-02-24,2026-10-10
-factor_research,2024-03-21,2026-11-08
-strongest_team,2024-04-22,2026-12-01
-racing_carnival,2024-10-11,2026-12-15
-training_scenario,2022-08-24,2026-12-20
-anniversary,1,2025-10-26
-```
+Three rules infer the rest from those confirmations:
 
-To set a custom global end, add a second date after the start. It replaces the master's or the projected end, and `banner_duration_days` becomes the global start-to-end span. End dates from the official Global news and the master's mission campaigns still take priority. Anniversary and hidden rows do not take an end date, paid rows ignore both dates, and a row without an end date leaves the event to its projected end, even where the master gives one:
-
-```csv
-character,30104,2026-07-02,2026-07-12
-```
-
-To omit a JP banner that Global may skip, use `hidden` in place of the date:
-
-```csv
-character,2022_30130.webp,hidden
-support,2022_30131.webp,hidden
-```
-
-Or prefix the row with `-`. The date is optional and ignored, so an existing row can be toggled off in place:
-
-```csv
--character,30130
--support,30131,2026-07-02
-```
-
-Hidden rows are not emitted in `banner_timeline.json` and do not participate in banner-date calibration. Sources are applied in order, so a later dated row for the same type and gacha ID restores and confirms the banner if it is announced after all.
-
-Banner rows accept a bare gacha id, image stem, `.png`, or `.webp`. Story and campaign rows use the image stem or filename. Campaign rows also accept the umapyoi news post id, unless another campaign already uses that number as its id or image stem. Champions Meeting and Legend Race rows use the sorted 0-based index, or the full key such as `champions_meeting_14`. Anniversary rows use the marker index, where `1` is the first half-anniversary. `YYYY-MM-DD` dates are emitted at `22:00 UTC`.
-
-Months are inferred as complete banner schedules from confirmed character and support CSV entries. Unknown future scouts are shifted out of those months, with related future events following the same adjustment. Campaign, story, paid-banner and other event confirmations cannot close a month for scouts or shift their release sequence. Character and support confirmations retain their individual dates when a release is split; both contribute to the baseline calibration. Unconfirmed anniversary markers also respect the closed banner months.
+- Anniversaries. Marker `i` (`1` is the first half-anniversary) has the JP date `6 × i` months after JP's launch on 2021-02-24. Its first campaign is the earliest mission campaign with "Anniversary" in its title that JP started in the 14 days up to and including that date. The marker is confirmed on the Global start of that campaign in the Global master's `campaign_data`, by the same campaign id and on or after the Global launch. The other markers are projected.
+- Skipped banners. A character or support banner the Global master does not confirm is left out of the timeline once the master confirms a banner of the same kind that JP released at least 30 days later, as Global has skipped it. The margin keeps a banner whose close neighbour Global ran first. Paid banners are never left out this way.
+- Closed months. A month's banner schedule is complete once the Global master confirms a character or support banner starting in a later month. The calculation block reports the latest complete month as `latest_closed_global_month`, and `unconfirmed_schedule_floor` as the first release after it. Unknown future scouts are shifted out of complete months, with related future events following the same adjustment. Campaign, story, paid-banner and other event confirmations cannot close a month for scouts or shift their release sequence. Character and support confirmations retain their individual dates when a release is split; both contribute to the baseline calibration. Unconfirmed anniversary markers also respect the closed banner months.
 
 `banner_timeline.json` includes character, support, paid, story, Champions Meeting, Legend Race, campaign, League of Heroes, Masters Challenge, Trainer Skills Test, Factor Research, Aim! The Strongest Team, Racing Carnival, Uma Sanpo, Holiday Celebration, and Training Scenario releases, plus anniversary marker metadata in the top-level `anniversaries` array. Champions Meetings after the curated April 2024 dataset are extended from their start news posts; matching older posts provide local banner images without duplicating the curated rows. News-discovered Pick 2 reruns, Twinkle Collection, scenario, and guaranteed/paid gachas are merged into the existing banner families. Every gacha row exposes the numeric `gacha_type` and a stable `gacha_type_name`: `standard_pool`, `makeup_debut`, `standard_pickup`, `guaranteed`, `group_select`, `twinkle_collection`, `pick_2`, `special_guaranteed`, `select_step_up`, or `stamp_sheet`. Pick 2 banners let the player choose two SSR support cards from the candidate pool. Character and support banners whose complete pickup set appeared on earlier dates receive the `rerun-banner` tag; same-day duplicate rows are not treated as reruns. Character and support banners define the baseline acceleration curve; news-derived special banners do not become confirmed calibration anchors. Other family confirmations apply isolated same-family residual corrections on top of that baseline.
 
 Monthly Match is intentionally excluded because the JP history contains only one beta run. Generic campaigns, login bonuses, updates, maintenance, media announcements, and one-off challenges remain in `jp_news_events.json` instead of becoming timeline sections because their schedules overlap heavily or do not represent a repeatable content family. Repeatable, player-facing campaign families with their own banner and activity window, including Uma Sanpo and Holiday Celebration, are promoted to campaign timeline rows.
 
 The resource also includes prediction likelihood metadata. The calculation block reports observed character-banner monthly count, adjacent character-banner gap, weekday, and day-of-month frequencies; unconfirmed events include a compact `prediction.calendar_likelihood` score showing how common that predicted month shape, spacing, and release date are compared with confirmed schedules.
-
-The corrections file's hash is part of the generated resource version, so clients that read `/resources/manifest.json` will see a new versioned `banner_timeline.json.gz` path after an edit.
 
 For debugging, also write plain JSON into the version folder:
 
@@ -340,7 +301,7 @@ generated-data/
 	store/                         shared store copy
 ```
 
-A version is named `<master marker>-<hash>`: the hash is the first 12 hex digits of a SHA-256 over every input the set is generated from (the master, the confirmed dates, the news archive and the store's data files; for JP its master, the Global master and the names), so a change to any of them names a new version. The manifest lists each input's own hash under `inputs`.
+A version is named `<master marker>-<hash>`: the hash is the first 12 hex digits of a SHA-256 over every input the set is generated from (the master, the news archive and the store's data files; for JP its master, the Global master and the names), so a change to any of them names a new version. The manifest lists each input's own hash under `inputs`.
 
 An artifact is stored under the SHA-256 of its JSON, the `sha256` its manifest lists, so a file that did not change between versions is written once. URLs stay `/<set>/<version>/<file>.gz`; the server finds the file through the version's manifest. Versions written before this layout keep their files inside their folder and are still served from there.
 
@@ -351,7 +312,7 @@ After each generation the newest 10 versions of the set stay, the current one al
 The data files do not travel through git. They live in a bucket; every server reads them from there and generates from the copy it last loaded. The store holds two kinds of file:
 
 - Collected files, which one server, the publisher (`GAME_ART_PUBLISH=true`), fetches from their sources and uploads. Its copy is their source of truth. They are `umapyoi_archive.json` (JP news, gachas and support cards from Umapyoi), `official_news_archive.json` (official English website news), `official_social_archive.json` (official English X posts) and `name_translations.json` (English names of what only JP has released).
-- Provided files, static data a maintainer uploads with `store put`. The bucket's copy is their source of truth for every server, the publisher included. They are `character_names.json`, `support-cards-db.json`, `timeline_character_banners.json`, `timeline_support_banners.json`, `timeline_paid_banners.json`, `timeline_story_events.json`, `timeline_champions_meeting.json`, `timeline_legend_races.json`, `timeline_campaigns.json`, `planner_gacha_rates.json`, `planner_master_rewards.json`, `planner_mission_rewards.json`, `english_mission_campaign_assets.json`, `simulator_course_geometry.json.gz` and `simulator_course_lanes.json.gz` (stored gzipped as they are), and `course_event_params_jp.json` and `course_event_params_global.json` (each course's event table, keyed by course id), `race_params_global.json` (the decoded Global race parameter asset, which only tests read), `confirmed_global_banner_dates.csv` (the maintainers' corrections to the timeline's Global dates) and `name_overrides.json` (hand-written English names).
+- Provided files, static data a maintainer uploads with `store put`. The bucket's copy is their source of truth for every server, the publisher included. They are `character_names.json`, `support-cards-db.json`, `timeline_character_banners.json`, `timeline_support_banners.json`, `timeline_paid_banners.json`, `timeline_story_events.json`, `timeline_champions_meeting.json`, `timeline_legend_races.json`, `timeline_campaigns.json`, `planner_gacha_rates.json`, `planner_master_rewards.json`, `planner_mission_rewards.json`, `english_mission_campaign_assets.json`, `simulator_course_geometry.json.gz` and `simulator_course_lanes.json.gz` (stored gzipped as they are), and `course_event_params_jp.json` and `course_event_params_global.json` (each course's event table, keyed by course id), `race_params_global.json` (the decoded Global race parameter asset, which only tests read) and `name_overrides.json` (hand-written English names, optional).
 
 - The publisher runs the three news syncs at start and every 30 minutes (`STORE_SYNC_INTERVAL_SECONDS`, at least 300), then uploads each collected file that changed. It never uploads a provided file. A source that fails is tried again on the next round; the other files do not wait for it. A website-news sync is kept only when the production reward parser reads every confirmed Carat login bonus and direct gift in it, so a post it cannot read never reaches generation.
 - Every server keeps its copy in `<data-dir>/store/`. On every refresh check each server, the publisher included, fetches the provided files that changed in the bucket, and a reader also the collected ones. A changed file changes the resource versions, so the sets regenerate. A server that cannot reach the store keeps generating from its copy.

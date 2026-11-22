@@ -69,19 +69,10 @@ fn providedFile(name: &str) -> Result<StoreFile> {
 /// Refuses bytes that are not JSON, or for a `.json.gz` file not gzipped JSON.
 pub(super) fn checkParses(file: StoreFile, bytes: &[u8]) -> Result<()> {
     let name = file.fileName();
-    match file {
-        StoreFile::ConfirmedGlobalBannerDates => {
-            let rows =
-                std::str::from_utf8(bytes).with_context(|| format!("{name} must be UTF-8 text"))?;
-            return crate::generators::timeline::validate_confirmed_dates_csv(rows)
-                .with_context(|| format!("{name} must hold valid confirmed date rows"));
-        }
-        StoreFile::NameOverrides => {
-            return crate::jp_names::parseOverrides(bytes)
-                .map(|_| ())
-                .with_context(|| format!("{name} must hold names by kind and id"));
-        }
-        _ => {}
+    if file == StoreFile::NameOverrides {
+        return crate::jp_names::parseOverrides(bytes)
+            .map(|_| ())
+            .with_context(|| format!("{name} must hold names by kind and id"));
     }
 
     let mut unpacked = Vec::new();
@@ -120,18 +111,6 @@ mod tests {
         assert!(checkParses(gzipped, &crate::pipeline::gzip(b"{}").unwrap()).is_ok());
         assert!(checkParses(gzipped, b"{}").is_err());
         assert!(checkParses(gzipped, &crate::pipeline::gzip(b"{").unwrap()).is_err());
-    }
-
-    #[test]
-    fn putChecksTheConfirmedDatesWithTheTimelinesParser() {
-        let dates = StoreFile::ConfirmedGlobalBannerDates;
-        let valid = b"# type,key,date\nanniversary,1,2025-10-26\n-character,30130\n";
-        assert!(checkParses(dates, valid).is_ok());
-        assert!(checkParses(dates, b"champions,14,2026-13-01\n").is_err());
-        assert!(checkParses(dates, b"concert,1,2026-06-21\n").is_err());
-        assert!(checkParses(dates, b"character,30104,2026-07-12,2026-07-02\n").is_err());
-        assert!(checkParses(dates, &[0xff, 0xfe]).is_err());
-        assert_eq!(dates.contentType(), "text/csv");
     }
 
     #[test]

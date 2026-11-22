@@ -44,9 +44,6 @@ pub enum StoreFile {
     /// The decoded Global race parameter asset. Only tests read it, to check the simulator's
     /// constants against the game's.
     RaceParamsGlobal,
-    /// The maintainers' corrections to the timeline's Global dates, applied after every other
-    /// source.
-    ConfirmedGlobalBannerDates,
     /// Hand-written English names that replace a translation. Optional: none means no overrides.
     NameOverrides,
 }

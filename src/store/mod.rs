@@ -28,7 +28,7 @@ use types::{BUCKET_FOLDER, CACHE_CONTROL};
 static LOADED: RwLock<BTreeMap<StoreFile, Arc<[u8]>>> = RwLock::new(BTreeMap::new());
 
 impl StoreFile {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 23] = [
         Self::UmapyoiArchive,
         Self::GlobalNewsArchive,
         Self::GlobalSocialArchive,
@@ -51,7 +51,6 @@ impl StoreFile {
         Self::CourseEventParamsJp,
         Self::CourseEventParamsGlobal,
         Self::RaceParamsGlobal,
-        Self::ConfirmedGlobalBannerDates,
         Self::NameOverrides,
     ];
 
@@ -80,7 +79,6 @@ impl StoreFile {
             Self::CourseEventParamsJp => "course_event_params_jp.json",
             Self::CourseEventParamsGlobal => "course_event_params_global.json",
             Self::RaceParamsGlobal => "race_params_global.json",
-            Self::ConfirmedGlobalBannerDates => "confirmed_global_banner_dates.csv",
             Self::NameOverrides => "name_overrides.json",
         }
     }
@@ -114,14 +112,10 @@ impl StoreFile {
 
     /// Gzipped files are stored as they are.
     fn contentType(self) -> &'static str {
-        let name = self.fileName();
-        if name.ends_with(".gz") {
-            return "application/gzip";
+        match self.fileName().ends_with(".gz") {
+            true => "application/gzip",
+            false => "application/json",
         }
-        if name.ends_with(".csv") {
-            return "text/csv";
-        }
-        "application/json"
     }
 }
 
