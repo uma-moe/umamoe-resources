@@ -8465,6 +8465,7 @@ mod tests {
 
     #[test]
     fn step_up_catalog_matches_master_costs_and_loads_without_fixed_pickups() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER, cost_type INTEGER, draw_limit INTEGER, draw_guarantee_rarity INTEGER, draw_guarantee_type INTEGER);
             CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER);
@@ -9316,6 +9317,7 @@ mod tests {
 
     #[test]
     fn bundled_global_news_has_no_unparsed_confirmed_rewards() {
+        crate::store::requireStoreData!();
         let archive = load_global_news_archive().unwrap();
         let audit = audit_global_news_reward_posts(&archive);
 
@@ -9324,6 +9326,7 @@ mod tests {
 
     #[test]
     fn bundles_every_archived_multi_period_global_login_bonus() {
+        crate::store::requireStoreData!();
         let archive = load_global_news_archive().unwrap();
         let rewards = load_global_news_rewards(
             &archive,
@@ -10267,6 +10270,7 @@ mod tests {
 
     #[test]
     fn bundled_gacha_rates_cover_gray_week_without_a_jp_database() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch("CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
             CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER);
@@ -10321,6 +10325,7 @@ mod tests {
 
     #[test]
     fn selector_ticket_sparks_match_master_and_bundled_catalog() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection.execute_batch(r#"
             CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
@@ -10760,6 +10765,7 @@ mod tests {
 
     #[test]
     fn archived_notices_expose_named_target_gacha_windows() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let windows = |post_id| {
             let post = archive
@@ -10798,6 +10804,7 @@ mod tests {
 
     #[test]
     fn cited_single_target_notices_pin_the_named_support_gacha() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         for post_id in [1462, 1994, 2079, 2197, 2606, 2869] {
             let post = archive
@@ -10814,6 +10821,7 @@ mod tests {
 
     #[test]
     fn archived_anniversary_support_post_is_one_hundred_pulls_not_note_fragments() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let post = archive
             .news
@@ -10832,6 +10840,7 @@ mod tests {
 
     #[test]
     fn archived_anniversary_campaign_emits_one_stock_aware_pool_with_detailed_source() {
+        crate::store::requireStoreData!();
         let mut archive = load_archive().unwrap();
         archive
             .news
@@ -10917,6 +10926,7 @@ mod tests {
 
     #[test]
     fn archived_single_target_campaign_is_not_split_by_a_later_banner() {
+        crate::store::requireStoreData!();
         let mut archive = load_archive().unwrap();
         archive.news.retain(|post| post.post_id == 1462);
         let links = BTreeMap::from([
@@ -10982,6 +10992,7 @@ mod tests {
 
     #[test]
     fn dedicated_notice_outranks_ambiguous_preview_claims() {
+        crate::store::requireStoreData!();
         let mut archive = load_archive().unwrap();
         archive
             .news
@@ -11047,6 +11058,7 @@ mod tests {
 
     #[test]
     fn archived_cross_kind_campaign_uses_notice_target_ranges() {
+        crate::store::requireStoreData!();
         let mut archive = load_archive().unwrap();
         archive.news.retain(|post| post.post_id == 1124);
         let links = BTreeMap::from([
@@ -11121,6 +11133,7 @@ mod tests {
 
     #[test]
     fn broad_year_end_summary_does_not_replace_the_dedicated_free_pull_source() {
+        crate::store::requireStoreData!();
         let mut archive = load_archive().unwrap();
         archive
             .news
@@ -11368,6 +11381,7 @@ mod tests {
 
     #[test]
     fn bundled_news_regressions_do_not_emit_adjacent_numbers_as_jewels() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let rewards = load_news_rewards(&archive, &json!({"events":[]}));
         let amounts_for = |post_id: i64| {
@@ -11399,6 +11413,7 @@ mod tests {
 
     #[test]
     fn bundled_post_887_has_one_exact_character_free_pull_claim() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let post = archive
             .news
@@ -11415,6 +11430,7 @@ mod tests {
 
     #[test]
     fn bundled_post_1203_preview_has_no_quantitative_free_pull_claim() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let post = archive
             .news
@@ -11430,6 +11446,7 @@ mod tests {
 
     #[test]
     fn bundled_post_2998_preview_does_not_invent_support_pull_days() {
+        crate::store::requireStoreData!();
         let archive = load_archive().unwrap();
         let post = archive
             .news
@@ -11445,6 +11462,7 @@ mod tests {
 
     #[test]
     fn preserves_all_limited_mission_items_and_derives_planner_currencies() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11501,6 +11519,7 @@ mod tests {
 
     #[test]
     fn bundled_jp_snapshot_maps_anniversary_missions_to_timeline_campaigns() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11539,6 +11558,7 @@ mod tests {
 
     #[test]
     fn bundled_jp_mission_snapshot_covers_2025_fall_g1_campaigns() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11582,6 +11602,7 @@ mod tests {
 
     #[test]
     fn permanent_campaign_snapshot_is_not_emitted_as_dated_rewards() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11617,6 +11638,7 @@ mod tests {
 
     #[test]
     fn global_campaign_reuses_timeline_mapping_and_suppresses_same_jp_snapshot() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -11662,6 +11684,7 @@ mod tests {
 
     #[test]
     fn duplicate_campaign_start_without_exact_id_stays_unlinked() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(

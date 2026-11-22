@@ -378,6 +378,7 @@ mod tests {
 
     #[test]
     fn bundled_source_decodes_all_current_keyframes() {
+        crate::store::requireStoreData!();
         let source = decode_bundled_source().unwrap();
 
         assert_eq!(source.schema_version, SCHEMA_VERSION);

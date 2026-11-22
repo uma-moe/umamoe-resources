@@ -382,6 +382,7 @@ mod tests {
 
     #[test]
     fn bundledNamesParse() {
+        crate::store::requireStoreData!();
         bundledNames().unwrap();
     }
 }
