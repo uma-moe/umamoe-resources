@@ -363,7 +363,7 @@ A version is named `<master marker>-<hash>`: the hash is the first 12 hex digits
 
 An artifact is stored under the SHA-256 of its JSON, the `sha256` its manifest lists, so a file that did not change between versions is written once. URLs stay `/<set>/<version>/<file>.gz`; the server finds the file through the version's manifest. Versions written before this layout keep their files inside their folder and are still served from there.
 
-After each generation the newest 10 versions of the set stay, the current one always among them, and older version folders are deleted. Then every file in `blobs/` and `masters/` that no remaining manifest of any set lists is deleted. Only folders that hold a `manifest.json` count as versions, never `blobs`, `masters`, `masterdata`, `store`, `planner` or `jp`; a manifest that cannot be read stops the deletion, and a failed cleanup never fails the generation.
+After each generation the newest 10 versions of the set stay, the current one always among them, and older version folders are deleted. Then every file in `blobs/` and `masters/` that no remaining manifest of any set lists is deleted once it is at least an hour old, so a file another process has just written for a manifest it has not written yet stays. Only folders that hold a `manifest.json` count as versions, never `blobs`, `masters`, `masterdata`, `store`, `planner` or `jp`; a manifest that cannot be read stops the deletion, and a failed cleanup never fails the generation.
 
 ## Shared Store
 
