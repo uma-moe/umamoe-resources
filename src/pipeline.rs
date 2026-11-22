@@ -8,6 +8,7 @@ use flate2::Compression;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fs;
 use std::io::Write;
@@ -36,6 +37,9 @@ pub struct ResourceManifest {
     pub generated_at: String,
     pub base_path: String,
     pub master: MasterInfo,
+    /// The hash of each input the version is named after.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub inputs: BTreeMap<String, String>,
     pub artifacts: Vec<ResourceArtifact>,
 }
 
@@ -102,40 +106,63 @@ pub fn resources_version(master_path: &Path) -> Result<String> {
     let master_sha256 = file_sha256(master_path)?;
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    global_version(master_path, &marker, &master_sha256)
+    let (version, _) = global_version(master_path, &marker, &master_sha256)?;
+    Ok(version)
 }
 
-fn global_version(master_path: &Path, marker: &str, master_sha256: &str) -> Result<String> {
-    let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
-    // The JP data the timeline reads: the news archive, the bundled names, and the JP master the
-    // server keeps. One hash keeps the version short enough for Windows paths.
-    let mut jp_digest = Sha256::new();
-    jp_digest.update(generators::jp_events::version_hash());
+/// The Global version and the hashes of everything it is generated from: the master, the
+/// confirmed dates, the JP data the timeline reads (the news archive and the JP master the
+/// server keeps), the bundled course, planner and geometry data, and the planner's JP rewards.
+fn global_version(
+    master_path: &Path,
+    marker: &str,
+    master_sha256: &str,
+) -> Result<(String, BTreeMap<String, String>)> {
+    let mut inputs = BTreeMap::new();
+    inputs.insert(
+        "timeline".to_string(),
+        generators::timeline::confirmed_dates_version_hash()?,
+    );
+    inputs.insert(
+        "jp_events".to_string(),
+        generators::jp_events::version_hash(),
+    );
     if let Some(path) = names_jp_master(master_path) {
-        jp_digest.update(file_sha256(&path)?);
+        inputs.insert("jp_names_master".to_string(), file_sha256(&path)?);
     }
-    let jp_events_hash = hex::encode(jp_digest.finalize());
-    let course_hash = generators::simulator_courses::version_hash();
-    let planner_hash = generators::planner::version_hash();
-    let geometry_hash = generators::simulator_course_geometry::version_hash()?;
-    let jp_source_version = match planner_jp_master()? {
-        Some(path) => format!("-jp-master-{}", &file_sha256(&path)?[..12]),
-        None => {
-            let hash = generators::planner::jp_master_reward_catalog_version_hash();
-            format!("-jp-catalog-{}", &hash[..12])
-        }
+    inputs.insert(
+        "courses".to_string(),
+        generators::simulator_courses::version_hash(),
+    );
+    inputs.insert("planner".to_string(), generators::planner::version_hash());
+    inputs.insert(
+        "geometry".to_string(),
+        generators::simulator_course_geometry::version_hash()?,
+    );
+    match planner_jp_master()? {
+        Some(path) => inputs.insert("jp_master".to_string(), file_sha256(&path)?),
+        None => inputs.insert(
+            "jp_catalog".to_string(),
+            generators::planner::jp_master_reward_catalog_version_hash(),
+        ),
     };
-    Ok(sanitize_version(&format!(
-        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}-master-{}",
-        marker,
-        &confirmed_dates_hash[..12],
-        &jp_events_hash[..12],
-        &course_hash[..12],
-        &planner_hash[..12],
-        &geometry_hash[..12],
-        jp_source_version,
-        &master_sha256[..12],
-    )))
+    inputs.insert("master".to_string(), master_sha256.to_string());
+    Ok((versionName(marker, &inputs), inputs))
+}
+
+/// `<marker>-<hash>`, the hash covering every input by name, so a change to any of them names a
+/// new version while the name stays short enough for Windows paths.
+#[allow(non_snake_case)]
+fn versionName(marker: &str, inputs: &BTreeMap<String, String>) -> String {
+    let mut digest = Sha256::new();
+    for (name, hash) in inputs {
+        digest.update(format!(
+            "{name}={hash}
+"
+        ));
+    }
+    let hash = hex::encode(digest.finalize());
+    sanitize_version(&format!("{marker}-{}", &hash[..12]))
 }
 
 pub fn generate_resources(
@@ -156,7 +183,7 @@ pub fn generate_resources(
     let master_sha256 = sha256_hex(&master_bytes);
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    let version = global_version(master_path, &marker, &master_sha256)?;
+    let (version, inputs) = global_version(master_path, &marker, &master_sha256)?;
     // Read before this export replaces it, so the release history can diff against its master.
     let previous_manifest = read_manifest(out_dir).ok();
     let version_dir = out_dir.join(&version);
@@ -214,6 +241,7 @@ pub fn generate_resources(
             path: Some(format!("/resources/simulator/{version}/master.mdb.gz")),
             bytes: Some(master_bytes.len() as u64),
         },
+        inputs,
         artifacts,
     };
 
@@ -253,6 +281,7 @@ pub fn generate_resources(
         generated_at: manifest.generated_at.clone(),
         base_path: format!("/resources/planner/{}", version),
         master: manifest.master.clone(),
+        inputs: manifest.inputs.clone(),
         artifacts: planner_artifacts,
     };
     let planner_manifest_json = serde_json::to_vec_pretty(&planner_manifest)?;
@@ -305,7 +334,7 @@ pub fn generate_jp_resources(
     let master_sha256 = sha256_hex(&master_bytes);
     let marker = read_master_marker(jp_master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    let version = jp_set_version(&marker, &master_sha256, global_master_path)?;
+    let (version, inputs) = jp_set_version(&marker, &master_sha256, global_master_path)?;
 
     let jp = Connection::open_with_flags(jp_master_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .with_context(|| format!("failed to open JP master at {}", jp_master_path.display()))?;
@@ -341,6 +370,7 @@ pub fn generate_jp_resources(
             path: None,
             bytes: Some(master_bytes.len() as u64),
         },
+        inputs,
         artifacts,
     };
     let manifest_json = serde_json::to_vec_pretty(&manifest)?;
@@ -362,12 +392,17 @@ pub fn jp_resources_version(jp_master_path: &Path, global_master_path: &Path) ->
         })?);
     let marker = read_master_marker(jp_master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    jp_set_version(&marker, &master_sha256, global_master_path)
+    let (version, _) = jp_set_version(&marker, &master_sha256, global_master_path)?;
+    Ok(version)
 }
 
 /// Release flags and English names come from the Global master and the bundled names, so an
 /// update to either changes the JP set too.
-fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) -> Result<String> {
+fn jp_set_version(
+    marker: &str,
+    master_sha256: &str,
+    global_master_path: &Path,
+) -> Result<(String, BTreeMap<String, String>)> {
     let global_sha256 = sha256_hex(&fs::read(global_master_path).with_context(|| {
         format!(
             "failed to read Global master at {}",
@@ -376,14 +411,12 @@ fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) 
     })?);
     let mut names = Sha256::new();
     crate::jp_names::hashNames(&mut names);
-    let names_sha256 = hex::encode(names.finalize());
-    Ok(sanitize_version(&format!(
-        "{}-master-{}-global-{}-names-{}",
-        marker,
-        &master_sha256[..12],
-        &global_sha256[..12],
-        &names_sha256[..12],
-    )))
+    let inputs = BTreeMap::from([
+        ("master".to_string(), master_sha256.to_string()),
+        ("global".to_string(), global_sha256),
+        ("names".to_string(), hex::encode(names.finalize())),
+    ]);
+    Ok((versionName(marker, &inputs), inputs))
 }
 
 /// Stores each output in the data directory's blobs; only the opt-in plain JSON goes into the
@@ -683,6 +716,32 @@ mod tests {
             assert_eq!(std::fs::read_dir(out.join(version)).unwrap().count(), 0);
         }
         std::fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn everyInputNamesItsOwnVersion() {
+        use super::versionName;
+        use std::collections::BTreeMap;
+
+        let inputs = BTreeMap::from([
+            ("master".to_string(), "a".repeat(64)),
+            ("timeline".to_string(), "b".repeat(64)),
+        ]);
+        let version = versionName("1.35.5:10008790", &inputs);
+        assert!(version.starts_with("1.35.5-10008790-"));
+        assert_eq!(version.len(), "1.35.5-10008790-".len() + 12);
+        assert_eq!(version, versionName("1.35.5:10008790", &inputs.clone()));
+
+        let mut changed = inputs.clone();
+        changed.insert("timeline".to_string(), "c".repeat(64));
+        assert_ne!(versionName("1.35.5:10008790", &changed), version);
+        // The same hash under another input's name is another version too.
+        let renamed = BTreeMap::from([
+            ("master".to_string(), "a".repeat(64)),
+            ("planner".to_string(), "b".repeat(64)),
+        ]);
+        assert_ne!(versionName("1.35.5:10008790", &renamed), version);
     }
 
     #[test]
