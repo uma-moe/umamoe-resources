@@ -33,20 +33,29 @@ pub struct GeneratedResources {
     pub planner: Vec<ResourceOutput>,
 }
 
+/// `jp_connection` is the JP master the planner reads its rewards from, given only when the
+/// bundled reward catalogue is refreshed. `jp_names` is the JP master the server keeps, for
+/// Japanese names and JP's newest banners.
 pub fn generate_all(
     connection: &Connection,
     jp_connection: Option<&Connection>,
+    jp_names: Option<&Connection>,
     master_version: &str,
 ) -> Result<GeneratedResources> {
     let character_banners = banners::generate_character_banners(connection)?;
     let support_banners = banners::generate_support_banners(connection)?;
     let paid_banners = banners::generate_paid_banners(connection)?;
     // English and Japanese names for every resource that names characters and cards.
-    let names = crate::jp_names::NameBook::load(connection, jp_connection)?;
+    let names = crate::jp_names::NameBook::load(connection, jp_names)?;
+    let master_gachas = match jp_names {
+        Some(jp) => crate::jp_names::masterGachas(jp)?,
+        None => Vec::new(),
+    };
     let mut timeline = serde_json::to_value(timeline::generate(
         connection,
         jp_connection,
         &names,
+        &master_gachas,
         &character_banners,
         &support_banners,
         &paid_banners,

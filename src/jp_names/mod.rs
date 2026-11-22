@@ -1,6 +1,7 @@
-//! JP's gachas, JP's own names, and the English names of what only JP has released. The sync
-//! job reads both masters, writes them into `src/jp_data`, and translates new names with Claude;
-//! the resources read the bundled copies, so the servers never call the model.
+//! JP's gachas and names, and the English names of what only JP has released. The resources
+//! read JP's gachas and names from the JP master each server keeps. The translation job asks
+//! Claude for English names and commits them to `src/jp_data`, so the servers never call the
+//! model.
 
 #![allow(non_snake_case)]
 
@@ -19,16 +20,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use tracing::{info, warn};
 use translate::{Translator, BATCH_SIZE};
-pub use types::{CardNames, JpGacha, JpGachaData, NameBook, NameKind, NameLoc};
+pub use types::{CardNames, JpGacha, NameBook, NameKind, NameLoc};
 use types::{
     MachineName, MasterNames, NameOverrides, NameTranslations, TranslationExample, TranslationItem,
-    GACHAS_FILE, JAPANESE_NAMES_FILE, TRANSLATIONS_FILE, TRANSLATION_MODEL,
+    TRANSLATIONS_FILE, TRANSLATION_MODEL,
 };
 
-const BUNDLED_GACHAS: &[u8] = include_bytes!("../jp_data/jp_gachas.json");
 const BUNDLED_TRANSLATIONS: &[u8] = include_bytes!("../jp_data/name_translations.json");
 const BUNDLED_OVERRIDES: &[u8] = include_bytes!("../jp_data/name_overrides.json");
-const BUNDLED_JAPANESE_NAMES: &[u8] = include_bytes!("../jp_data/jp_names.json");
 const OVERRIDES_FILE: &str = "name_overrides.json";
 
 /// Uma names first, so titles can name their character in English.
@@ -38,27 +37,23 @@ const KINDS: [NameKind; 3] = [
     NameKind::SupportTitle,
 ];
 
-/// Feeds the bundled files into a resource version, so a sync regenerates the resources.
+/// Feeds the bundled names into a resource version, so a new translation regenerates the
+/// resources.
 pub fn hashBundled(digest: &mut Sha256) {
-    digest.update(BUNDLED_GACHAS);
     digest.update(BUNDLED_TRANSLATIONS);
     digest.update(BUNDLED_OVERRIDES);
-    digest.update(BUNDLED_JAPANESE_NAMES);
 }
 
-pub fn bundledGachaData() -> Result<JpGachaData> {
-    serde_json::from_slice(BUNDLED_GACHAS).context("failed to parse bundled jp_gachas.json")
+/// JP's pickup gachas, oldest first.
+pub fn masterGachas(jp: &Connection) -> Result<Vec<JpGacha>> {
+    master::readGachas(jp)
 }
 
-/// JP's gachas with pickups that are newer than the newest of `known` in the same id range. Ids
+/// The gachas with pickups that are newer than the newest of `known` in the same id range. Ids
 /// grow with time, so these are the gachas a curated list has not reached yet. A gacha without
 /// fixed pickups, such as a select or monthly one, is left to the news archive, which names what
 /// it features.
-pub fn gachasAfter(known: &BTreeSet<i64>) -> Result<Vec<JpGacha>> {
-    Ok(newerGachas(bundledGachaData()?.gachas, known))
-}
-
-fn newerGachas(gachas: Vec<JpGacha>, known: &BTreeSet<i64>) -> Vec<JpGacha> {
+pub fn gachasAfter(gachas: &[JpGacha], known: &BTreeSet<i64>) -> Vec<JpGacha> {
     let newest = |range: i64| {
         known
             .iter()
@@ -67,14 +62,11 @@ fn newerGachas(gachas: Vec<JpGacha>, known: &BTreeSet<i64>) -> Vec<JpGacha> {
             .copied()
     };
     gachas
-        .into_iter()
+        .iter()
         .filter(|gacha| !gacha.pickup_card_ids.is_empty())
         .filter(|gacha| newest(gacha.gacha_id / 10000).is_some_and(|id| gacha.gacha_id > id))
+        .cloned()
         .collect()
-}
-
-fn bundledJapaneseNames() -> Result<MasterNames> {
-    serde_json::from_slice(BUNDLED_JAPANESE_NAMES).context("failed to parse bundled jp_names.json")
 }
 
 pub fn bundledNames() -> Result<NameLoc> {
@@ -117,41 +109,24 @@ impl NameLoc {
     }
 }
 
-/// Writes JP's gachas and names from its master into `out_dir`, then translates the names only
-/// JP has released that `out_dir` has no current translation or override for.
-pub async fn syncJpData(
-    global_master: &Path,
-    jp_master: &Path,
-    out_dir: &Path,
-    translate: bool,
-) -> Result<()> {
-    let jp = openMaster(jp_master)?;
-    let gachas = master::readGachaData(&jp)?;
-    writeJson(&out_dir.join(GACHAS_FILE), &gachas)?;
-    info!(
-        gachas = gachas.gachas.len(),
-        cards = gachas.card_characters.len(),
-        "wrote JP gachas"
-    );
-    let japanese = master::readAllNames(&jp)?;
-    writeJson(&out_dir.join(JAPANESE_NAMES_FILE), &japanese)?;
-    if !translate {
-        info!("translation skipped");
-        return Ok(());
-    }
-
+/// Translates the names only JP has released that `out_dir` has no current translation or
+/// override for, and writes the translations back.
+pub async fn translateNames(global_master: &Path, jp_master: &Path, out_dir: &Path) -> Result<()> {
     let api_key = std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|key| !key.trim().is_empty())
-        .context("ANTHROPIC_API_KEY is not set; set it, or pass --skip-translation")?;
+        .context("ANTHROPIC_API_KEY is not set")?;
+    let jp = openMaster(jp_master)?;
     let global = openMaster(global_master)?;
     let previous: NameTranslations = readJson(&out_dir.join(TRANSLATIONS_FILE))?;
     let overrides: NameOverrides = readJson(&out_dir.join(OVERRIDES_FILE))?;
     let official = master::readAllNames(&global)?;
+    let japanese = master::readAllNames(&jp)?;
+    let card_characters = master::readCardCharacters(&jp)?;
     let translations = updateTranslations(
         &official,
         &japanese,
-        &gachas.card_characters,
+        &card_characters,
         previous,
         &overrides,
         api_key,
@@ -372,7 +347,7 @@ mod tests {
     }
 
     #[test]
-    fn newerGachasTakesPickupGachasPastEachRangesNewestKnownId() {
+    fn gachasAfterTakesPickupGachasPastEachRangesNewestKnownId() {
         let gachas = vec![
             gacha(30010, vec![100101]),
             gacha(30011, vec![100201]),
@@ -381,7 +356,7 @@ mod tests {
             gacha(50006, vec![30002]),
         ];
         let known = BTreeSet::from([30009, 30010, 50005]);
-        let ids: Vec<i64> = newerGachas(gachas, &known)
+        let ids: Vec<i64> = gachasAfter(&gachas, &known)
             .iter()
             .map(|gacha| gacha.gacha_id)
             .collect();
@@ -389,17 +364,12 @@ mod tests {
     }
 
     #[test]
-    fn newerGachasSkipsRangesWithoutKnownIds() {
-        assert!(newerGachas(vec![gacha(50001, vec![30001])], &BTreeSet::from([30001])).is_empty());
+    fn gachasAfterSkipsRangesWithoutKnownIds() {
+        assert!(gachasAfter(&[gacha(50001, vec![30001])], &BTreeSet::from([30001])).is_empty());
     }
 
     #[test]
-    fn bundledGachasParse() {
-        let data = bundledGachaData().unwrap();
-        assert!(data.gachas.iter().all(|gacha| gacha
-            .pickup_card_ids
-            .iter()
-            .all(|id| data.card_characters.contains_key(id))));
+    fn bundledNamesParse() {
         bundledNames().unwrap();
     }
 }

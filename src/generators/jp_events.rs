@@ -81,7 +81,7 @@ pub struct AdditionalGachaBanner {
 pub fn generate() -> Result<Value> {
     let mut archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
         .context("failed to parse bundled umapyoi archive")?;
-    let known_ids = known_timeline_gacha_ids()?;
+    let known_ids = curated_timeline_gacha_ids()?;
     let candidates = additional_gacha_banners(&archive, &known_ids)?;
     archive
         .as_object_mut()
@@ -210,15 +210,14 @@ pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>
     Ok(races)
 }
 
-pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
-    gacha_banner_events_after(&known_timeline_gacha_ids()?)
-}
-
-/// The news archive's gachas past the curated lists, including those JP's master also has, so
-/// tests can check the parser on every gacha the archive announces.
-#[cfg(test)]
-pub fn curated_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
-    gacha_banner_events_after(&curated_timeline_gacha_ids()?)
+/// The news archive's gachas past the curated lists, apart from `from_master`, the ones the
+/// timeline takes from JP's master, which names their pickups exactly.
+pub fn additional_gacha_banner_events(
+    from_master: &BTreeSet<i64>,
+) -> Result<Vec<AdditionalGachaBanner>> {
+    let mut known_ids = curated_timeline_gacha_ids()?;
+    known_ids.extend(from_master);
+    gacha_banner_events_after(&known_ids)
 }
 
 fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<AdditionalGachaBanner>> {
@@ -739,18 +738,6 @@ fn maximum_duration_days(kind: NewsTimelineKind) -> i64 {
     }
 }
 
-/// The gachas the timeline has from other sources: the curated lists, and the newer ones it
-/// takes from JP's master, which names their pickups exactly.
-fn known_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
-    let mut ids = curated_timeline_gacha_ids()?;
-    let from_master: Vec<i64> = crate::jp_names::gachasAfter(&ids)?
-        .iter()
-        .map(|gacha| gacha.gacha_id)
-        .collect();
-    ids.extend(from_master);
-    Ok(ids)
-}
-
 fn curated_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
     let mut ids = BTreeSet::new();
     for (name, bytes) in [
@@ -1184,6 +1171,7 @@ fn string_array(value: Option<&Value>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{AdditionalGachaKind, NewsTimelineKind};
+    use std::collections::BTreeSet;
 
     #[test]
     fn bundled_archive_is_valid_json() {
@@ -1264,7 +1252,7 @@ mod tests {
 
     #[test]
     fn exposes_additional_banner_candidates_for_timeline_merge() {
-        let banners = super::additional_gacha_banner_events()
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
     }
@@ -1279,7 +1267,7 @@ mod tests {
             "support",
         );
         assert_eq!(names, ["Air Groove", "Tokai Teio"]);
-        let banners = super::curated_gacha_banner_events().unwrap();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new()).unwrap();
         for (id, first) in [(50237, "Satono Diamond"), (50238, "Air Groove")] {
             let banner = banners.iter().find(|banner| banner.gacha_id == id).unwrap();
             assert_eq!(banner.related_support_names.len(), 8);
@@ -1343,7 +1331,7 @@ mod tests {
 
     #[test]
     fn splits_combined_character_and_support_gacha_content() {
-        let banners = super::curated_gacha_banner_events()
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let character = banners
             .iter()
@@ -1364,7 +1352,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn leavesGachasWithMasterPickupsToTheMaster() {
-        let banners = super::additional_gacha_banner_events().unwrap();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::from([30_449])).unwrap();
         assert!(banners.iter().all(|banner| banner.gacha_id != 30_449));
         // A gacha the master lists without pickups still comes from the news.
         assert!(banners.iter().any(|banner| banner.gacha_id == 50_235));
@@ -1455,7 +1443,7 @@ mod tests {
 
     #[test]
     fn extracts_type_12_select_pickup_rerun_metadata() {
-        let banners = super::additional_gacha_banner_events()
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let banner = banners
             .iter()

@@ -1,6 +1,6 @@
 //! Reads JP's gachas and names from a master database.
 
-use super::types::{JpGacha, JpGachaData, MasterNames, NameKind};
+use super::types::{JpGacha, MasterNames, NameKind};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
@@ -19,16 +19,9 @@ pub(super) fn textCategory(kind: NameKind) -> i64 {
     }
 }
 
-pub(super) fn readGachaData(jp: &Connection) -> Result<JpGachaData> {
-    let card_characters = readCardCharacters(jp)?;
-    Ok(JpGachaData {
-        gachas: readGachas(jp, &card_characters)?,
-        card_characters,
-    })
-}
-
 /// Pickups are kept only when they are cards: a select gacha lists placeholder slots instead.
-fn readGachas(jp: &Connection, cards: &BTreeMap<i64, i64>) -> Result<Vec<JpGacha>> {
+pub(super) fn readGachas(jp: &Connection) -> Result<Vec<JpGacha>> {
+    let cards = readCardCharacters(jp)?;
     let mut pickups = BTreeMap::<i64, Vec<(i64, i64)>>::new();
     let mut statement = jp.prepare(
         "SELECT gacha_id, card_id, rarity FROM gacha_available WHERE is_pickup = 1 AND gacha_id BETWEEN ?1 AND ?2",
@@ -128,7 +121,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn readGachaDataKeepsOnlyCardPickupsRarestFirst() {
+    fn readGachasKeepsOnlyCardPickupsRarestFirst() {
         let master = Connection::open_in_memory().unwrap();
         master
             .execute_batch(
@@ -145,9 +138,8 @@ mod tests {
             )
             .unwrap();
 
-        let data = readGachaData(&master).unwrap();
-        let gachas: Vec<(i64, Vec<i64>)> = data
-            .gachas
+        let gachas: Vec<(i64, Vec<i64>)> = readGachas(&master)
+            .unwrap()
             .into_iter()
             .map(|gacha| (gacha.gacha_id, gacha.pickup_card_ids))
             .collect();
@@ -155,6 +147,5 @@ mod tests {
             gachas,
             [(30100, vec![30001, 20002, 10003]), (30101, vec![])]
         );
-        assert_eq!(data.card_characters.get(&20002), Some(&1002));
     }
 }

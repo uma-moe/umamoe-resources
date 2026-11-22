@@ -553,6 +553,7 @@ pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
     names: &crate::jp_names::NameBook,
+    master_gachas: &[crate::jp_names::JpGacha],
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
@@ -560,16 +561,18 @@ pub fn generate(
     let mut timeline_character_banners = load_timeline_character_banners()?;
     let mut timeline_support_banners = load_timeline_support_banners()?;
     let mut timeline_paid_banners = load_timeline_paid_banners()?;
-    append_jp_master_banners(
+    let from_master = append_jp_master_banners(
+        master_gachas,
         &mut timeline_character_banners,
         &mut timeline_support_banners,
         &mut timeline_paid_banners,
-    )?;
+    );
     let timeline_story_events = load_timeline_story_events(jp_connection)?;
     let mut timeline_champions_meetings = load_timeline_champions_meetings()?;
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
-    let additional_gacha_banners = crate::generators::jp_events::additional_gacha_banner_events()?;
+    let additional_gacha_banners =
+        crate::generators::jp_events::additional_gacha_banner_events(&from_master)?;
     let mut confirmed_dates = build_confirmed_date_lookup(
         character_banners,
         support_banners,
@@ -600,7 +603,8 @@ pub fn generate(
     );
     let jp_names = crate::jp_names::bundledNames()?;
     let character_names = names.english(crate::jp_names::NameKind::UmaName).clone();
-    let support_names = load_support_card_names(connection, &character_names)?;
+    let support_names =
+        load_support_card_names(connection, &character_names, names.cardCharacters())?;
     let support_card_names = load_support_card_specific_names(connection, &jp_names)?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
@@ -4019,13 +4023,15 @@ fn load_timeline_paid_banners() -> Result<Vec<TimelinePaidBanner>> {
         .collect()
 }
 
-/// Adds JP's gachas the curated lists have not reached yet, from JP's master. Their pictures
-/// keep the paths the news archive gave them, so pictures already published stay linked.
+/// Adds JP's gachas the curated lists have not reached yet, from JP's master, and returns their
+/// ids. Their pictures keep the paths the news archive gave them, so pictures already published
+/// stay linked.
 fn append_jp_master_banners(
+    master_gachas: &[crate::jp_names::JpGacha],
     characters: &mut Vec<TimelineCharacterBanner>,
     supports: &mut Vec<TimelineSupportBanner>,
     paid: &mut Vec<TimelinePaidBanner>,
-) -> Result<()> {
+) -> BTreeSet<i64> {
     let known: BTreeSet<i64> = characters
         .iter()
         .map(|banner| banner.gacha_id)
@@ -4033,7 +4039,9 @@ fn append_jp_master_banners(
         .chain(paid.iter().map(|banner| banner.gacha_id))
         .collect();
 
-    for gacha in crate::jp_names::gachasAfter(&known)? {
+    let newer = crate::jp_names::gachasAfter(master_gachas, &known);
+    let ids = newer.iter().map(|gacha| gacha.gacha_id).collect();
+    for gacha in newer {
         let year = gacha
             .start_date
             .with_timezone(&chrono_tz::Asia::Tokyo)
@@ -4082,7 +4090,7 @@ fn append_jp_master_banners(
             }),
         }
     }
-    Ok(())
+    ids
 }
 
 fn load_timeline_story_events(
@@ -5025,6 +5033,7 @@ fn month_number(month: &str) -> Option<u32> {
 fn load_support_card_names(
     connection: &Connection,
     character_names: &BTreeMap<i64, String>,
+    card_characters: &BTreeMap<i64, i64>,
 ) -> Result<BTreeMap<i64, String>> {
     let mut names = load_bundled_support_card_names()?;
     names.extend(load_umapyoi_support_character_names(character_names)?);
@@ -5045,9 +5054,9 @@ fn load_support_card_names(
     }
 
     // JP's master knows the character of the cards no other source names yet.
-    for (card_id, chara_id) in crate::jp_names::bundledGachaData()?.card_characters {
-        if let Some(name) = character_names.get(&chara_id) {
-            names.entry(card_id).or_insert_with(|| name.clone());
+    for (card_id, chara_id) in card_characters {
+        if let Some(name) = character_names.get(chara_id) {
+            names.entry(*card_id).or_insert_with(|| name.clone());
         }
     }
 
@@ -7002,7 +7011,8 @@ mod tests {
             .filter_map(|(id, entry)| Some((id.parse().ok()?, entry["name"].as_str()?.to_string())))
             .collect::<BTreeMap<_, _>>();
         let support_names = load_umapyoi_support_character_names(&character_names).unwrap();
-        let banners = crate::generators::jp_events::curated_gacha_banner_events().unwrap();
+        let banners =
+            crate::generators::jp_events::additional_gacha_banner_events(&BTreeSet::new()).unwrap();
         for (id, expected, count) in [
             (50224, "Maruzensky + 85 more", 86),
             (50225, "Hokko Tarumae + 71 more", 72),
