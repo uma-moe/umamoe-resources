@@ -46,13 +46,8 @@ pub enum StoreFile {
     RaceParamsGlobal,
 }
 
-/// A store file's content: what this server last loaded, or the copy built into the binary
-/// while it has loaded none.
-#[derive(Clone)]
-pub enum StoreBytes {
-    Loaded(Arc<[u8]>),
-    Bundled(&'static [u8]),
-}
+/// A store file's content as this server last loaded it; empty while it has loaded none.
+pub type StoreBytes = Arc<[u8]>;
 
 /// The folder the store lives in, in the bucket STORE_S3_BUCKET names or else the asset bucket,
 /// so a bucket can hold other things beside it.
@@ -60,6 +55,10 @@ pub(super) const BUCKET_FOLDER: &str = "store";
 
 /// The folder of the data directory that holds this server's copy.
 pub const LOCAL_FOLDER: &str = "store";
+
+/// Where tests read the store from: a local copy in the repository, as `store pull` writes it.
+#[cfg(test)]
+pub(super) const TEST_COPY_DIR: &str = "generated-data/store";
 
 /// Store files change in place, so nothing between the bucket and a server may cache them.
 pub(super) const CACHE_CONTROL: &str = "no-store";
