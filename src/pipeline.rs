@@ -61,6 +61,82 @@ pub struct ResourceArtifact {
     pub gzip_bytes: u64,
 }
 
+/// The JP master the planner reads its rewards from. It is set only to refresh the bundled
+/// reward catalogue; without it the planner reads the catalogue.
+fn planner_jp_master() -> Result<Option<PathBuf>> {
+    let Some(path) = std::env::var_os("JP_MASTER_PATH").map(PathBuf::from) else {
+        return Ok(None);
+    };
+    ensure!(
+        path.is_file(),
+        "JP_MASTER_PATH points to a missing file: {}",
+        path.display(),
+    );
+    Ok(Some(path))
+}
+
+/// The JP master the Global set reads Japanese names and JP's newest banners from: the one the
+/// server keeps beside the Global master, or JP_MASTER_PATH when that is set.
+fn names_jp_master(master_path: &Path) -> Option<PathBuf> {
+    std::env::var_os("JP_MASTER_PATH")
+        .map(PathBuf::from)
+        .or_else(|| Some(crate::master_fetch::jpMasterPath(master_path)))
+        .filter(|path| path.is_file())
+}
+
+fn open_jp_master(path: &Path) -> Result<Connection> {
+    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .with_context(|| format!("failed to open JP SQLite master at {}", path.display()))
+}
+
+fn file_sha256(path: &Path) -> Result<String> {
+    Ok(sha256_hex(&fs::read(path).with_context(|| {
+        format!("failed to read {}", path.display())
+    })?))
+}
+
+/// The version the Global set would get from the masters and bundled data on disk now, so a
+/// refresh can tell whether anything it reads changed.
+pub fn resources_version(master_path: &Path) -> Result<String> {
+    let master_sha256 = file_sha256(master_path)?;
+    let marker = read_master_marker(master_path)
+        .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
+    global_version(master_path, &marker, &master_sha256)
+}
+
+fn global_version(master_path: &Path, marker: &str, master_sha256: &str) -> Result<String> {
+    let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
+    // The JP data the timeline reads: the news archive, the bundled names, and the JP master the
+    // server keeps. One hash keeps the version short enough for Windows paths.
+    let mut jp_digest = Sha256::new();
+    jp_digest.update(generators::jp_events::version_hash());
+    if let Some(path) = names_jp_master(master_path) {
+        jp_digest.update(file_sha256(&path)?);
+    }
+    let jp_events_hash = hex::encode(jp_digest.finalize());
+    let course_hash = generators::simulator_courses::version_hash();
+    let planner_hash = generators::planner::version_hash();
+    let geometry_hash = generators::simulator_course_geometry::version_hash()?;
+    let jp_source_version = match planner_jp_master()? {
+        Some(path) => format!("-jp-master-{}", &file_sha256(&path)?[..12]),
+        None => {
+            let hash = generators::planner::jp_master_reward_catalog_version_hash();
+            format!("-jp-catalog-{}", &hash[..12])
+        }
+    };
+    Ok(sanitize_version(&format!(
+        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}-master-{}",
+        marker,
+        &confirmed_dates_hash[..12],
+        &jp_events_hash[..12],
+        &course_hash[..12],
+        &planner_hash[..12],
+        &geometry_hash[..12],
+        jp_source_version,
+        &master_sha256[..12],
+    )))
+}
+
 pub fn generate_resources(
     master_path: &Path,
     out_dir: &Path,
@@ -70,55 +146,18 @@ pub fn generate_resources(
     let _generation = GENERATION_LOCK
         .lock()
         .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))?;
-    let jp_master_path = std::env::var_os("JP_MASTER_PATH").map(PathBuf::from);
-    if let Some(path) = &jp_master_path {
-        ensure!(
-            path.is_file(),
-            "JP_MASTER_PATH points to a missing file: {}",
-            path.display(),
-        );
-    }
-    let jp_connection = jp_master_path
-        .as_ref()
-        .filter(|path| path.is_file())
-        .map(|path| {
-            Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-                .with_context(|| format!("failed to open JP SQLite master at {}", path.display()))
-        })
-        .transpose()?;
-    let jp_master_hash = jp_master_path
-        .as_ref()
-        .filter(|path| path.is_file())
-        .map(|path| fs::read(path).map(|bytes| sha256_hex(&bytes)))
+    let jp_master_path = planner_jp_master()?;
+    let jp_connection = jp_master_path.as_deref().map(open_jp_master).transpose()?;
+    let jp_names_connection = names_jp_master(master_path)
+        .as_deref()
+        .map(open_jp_master)
         .transpose()?;
     let master_bytes = fs::read(master_path)
         .with_context(|| format!("failed to read master at {}", master_path.display()))?;
     let master_sha256 = sha256_hex(&master_bytes);
     let marker = read_master_marker(master_path)
         .unwrap_or_else(|| format!("master-{}", &master_sha256[..12]));
-    let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
-    let jp_events_hash = generators::jp_events::version_hash();
-    let course_hash = generators::simulator_courses::version_hash();
-    let planner_hash = generators::planner::version_hash();
-    let geometry_hash = generators::simulator_course_geometry::version_hash()?;
-    let jp_reward_source_version = match jp_master_hash.as_deref() {
-        Some(hash) => format!("-jp-master-{}", &hash[..12]),
-        None => {
-            let hash = generators::planner::jp_master_reward_catalog_version_hash();
-            format!("-jp-catalog-{}", &hash[..12])
-        }
-    };
-    let version = sanitize_version(&format!(
-        "{}-timeline-{}-jp-{}-courses-{}-planner-{}-geometry-{}{}-master-{}",
-        marker,
-        &confirmed_dates_hash[..12],
-        &jp_events_hash[..12],
-        &course_hash[..12],
-        &planner_hash[..12],
-        &geometry_hash[..12],
-        jp_reward_source_version,
-        &master_sha256[..12],
-    ));
+    let version = global_version(master_path, &marker, &master_sha256)?;
     // Read before this export replaces it, so the release history can diff against its master.
     let previous_manifest = read_manifest(out_dir).ok();
     let version_dir = out_dir.join(&version);
@@ -141,7 +180,12 @@ pub fn generate_resources(
         writeAtomic(&compressed_master, &gzip(&master_bytes)?)?;
     }
 
-    let generated = generators::generate_all(&connection, jp_connection.as_ref(), &marker)?;
+    let generated = generators::generate_all(
+        &connection,
+        jp_connection.as_ref(),
+        jp_names_connection.as_ref(),
+        &marker,
+    )?;
     let artifacts = write_outputs(
         generated.public,
         &version_dir,
@@ -315,7 +359,8 @@ pub fn jp_resources_version(jp_master_path: &Path, global_master_path: &Path) ->
     jp_set_version(&marker, &master_sha256, global_master_path)
 }
 
-/// Release flags come from the Global master, so a Global update changes the JP set too.
+/// Release flags and English names come from the Global master and the bundled names, so an
+/// update to either changes the JP set too.
 fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) -> Result<String> {
     let global_sha256 = sha256_hex(&fs::read(global_master_path).with_context(|| {
         format!(
@@ -323,11 +368,15 @@ fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) 
             global_master_path.display()
         )
     })?);
+    let mut names = Sha256::new();
+    crate::jp_names::hashBundled(&mut names);
+    let names_sha256 = hex::encode(names.finalize());
     Ok(sanitize_version(&format!(
-        "{}-master-{}-global-{}",
+        "{}-master-{}-global-{}-names-{}",
         marker,
         &master_sha256[..12],
         &global_sha256[..12],
+        &names_sha256[..12],
     )))
 }
 

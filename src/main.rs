@@ -14,6 +14,7 @@ mod game_cdn;
 mod generators;
 mod global_news;
 mod global_social;
+mod jp_names;
 mod master_fetch;
 mod master_history;
 mod pipeline;
@@ -196,6 +197,15 @@ enum Command {
         oembed_endpoint: String,
         #[arg(long, default_value = "src/global_data/official_social_archive.json")]
         out: PathBuf,
+    },
+    /// Refresh both masters and translate the names only JP has released with Claude into the
+    /// bundled translations (needs ANTHROPIC_API_KEY).
+    TranslateNames {
+        /// The Global master; the JP one is kept beside it as `jp-<name>`.
+        #[arg(long, default_value = "master.mdb")]
+        master: PathBuf,
+        #[arg(long, default_value = "src/jp_data")]
+        out_dir: PathBuf,
     },
 }
 
@@ -494,6 +504,12 @@ async fn main() -> Result<()> {
                 warn!(error, "umapyoi source could not be fully synchronized");
             }
         }
+        Command::TranslateNames { master, out_dir } => {
+            let jp_master = master_fetch::jpMasterPath(&master);
+            master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
+            master_fetch::maybeUpdateMasterMdb(&JP_CDN, &jp_master).await?;
+            jp_names::translateNames(&master, &jp_master, &out_dir).await?;
+        }
         Command::SyncGlobalNews { endpoint, out } => {
             let summary = global_news::sync(&endpoint, &out).await?;
             let audit = generators::planner::audit_global_news_reward_archive(&out)?;
@@ -674,12 +690,13 @@ async fn refreshFromGameVersion(
     purge: bool,
 ) -> Result<bool> {
     let master_updated = master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, master).await?;
-    let master_hash = hex::encode(Sha256::digest(std::fs::read(master)?));
+    // The version covers everything the set reads, including the JP master the JP refresh keeps.
+    let version = pipeline::resources_version(master)?;
     let resources_match = pipeline::read_manifest(out).is_ok_and(|manifest| {
         let served_from_global_path = manifest
             .base_path
             .starts_with(&format!("{}/", pipeline::GLOBAL_RESOURCE_PATH));
-        manifest.master.sha256 == master_hash && served_from_global_path
+        manifest.version == version && served_from_global_path
     });
     if !master_updated && resources_match {
         return Ok(false);
@@ -760,13 +777,14 @@ fn spawnRefreshLoop(args: ServeArgs) {
         loop {
             interval.tick().await;
 
+            // JP first: the Global set reads the JP master, so it picks up a new one at once.
+            if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
+                warn!(error = format!("{error:#}"), "automatic JP refresh failed");
+            }
             if let Err(error) =
                 refreshFromGameVersion(&master, &data_dir, write_json, purge_on_refresh).await
             {
                 warn!(error = %error, "automatic master refresh failed");
-            }
-            if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
-                warn!(error = format!("{error:#}"), "automatic JP refresh failed");
             }
         }
     });

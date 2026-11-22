@@ -129,7 +129,7 @@ jobs:
         run: |
           set -euo pipefail
           # The files sync-umapyoi.yml commits.
-          data_paths='^(src/jp_data/umapyoi_archive\.json|src/global_data/official_(news|social)_archive\.json)$'
+          data_paths='^(src/jp_data/(umapyoi_archive|name_translations)\.json|src/global_data/official_(news|social)_archive\.json)$'
 
           # Newest successful deployment to an environment, as "created_at sha".
           latest_success() {
