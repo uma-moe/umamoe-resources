@@ -135,6 +135,7 @@ pub struct BannerNews {
 impl BannerNews {
     /// The news archives this server last loaded from the store.
     pub fn stored() -> Result<Self> {
+        store::requireLoaded()?;
         let japanese: JapaneseArchive =
             serde_json::from_slice(&store::bytes(StoreFile::UmapyoiArchive))
                 .context("the Umapyoi archive is not valid JSON")?;

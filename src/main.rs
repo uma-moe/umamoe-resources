@@ -169,7 +169,7 @@ enum Command {
     SyncUmapyoi {
         #[arg(long, default_value = umapyoi::BASE_URL)]
         base_url: String,
-        #[arg(long, default_value = "src/jp_data/umapyoi_archive.json")]
+        #[arg(long, default_value = "generated-data/store/umapyoi_archive.json")]
         out: PathBuf,
         /// Minimum delay between requests. The default stays below the 7,200/hour limit.
         #[arg(long, default_value_t = 550, value_parser = clap::value_parser!(u64).range(500..))]
@@ -185,7 +185,10 @@ enum Command {
     SyncGlobalNews {
         #[arg(long, default_value = global_news::ENDPOINT)]
         endpoint: String,
-        #[arg(long, default_value = "src/global_data/official_news_archive.json")]
+        #[arg(
+            long,
+            default_value = "generated-data/store/official_news_archive.json"
+        )]
         out: PathBuf,
     },
     /// Archive official English X posts for Global planner rewards.
@@ -198,7 +201,10 @@ enum Command {
         archive_index_endpoint: String,
         #[arg(long, default_value = global_social::OEMBED_ENDPOINT)]
         oembed_endpoint: String,
-        #[arg(long, default_value = "src/global_data/official_social_archive.json")]
+        #[arg(
+            long,
+            default_value = "generated-data/store/official_social_archive.json"
+        )]
         out: PathBuf,
     },
     /// Refresh both masters and translate the names only JP has released with Claude (needs
@@ -653,20 +659,36 @@ async fn serve(args: ServeArgs) -> Result<()> {
     let store_bucket = store::bucketFromEnv();
     store::open(&store_dir, store_bucket.as_ref(), args.publish_game_art).await;
 
-    let refreshed_before_serve = refreshFromGameVersion(
-        &args.master,
-        &args.data_dir,
-        args.write_json,
-        args.purge_on_refresh,
-    )
-    .await?;
+    let startup = async {
+        let refreshed_before_serve = refreshFromGameVersion(
+            &args.master,
+            &args.data_dir,
+            args.write_json,
+            args.purge_on_refresh,
+        )
+        .await?;
 
-    if !args.no_generate && !refreshed_before_serve {
-        let manifest = pipeline::generate_resources(&args.master, &args.data_dir, args.write_json)?;
-        info!(
-            version = manifest.version,
-            artifacts = manifest.artifacts.len(),
-            "generated resources before serving"
+        if !args.no_generate && !refreshed_before_serve {
+            let manifest =
+                pipeline::generate_resources(&args.master, &args.data_dir, args.write_json)?;
+            info!(
+                version = manifest.version,
+                artifacts = manifest.artifacts.len(),
+                "generated resources before serving"
+            );
+        }
+        anyhow::Ok(())
+    }
+    .await;
+    // A server that already has resources serves them while the refresh loop retries, so a store
+    // that is unavailable for a while does not keep it restarting.
+    if let Err(error) = startup {
+        if pipeline::read_manifest(&args.data_dir).is_err() {
+            return Err(error);
+        }
+        warn!(
+            error = format!("{error:#}"),
+            "startup generation failed; serving the existing resources until a refresh succeeds"
         );
     }
 
