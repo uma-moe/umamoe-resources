@@ -1,9 +1,9 @@
 //! The publisher's side of the store: collects each collected file from its source, then makes
 //! it what this server generates from and uploads it for the others. Provided files it takes
-//! from the bucket like every other server.
+//! from the bucket on every refresh check, like every other server.
 
 use super::types::{StoreFile, TRANSLATION_RETRY, UMAPYOI_REQUEST_INTERVAL_MS};
-use super::{ensureLocal, install, localPath, pullProvided, push};
+use super::{ensureLocal, install, localPath, push};
 use crate::assets::Bucket;
 use crate::generators::planner::GlobalNewsRewardAudit;
 use crate::{global_news, global_social, jp_names, master_fetch, umapyoi};
@@ -22,7 +22,7 @@ struct TranslationRun {
 /// A master file's modification time and size: enough to tell that a refresh replaced it.
 type MasterMark = Option<(SystemTime, u64)>;
 
-/// Synchronizes every store file at start and then on every interval. A source that fails is
+/// Synchronizes every collected file at start and then on every interval. A source that fails is
 /// tried again on the next round; the other files do not wait for it.
 pub fn spawnSyncLoop(dir: PathBuf, bucket: Option<Bucket>, master: PathBuf, interval_seconds: u64) {
     if bucket.is_none() {
@@ -41,7 +41,7 @@ pub fn spawnSyncLoop(dir: PathBuf, bucket: Option<Bucket>, master: PathBuf, inte
 
         loop {
             interval.tick().await;
-            for file in StoreFile::ALL {
+            for file in StoreFile::ALL.into_iter().filter(|file| !file.isProvided()) {
                 let synced = syncFile(
                     file,
                     &dir,
@@ -71,9 +71,6 @@ async fn syncFile(
     master: &Path,
     translation: &mut TranslationRun,
 ) -> Result<()> {
-    if file.isProvided() {
-        return syncProvided(file, dir, bucket, client).await;
-    }
     ensureLocal(bucket, client, dir, file).await?;
     let path = localPath(dir, file);
     let collected = match file {
@@ -81,7 +78,7 @@ async fn syncFile(
         StoreFile::GlobalNewsArchive => collectGlobalNews(&path).await,
         StoreFile::GlobalSocialArchive => collectGlobalSocial(&path).await,
         StoreFile::NameTranslations => translation.run(master, &path).await,
-        // Provided files returned above.
+        // Provided files are not synchronized here.
         _ => Ok(()),
     };
 
@@ -95,27 +92,6 @@ async fn syncFile(
         }
     }
     collected
-}
-
-/// Takes the bucket's copy of a provided file. Without a bucket, this server's own copy is what
-/// generation reads.
-async fn syncProvided(
-    file: StoreFile,
-    dir: &Path,
-    bucket: Option<&Bucket>,
-    client: &reqwest::Client,
-) -> Result<()> {
-    let changed = match bucket {
-        Some(bucket) => pullProvided(bucket, client, dir, file).await?,
-        None => {
-            ensureLocal(None, client, dir, file).await?;
-            install(dir, file)?
-        }
-    };
-    if changed {
-        info!(?file, "store file updated");
-    }
-    Ok(())
 }
 
 async fn collectUmapyoi(path: &Path) -> Result<()> {

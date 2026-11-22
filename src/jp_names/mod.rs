@@ -27,8 +27,6 @@ use types::{
     TRANSLATION_MODEL,
 };
 
-const BUNDLED_OVERRIDES: &[u8] = include_bytes!("../jp_data/name_overrides.json");
-
 /// Uma names first, so titles can name their character in English.
 const KINDS: [NameKind; 3] = [
     NameKind::UmaName,
@@ -40,7 +38,7 @@ const KINDS: [NameKind; 3] = [
 /// a new name regenerates the resources.
 pub fn hashNames(digest: &mut Sha256) {
     digest.update(crate::store::bytes(StoreFile::NameTranslations));
-    digest.update(BUNDLED_OVERRIDES);
+    digest.update(crate::store::bytes(StoreFile::NameOverrides));
     digest.update(crate::store::bytes(StoreFile::CharacterNames));
     digest.update(crate::store::bytes(StoreFile::SupportCardsDb));
 }
@@ -72,8 +70,7 @@ pub fn gachasAfter(gachas: &[JpGacha], known: &BTreeSet<i64>) -> Vec<JpGacha> {
 
 pub fn bundledNames() -> Result<NameLoc> {
     let translations = parseTranslations(&crate::store::bytes(StoreFile::NameTranslations))?;
-    let overrides: NameOverrides = serde_json::from_slice(BUNDLED_OVERRIDES)
-        .context("failed to parse bundled name_overrides.json")?;
+    let overrides = parseOverrides(&crate::store::bytes(StoreFile::NameOverrides))?;
     Ok(NameLoc {
         translations: translations
             .names
@@ -96,6 +93,14 @@ fn parseTranslations(bytes: &[u8]) -> Result<NameTranslations> {
         return Ok(NameTranslations::default());
     }
     serde_json::from_slice(bytes).context("failed to parse name_translations.json")
+}
+
+/// The store's hand-written names. The file is optional: missing or empty, nothing is overridden.
+pub fn parseOverrides(bytes: &[u8]) -> Result<NameOverrides> {
+    if bytes.is_empty() {
+        return Ok(NameOverrides::default());
+    }
+    serde_json::from_slice(bytes).context("failed to parse name_overrides.json")
 }
 
 impl NameLoc {
@@ -137,8 +142,7 @@ pub async fn translateNames(
     let jp = openMaster(jp_master)?;
     let global = openMaster(global_master)?;
     let previous: NameTranslations = readJson(translations_path)?;
-    let overrides: NameOverrides = serde_json::from_slice(BUNDLED_OVERRIDES)
-        .context("failed to parse bundled name_overrides.json")?;
+    let overrides = parseOverrides(&crate::store::bytes(StoreFile::NameOverrides))?;
     let official = master::readAllNames(&global)?;
     let japanese = master::readAllNames(&jp)?;
     let card_characters = master::readCardCharacters(&jp)?;
@@ -357,6 +361,14 @@ mod tests {
     fn missingTranslationsReadAsNone() {
         assert!(parseTranslations(b"").unwrap().names.is_empty());
         assert!(parseTranslations(b"{").is_err());
+    }
+
+    #[test]
+    fn missingOverridesReadAsNone() {
+        assert!(parseOverrides(b"").unwrap().is_empty());
+        let overrides = parseOverrides(br#"{"support_title":{"30001":"Title"}}"#).unwrap();
+        assert_eq!(overrides[&NameKind::SupportTitle][&30001], "Title");
+        assert!(parseOverrides(b"{").is_err());
     }
 
     fn gacha(gacha_id: i64, pickup_card_ids: Vec<i64>) -> JpGacha {

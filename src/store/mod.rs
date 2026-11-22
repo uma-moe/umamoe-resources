@@ -28,7 +28,7 @@ use types::{BUCKET_FOLDER, CACHE_CONTROL};
 static LOADED: RwLock<BTreeMap<StoreFile, Arc<[u8]>>> = RwLock::new(BTreeMap::new());
 
 impl StoreFile {
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::UmapyoiArchive,
         Self::GlobalNewsArchive,
         Self::GlobalSocialArchive,
@@ -51,6 +51,7 @@ impl StoreFile {
         Self::CourseEventParamsJp,
         Self::CourseEventParamsGlobal,
         Self::RaceParamsGlobal,
+        Self::NameOverrides,
     ];
 
     /// The file's name in the bucket and in a server's copy.
@@ -78,6 +79,7 @@ impl StoreFile {
             Self::CourseEventParamsJp => "course_event_params_jp.json",
             Self::CourseEventParamsGlobal => "course_event_params_global.json",
             Self::RaceParamsGlobal => "race_params_global.json",
+            Self::NameOverrides => "name_overrides.json",
         }
     }
 
@@ -99,10 +101,13 @@ impl StoreFile {
     }
 
     /// Whether nothing can be generated without the file. Only tests read the race parameters,
-    /// and the name translations exist only once something was translated: a publisher without
-    /// the Anthropic key never writes them.
+    /// the name translations exist only once something was translated (a publisher without the
+    /// Anthropic key never writes them), and without name overrides nothing is overridden.
     fn isRequired(self) -> bool {
-        !matches!(self, Self::RaceParamsGlobal | Self::NameTranslations)
+        !matches!(
+            self,
+            Self::RaceParamsGlobal | Self::NameTranslations | Self::NameOverrides
+        )
     }
 
     /// Gzipped files are stored as they are.
@@ -197,12 +202,16 @@ pub async fn open(dir: &Path, bucket: Option<&Bucket>, publishes: bool) {
     }
 }
 
-/// Fetches every file the bucket holds a different version of than this server. Returns whether
-/// what generation reads changed.
-pub async fn pull(bucket: &Bucket, dir: &Path) -> Result<bool> {
+/// Fetches every file the bucket holds a different version of than this server: every file for
+/// a reader, and for the publisher the provided files, as its own copy of a collected file is the
+/// source of truth. Returns whether what generation reads changed.
+pub async fn pull(bucket: &Bucket, dir: &Path, publishes: bool) -> Result<bool> {
     let client = reqwest::Client::new();
     let mut changed = false;
     for file in StoreFile::ALL {
+        if publishes && !file.isProvided() {
+            continue;
+        }
         changed |= pullFile(bucket, &client, dir, file).await?;
     }
     Ok(changed)
@@ -247,8 +256,8 @@ async fn fetchFile(
     Ok(true)
 }
 
-/// Takes the bucket's copy of a provided file. A bucket that holds none is an error: only a
-/// maintainer provides the file.
+/// Takes the bucket's copy of a provided file. A bucket that holds none of a required file is an
+/// error: only a maintainer provides the file.
 async fn pullProvided(
     bucket: &Bucket,
     client: &reqwest::Client,
@@ -256,6 +265,9 @@ async fn pullProvided(
     file: StoreFile,
 ) -> Result<bool> {
     if bucket.objectEtag(client, file.fileName()).await?.is_none() {
+        if !file.isRequired() {
+            return Ok(false);
+        }
         bail!(
             "the store's bucket has no {name}; a maintainer uploads it with `store put {name} <path>`",
             name = file.fileName()
@@ -301,8 +313,8 @@ async fn push(
 
 /// Gives the publisher the bucket's copy of the file to continue from when it has none. A
 /// collected file the bucket holds none of starts from nothing, and its sync builds it; a
-/// provided one is an error, as only a maintainer provides it. A bucket that cannot be asked is
-/// an error, so a sync never restarts from nothing and overwrites newer data.
+/// required provided one is an error, as only a maintainer provides it. A bucket that cannot be
+/// asked is an error, so a sync never restarts from nothing and overwrites newer data.
 async fn ensureLocal(
     bucket: Option<&Bucket>,
     client: &reqwest::Client,
@@ -319,7 +331,7 @@ async fn ensureLocal(
     };
     match stored {
         Some(bytes) => writeLocal(&path, &bytes),
-        None if file.isProvided() => bail!(
+        None if file.isProvided() && file.isRequired() => bail!(
             "neither this server nor the store's bucket has {name}; a maintainer uploads it with `store put {name} <path>`",
             name = file.fileName()
         ),
@@ -358,21 +370,29 @@ fn testCopyDir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join(types::TEST_COPY_DIR)
 }
 
-/// Whether the repository holds a complete local store copy for the tests that read it.
+/// The files the repository's local store copy lacks for the tests that read it. The name
+/// overrides may be absent, as anywhere: none means no overrides.
 #[cfg(test)]
-pub fn hasTestCopy() -> bool {
+pub fn missingTestFiles() -> Vec<&'static str> {
     let dir = testCopyDir();
     StoreFile::ALL
         .into_iter()
-        .all(|file| localPath(&dir, file).is_file())
+        .filter(|file| *file != StoreFile::NameOverrides && !localPath(&dir, *file).is_file())
+        .map(StoreFile::fileName)
+        .collect()
 }
 
-/// Returns from a test that reads store data when the repository has no local store copy.
+/// Returns from a test that reads store data when the repository's local store copy is
+/// incomplete, naming the files it lacks.
 #[cfg(test)]
 macro_rules! requireStoreData {
     () => {
-        if !crate::store::hasTestCopy() {
-            println!("skipped: no local store copy (run `umamoe-resources store pull`)");
+        let missing = crate::store::missingTestFiles();
+        if !missing.is_empty() {
+            println!(
+                "skipped: the local store copy lacks {} (run `umamoe-resources store pull`)",
+                missing.join(", ")
+            );
             return;
         }
     };
@@ -414,7 +434,11 @@ mod tests {
     fn everyFileOfTheLocalCopyParses() {
         requireStoreData!();
         for file in StoreFile::ALL {
-            commands::checkParses(file, &bytes(file))
+            let bytes = bytes(file);
+            if bytes.is_empty() && !file.isRequired() {
+                continue;
+            }
+            commands::checkParses(file, &bytes)
                 .unwrap_or_else(|error| panic!("{file:?}: {error:#}"));
         }
     }
@@ -447,5 +471,11 @@ mod tests {
             .unwrap_err();
         assert!(format!("{error:#}").contains("store put timeline_campaigns.json"));
         assert!(!dir.join("timeline_campaigns.json").exists());
+
+        // Nobody having the optional name overrides means there are none.
+        ensureLocal(None, &client, &dir, StoreFile::NameOverrides)
+            .await
+            .unwrap();
+        assert!(!dir.join("name_overrides.json").exists());
     }
 }

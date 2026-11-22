@@ -69,6 +69,12 @@ fn providedFile(name: &str) -> Result<StoreFile> {
 /// Refuses bytes that are not JSON, or for a `.json.gz` file not gzipped JSON.
 pub(super) fn checkParses(file: StoreFile, bytes: &[u8]) -> Result<()> {
     let name = file.fileName();
+    if file == StoreFile::NameOverrides {
+        return crate::jp_names::parseOverrides(bytes)
+            .map(|_| ())
+            .with_context(|| format!("{name} must hold names by kind and id"));
+    }
+
     let mut unpacked = Vec::new();
     let json = match name.ends_with(".gz") {
         true => {
@@ -105,5 +111,14 @@ mod tests {
         assert!(checkParses(gzipped, &crate::pipeline::gzip(b"{}").unwrap()).is_ok());
         assert!(checkParses(gzipped, b"{}").is_err());
         assert!(checkParses(gzipped, &crate::pipeline::gzip(b"{").unwrap()).is_err());
+    }
+
+    #[test]
+    fn putChecksTheNameOverridesShape() {
+        let overrides = StoreFile::NameOverrides;
+        assert!(checkParses(overrides, b"{}").is_ok());
+        assert!(checkParses(overrides, br#"{"uma_name":{"1001":"Special Week"}}"#).is_ok());
+        assert!(checkParses(overrides, br#"{"uma_name":["Special Week"]}"#).is_err());
+        assert!(checkParses(overrides, b"[]").is_err());
     }
 }

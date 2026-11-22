@@ -4,7 +4,6 @@
 mod bucket;
 mod bucket_contents;
 mod game_art;
-mod site_seed;
 mod timeline_art;
 #[path = "../types/assets.rs"]
 mod types;
@@ -15,7 +14,6 @@ pub use bucket_contents::{bucketInventory, clearBucket, moveRootTree};
 pub use game_art::{
     buildGameArtSample, previewGameArtDirectory, publishGameArt, GameArtOptions, GameArtSource,
 };
-pub use site_seed::publishSiteSeed;
 use std::path::{Path, PathBuf};
 pub use timeline_art::{
     buildTimelineArtSample, compareTimelineArtWithFrontend, currentTimelinePath,

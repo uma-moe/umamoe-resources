@@ -44,6 +44,8 @@ pub enum StoreFile {
     /// The decoded Global race parameter asset. Only tests read it, to check the simulator's
     /// constants against the game's.
     RaceParamsGlobal,
+    /// Hand-written English names that replace a translation. Optional: none means no overrides.
+    NameOverrides,
 }
 
 /// A store file's content as this server last loaded it; empty while it has loaded none.

@@ -112,20 +112,16 @@ pub fn resources_version(master_path: &Path) -> Result<String> {
     Ok(version)
 }
 
-/// The Global version and the hashes of everything it is generated from: the master, the
-/// confirmed dates, the JP data the timeline reads (the news archive, the timeline's store files
-/// and the JP master the server keeps), the course, planner and geometry data, and the planner's
-/// JP rewards.
+/// The Global version and the hashes of everything it is generated from: the master, the JP data
+/// the timeline reads (the news archive, the timeline's store files and the JP master the server
+/// keeps), the course, planner and geometry data, and the planner's JP rewards.
 fn global_version(
     master_path: &Path,
     marker: &str,
     master_sha256: &str,
 ) -> Result<(String, BTreeMap<String, String>)> {
     let mut inputs = BTreeMap::new();
-    inputs.insert(
-        "timeline".to_string(),
-        generators::timeline::confirmed_dates_version_hash()?,
-    );
+    inputs.insert("timeline".to_string(), generators::timeline::version_hash());
     inputs.insert(
         "jp_events".to_string(),
         generators::jp_events::version_hash(),
