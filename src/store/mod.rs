@@ -84,14 +84,27 @@ pub fn bytes(file: StoreFile) -> StoreBytes {
     }
 }
 
-/// The bucket the store lives in, when this server has the asset bucket's credentials: that
-/// bucket's `store/` folder, or the bucket STORE_S3_BUCKET names.
+/// The bucket the store lives in, when this server has the asset bucket's credentials: the
+/// `store/` folder of the bucket STORE_S3_BUCKET names, or of the asset bucket. It is reached with
+/// the asset key unless STORE_S3_ACCESS_KEY_ID and STORE_S3_SECRET_ACCESS_KEY name a key of its
+/// own; the endpoint is always the asset bucket's.
 pub fn bucketFromEnv() -> Option<Bucket> {
     let assets = Bucket::fromEnv().ok()?;
     let own_bucket = std::env::var("STORE_S3_BUCKET").unwrap_or_default();
-    Some(match own_bucket.trim() {
+    let bucket = match own_bucket.trim() {
         "" => assets.inFolder(BUCKET_FOLDER),
-        name => assets.named(name),
+        name => assets.named(name).inFolder(BUCKET_FOLDER),
+    };
+
+    let access_key = std::env::var("STORE_S3_ACCESS_KEY_ID").unwrap_or_default();
+    let secret_key = std::env::var("STORE_S3_SECRET_ACCESS_KEY").unwrap_or_default();
+    Some(match (access_key.trim(), secret_key.trim()) {
+        ("", "") => bucket,
+        ("", _) | (_, "") => {
+            warn!("the store's own key needs both STORE_S3_ACCESS_KEY_ID and STORE_S3_SECRET_ACCESS_KEY; using the asset key");
+            bucket
+        }
+        (access_key, secret_key) => bucket.withKey(access_key, secret_key),
     })
 }
 

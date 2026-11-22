@@ -25,8 +25,8 @@ pub enum StoreBytes {
     Bundled(&'static [u8]),
 }
 
-/// The folder of the asset bucket the store lives in, unless STORE_S3_BUCKET names a bucket of
-/// its own.
+/// The folder the store lives in, in the bucket STORE_S3_BUCKET names or else the asset bucket,
+/// so a bucket can hold other things beside it.
 pub(super) const BUCKET_FOLDER: &str = "store";
 
 /// The folder of the data directory that holds this server's copy.
