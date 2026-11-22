@@ -1,7 +1,7 @@
 //! JP's gachas and names, and the English names of what only JP has released. The resources
-//! read JP's gachas and names from the JP master each server keeps. The translation job asks
-//! Claude for English names and commits them to `src/jp_data`, so the servers never call the
-//! model.
+//! read JP's gachas and names from the JP master each server keeps. The publishing server asks
+//! Claude for English names and keeps them in the shared store, so every server names a card
+//! the same way.
 
 #![allow(non_snake_case)]
 
@@ -12,6 +12,7 @@ mod book;
 mod master;
 mod translate;
 
+use crate::store::StoreFile;
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
 use serde::{de::DeserializeOwned, Serialize};
@@ -23,12 +24,10 @@ use translate::{Translator, BATCH_SIZE};
 pub use types::{CardNames, JpGacha, NameBook, NameKind, NameLoc};
 use types::{
     MachineName, MasterNames, NameOverrides, NameTranslations, TranslationExample, TranslationItem,
-    TRANSLATIONS_FILE, TRANSLATION_MODEL,
+    TRANSLATION_MODEL,
 };
 
-const BUNDLED_TRANSLATIONS: &[u8] = include_bytes!("../jp_data/name_translations.json");
 const BUNDLED_OVERRIDES: &[u8] = include_bytes!("../jp_data/name_overrides.json");
-const OVERRIDES_FILE: &str = "name_overrides.json";
 
 /// Uma names first, so titles can name their character in English.
 const KINDS: [NameKind; 3] = [
@@ -37,10 +36,10 @@ const KINDS: [NameKind; 3] = [
     NameKind::SupportTitle,
 ];
 
-/// Feeds the bundled names into a resource version, so a new translation regenerates the
+/// Feeds the translations and overrides into a resource version, so a new name regenerates the
 /// resources.
-pub fn hashBundled(digest: &mut Sha256) {
-    digest.update(BUNDLED_TRANSLATIONS);
+pub fn hashNames(digest: &mut Sha256) {
+    digest.update(crate::store::bytes(StoreFile::NameTranslations));
     digest.update(BUNDLED_OVERRIDES);
 }
 
@@ -70,8 +69,9 @@ pub fn gachasAfter(gachas: &[JpGacha], known: &BTreeSet<i64>) -> Vec<JpGacha> {
 }
 
 pub fn bundledNames() -> Result<NameLoc> {
-    let translations: NameTranslations = serde_json::from_slice(BUNDLED_TRANSLATIONS)
-        .context("failed to parse bundled name_translations.json")?;
+    let translations: NameTranslations =
+        serde_json::from_slice(&crate::store::bytes(StoreFile::NameTranslations))
+            .context("failed to parse name_translations.json")?;
     let overrides: NameOverrides = serde_json::from_slice(BUNDLED_OVERRIDES)
         .context("failed to parse bundled name_overrides.json")?;
     Ok(NameLoc {
@@ -109,17 +109,27 @@ impl NameLoc {
     }
 }
 
-/// Translates the names only JP has released that `out_dir` has no current translation or
-/// override for, and writes the translations back.
-pub async fn translateNames(global_master: &Path, jp_master: &Path, out_dir: &Path) -> Result<()> {
-    let api_key = std::env::var("ANTHROPIC_API_KEY")
+/// The Anthropic key names are translated with, when this server has one. An empty value counts
+/// as none.
+pub fn translationKey() -> Option<String> {
+    std::env::var("ANTHROPIC_API_KEY")
         .ok()
         .filter(|key| !key.trim().is_empty())
-        .context("ANTHROPIC_API_KEY is not set")?;
+}
+
+/// Translates the names only JP has released that the translations at `translations_path` do
+/// not cover and no override names, and writes the translations back.
+pub async fn translateNames(
+    global_master: &Path,
+    jp_master: &Path,
+    translations_path: &Path,
+) -> Result<()> {
+    let api_key = translationKey().context("ANTHROPIC_API_KEY is not set")?;
     let jp = openMaster(jp_master)?;
     let global = openMaster(global_master)?;
-    let previous: NameTranslations = readJson(&out_dir.join(TRANSLATIONS_FILE))?;
-    let overrides: NameOverrides = readJson(&out_dir.join(OVERRIDES_FILE))?;
+    let previous: NameTranslations = readJson(translations_path)?;
+    let overrides: NameOverrides = serde_json::from_slice(BUNDLED_OVERRIDES)
+        .context("failed to parse bundled name_overrides.json")?;
     let official = master::readAllNames(&global)?;
     let japanese = master::readAllNames(&jp)?;
     let card_characters = master::readCardCharacters(&jp)?;
@@ -132,7 +142,7 @@ pub async fn translateNames(global_master: &Path, jp_master: &Path, out_dir: &Pa
         api_key,
     )
     .await?;
-    writeJson(&out_dir.join(TRANSLATIONS_FILE), &translations)
+    writeJson(translations_path, &translations)
 }
 
 /// `official` holds Global's names and `japanese` JP's.

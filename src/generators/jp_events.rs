@@ -4,7 +4,6 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
 const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
 const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
 const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
@@ -78,8 +77,12 @@ pub struct AdditionalGachaBanner {
     pub is_scenario: bool,
 }
 
+fn umapyoi_archive() -> crate::store::StoreBytes {
+    crate::store::bytes(crate::store::StoreFile::UmapyoiArchive)
+}
+
 pub fn generate() -> Result<Value> {
-    let mut archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let mut archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let known_ids = curated_timeline_gacha_ids()?;
     let candidates = additional_gacha_banners(&archive, &known_ids)?;
@@ -91,7 +94,7 @@ pub fn generate() -> Result<Value> {
 }
 
 pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut posts = archive
         .get("news")
@@ -156,7 +159,7 @@ pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
 }
 
 pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut campaigns = archive
         .get("news")
@@ -188,7 +191,7 @@ pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
 }
 
 pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut races = archive
         .get("news")
@@ -221,7 +224,7 @@ pub fn additional_gacha_banner_events(
 }
 
 fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<AdditionalGachaBanner>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let candidates = additional_gacha_banners(&archive, known_ids)?;
     Ok(candidates
@@ -281,10 +284,10 @@ fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<Additional
 
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
-    digest.update(UMAPYOI_ARCHIVE);
+    digest.update(umapyoi_archive());
     digest.update(include_bytes!("../jp_data/planner_gacha_rates.json"));
     digest.update([ALGORITHM_VERSION]);
-    crate::jp_names::hashBundled(&mut digest);
+    crate::jp_names::hashNames(&mut digest);
     hex::encode(digest.finalize())
 }
 

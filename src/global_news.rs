@@ -9,6 +9,9 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// The umapyoi feed of official English news.
+pub const ENDPOINT: &str = "https://umapyoi.net/api/v1/news/en";
+
 const ARCHIVE_VERSION: u8 = 1;
 const PAGE_SIZE: usize = 32;
 const MAX_PAGES: usize = 100;

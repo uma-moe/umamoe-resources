@@ -246,6 +246,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          R2_CICD_ACCESS_KEY_ID: ${{ secrets.R2_CICD_ACCESS_KEY_ID }}
+          R2_CICD_SECRET_ACCESS_KEY: ${{ secrets.R2_CICD_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
         run: |
           set -euo pipefail
@@ -308,11 +312,51 @@ jobs:
             env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
-          # One server writes game art, so two never race on the bucket's record of it.
+          # Every server reads the shared store: the store/ folder of this bucket, or of the asset bucket when unset.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # The token the store is reached with; unset, the asset token.
+          if [ -n "$R2_CICD_ACCESS_KEY_ID" ] || [ -n "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+            if [ -z "$R2_CICD_ACCESS_KEY_ID" ] || [ -z "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+              echo "Set both R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY, or neither." >&2
+              exit 1
+            fi
+            if [[ "$R2_CICD_ACCESS_KEY_ID$R2_CICD_SECRET_ACCESS_KEY" =~ [[:space:]] ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_CICD_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_CICD_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_CICD_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_ACCESS_KEY_ID=$R2_CICD_ACCESS_KEY_ID"
+            env_contents+=$'\n'"STORE_S3_SECRET_ACCESS_KEY=$R2_CICD_SECRET_ACCESS_KEY"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
             if [ -n "$GAME_ART_CONVERTERS" ]; then
               env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
             fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
@@ -549,6 +593,10 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          R2_CICD_ACCESS_KEY_ID: ${{ secrets.R2_CICD_ACCESS_KEY_ID }}
+          R2_CICD_SECRET_ACCESS_KEY: ${{ secrets.R2_CICD_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
         run: |
           set -euo pipefail
@@ -611,11 +659,51 @@ jobs:
             env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
-          # One server writes game art, so two never race on the bucket's record of it.
+          # Every server reads the shared store: the store/ folder of this bucket, or of the asset bucket when unset.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # The token the store is reached with; unset, the asset token.
+          if [ -n "$R2_CICD_ACCESS_KEY_ID" ] || [ -n "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+            if [ -z "$R2_CICD_ACCESS_KEY_ID" ] || [ -z "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+              echo "Set both R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY, or neither." >&2
+              exit 1
+            fi
+            if [[ "$R2_CICD_ACCESS_KEY_ID$R2_CICD_SECRET_ACCESS_KEY" =~ [[:space:]] ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_CICD_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_CICD_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_CICD_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_ACCESS_KEY_ID=$R2_CICD_ACCESS_KEY_ID"
+            env_contents+=$'\n'"STORE_S3_SECRET_ACCESS_KEY=$R2_CICD_SECRET_ACCESS_KEY"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
             if [ -n "$GAME_ART_CONVERTERS" ]; then
               env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
             fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
