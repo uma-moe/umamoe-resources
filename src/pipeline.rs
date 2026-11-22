@@ -590,6 +590,7 @@ mod tests {
     /// from.
     #[test]
     fn jp_set_is_written_apart_with_its_own_manifest() {
+        crate::store::requireStoreData!();
         use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
 
         let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");

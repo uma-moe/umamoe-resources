@@ -5516,6 +5516,7 @@ mod tests {
 
     #[test]
     fn story_and_champions_ends_match_global_reset_days() {
+        crate::store::requireStoreData!();
         let no_adjustments = FamilyAdjustmentModels {
             models: BTreeMap::new(),
         };
@@ -5566,6 +5567,7 @@ mod tests {
 
     #[test]
     fn campaign_rows_accept_the_linked_news_post_id() {
+        crate::store::requireStoreData!();
         let mut campaigns = load_timeline_campaigns(&mission_connection()).unwrap();
         merge_campaign_news(&mut campaigns, &campaign_timeline_metadata().unwrap());
         let mut lookup = empty_confirmed_date_lookup();
@@ -5598,6 +5600,7 @@ mod tests {
 
     #[test]
     fn umapyoi_support_fallback_covers_new_jp_ids() {
+        crate::store::requireStoreData!();
         let character_names = BTreeMap::from([
             (1058, "Meisho Doto".to_string()),
             (9001, "Tazuna Hayakawa".to_string()),
@@ -5618,6 +5621,7 @@ mod tests {
 
     #[test]
     fn global_support_titles_come_from_the_title_category() {
+        crate::store::requireStoreData!();
         let connection = rusqlite::Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -5632,6 +5636,7 @@ mod tests {
 
     #[test]
     fn db_banner_confirmations_require_matching_pickup_ids() {
+        crate::store::requireStoreData!();
         let matching_character_date = utc_date(2025, 6, 26, 0);
         let matching_support_date = utc_date(2025, 6, 27, 0);
 
@@ -5676,6 +5681,7 @@ mod tests {
 
     #[test]
     fn bundled_timeline_image_references_emit_webp() {
+        crate::store::requireStoreData!();
         for banner in
             load_timeline_character_banners().expect("character timeline data should parse")
         {
@@ -5730,6 +5736,7 @@ mod tests {
 
     #[test]
     fn legend_race_news_adds_event_media_without_reusing_boss_portraits() {
+        crate::store::requireStoreData!();
         let mut races =
             load_timeline_legend_races(None).expect("legend timeline data should parse");
         let first_start = races[0].start_at;
@@ -5772,6 +5779,7 @@ mod tests {
 
     #[test]
     fn jp_master_extends_story_events_after_bundled_horizon() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().expect("in-memory database should open");
         connection
             .execute_batch(
@@ -5803,6 +5811,7 @@ mod tests {
 
     #[test]
     fn jp_master_extends_legend_races_after_bundled_horizon() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().expect("in-memory database should open");
         connection
             .execute_batch(
@@ -5907,6 +5916,7 @@ mod tests {
 
     #[test]
     fn bundled_legend_races_match_exact_live_news_days() {
+        crate::store::requireStoreData!();
         let mut races =
             load_timeline_legend_races(None).expect("legend timeline data should parse");
         let news = crate::generators::jp_events::legend_race_timeline_metadata()
@@ -5936,6 +5946,7 @@ mod tests {
 
     #[test]
     fn campaign_news_enriches_master_assets_and_adds_only_unmatched_posts() {
+        crate::store::requireStoreData!();
         let mut campaigns = load_timeline_campaigns(&mission_connection())
             .expect("campaign timeline data should load");
         let news = campaign_timeline_metadata().expect("campaign news should load");
@@ -6015,6 +6026,7 @@ mod tests {
 
     #[test]
     fn jp_only_external_collaborations_stay_out_until_en_news_exists() {
+        crate::store::requireStoreData!();
         let campaigns = campaign_timeline_metadata().expect("campaign news should load");
         let number = campaigns
             .iter()
@@ -6095,6 +6107,7 @@ mod tests {
 
     #[test]
     fn recurring_mission_contents_do_not_confirm_a_future_jp_edition() {
+        crate::store::requireStoreData!();
         let connection = mission_connection();
         connection
             .execute_batch(
@@ -6525,6 +6538,7 @@ mod tests {
 
     #[test]
     fn bundled_support_card_names_resolve_future_jp_cards() {
+        crate::store::requireStoreData!();
         let names =
             load_bundled_support_card_names().expect("bundled support card name data should parse");
 
@@ -6965,6 +6979,7 @@ mod tests {
 
     #[test]
     fn step_up_timeline_keeps_character_and_support_rounds_separate() {
+        crate::store::requireStoreData!();
         let banners = load_timeline_paid_banners()
             .unwrap()
             .into_iter()
@@ -6991,6 +7006,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn laterPaidBannersRetainCardPoolTitles() {
+        crate::store::requireStoreData!();
         let names = super::common::read_character_names().unwrap();
         let character_names = names
             .as_object()
@@ -7050,6 +7066,7 @@ mod tests {
 
     #[test]
     fn champions_news_and_artwork_belong_to_the_same_edition() {
+        crate::store::requireStoreData!();
         let mut past = test_timeline_event_with_type(
             "champions-meeting-11",
             BannerTimelineEventType::ChampionsMeeting,

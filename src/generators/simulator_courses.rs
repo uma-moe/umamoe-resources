@@ -1592,6 +1592,7 @@ mod tests {
 
     #[test]
     fn simulator_initialization_fields_match_global_source() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
             serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let parameters = SimulatorRaceParameters::current();
@@ -1657,6 +1658,7 @@ mod tests {
 
     #[test]
     fn compete_fight_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
             serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let compete_fight = &asset["CompeteFight"];
@@ -1694,6 +1696,7 @@ mod tests {
 
     #[test]
     fn base_motion_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
             serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
@@ -1759,6 +1762,7 @@ mod tests {
 
     #[test]
     fn acceleration_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
             serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
@@ -1856,6 +1860,7 @@ mod tests {
 
     #[test]
     fn global_course_event_override_replaces_jp_geometry() {
+        crate::store::requireStoreData!();
         let courses = load_course_event_params().unwrap();
         let geometry = courses.get(&10501).unwrap();
 
@@ -1871,6 +1876,7 @@ mod tests {
 
     #[test]
     fn emits_initial_lane_master_data() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -2449,6 +2455,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn exportsNewGlobalDirtCoursesWithGeometryAndOverrunLanes() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection
             .execute_batch(
@@ -2501,6 +2508,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn rejectsUnbundledMasterCoursesInsteadOfDroppingThem() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection.execute_batch("INSERT INTO race_course_set VALUES (99999, 10001, 2000, 1, 1, 1, 12000, 0, 1, 0, 2, 0, 0);").unwrap();
         assert!(generate(&connection, "test")
@@ -2512,6 +2520,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn excludesUnusedLongchampPlaceholdersButRejectsThemIfTheyBecomePlayable() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection
             .execute_batch(
