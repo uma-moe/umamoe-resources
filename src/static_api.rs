@@ -801,6 +801,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: file.into(),
                 path: format!("{route}/v1/{file}.gz"),
@@ -906,6 +907,7 @@ mod tests {
                 path: Some("/resources/simulator/test-v1/master.mdb.gz".into()),
                 bytes: Some(3),
             },
+            inputs: Default::default(),
             artifacts: vec![],
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
@@ -980,6 +982,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: "factors.json".into(),
                 path: "/resources/en/test-v1/factors.json.gz".into(),
@@ -1056,6 +1059,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: file.into(),
                 path: format!("{route}/{version}/{file}.gz"),
