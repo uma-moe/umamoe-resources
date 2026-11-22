@@ -1,5 +1,6 @@
 use crate::generators;
 use crate::master_history::{self, MasterSnapshot};
+use crate::resource_storage;
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -163,7 +164,11 @@ pub fn generate_resources(
         .with_context(|| format!("failed to create {}", version_dir.display()))?;
 
     // Generate against these exact bytes even if the live master is refreshed meanwhile.
-    let snapshot = version_dir.join("master.mdb");
+    let snapshot = resource_storage::masterFile(out_dir, &master_sha256, false);
+    if let Some(parent) = snapshot.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
     if !snapshot.exists() {
         writeAtomic(&snapshot, &master_bytes)?;
     } else {
@@ -173,7 +178,7 @@ pub fn generate_resources(
         );
     }
     let connection = Connection::open_with_flags(&snapshot, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-    let compressed_master = version_dir.join("master.mdb.gz");
+    let compressed_master = resource_storage::masterFile(out_dir, &master_sha256, true);
     if !compressed_master.exists() {
         writeAtomic(&compressed_master, &gzip(&master_bytes)?)?;
     }
@@ -186,6 +191,7 @@ pub fn generate_resources(
     )?;
     let artifacts = write_outputs(
         generated.public,
+        out_dir,
         &version_dir,
         &version,
         GLOBAL_RESOURCE_PATH,
@@ -235,6 +241,7 @@ pub fn generate_resources(
         .with_context(|| format!("failed to create {}", planner_version_dir.display()))?;
     let planner_artifacts = write_outputs(
         generated.planner,
+        out_dir,
         &planner_version_dir,
         &version,
         "/resources/planner",
@@ -316,6 +323,7 @@ pub fn generate_jp_resources(
         .with_context(|| format!("failed to create {}", version_dir.display()))?;
     let artifacts = write_outputs(
         outputs,
+        out_dir,
         &version_dir,
         &version,
         JP_RESOURCE_PATH,
@@ -376,8 +384,11 @@ fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) 
     )))
 }
 
+/// Stores each output in the data directory's blobs; only the opt-in plain JSON goes into the
+/// version folder.
 fn write_outputs(
     outputs: Vec<generators::ResourceOutput>,
+    data_dir: &Path,
     version_dir: &Path,
     version: &str,
     route_prefix: &str,
@@ -388,9 +399,7 @@ fn write_outputs(
         let json_bytes = serde_json::to_vec(&output.value)?;
         let json_sha256 = sha256_hex(&json_bytes);
         let gzip_bytes = gzip(&json_bytes)?;
-        let gzip_path = version_dir.join(format!("{}.gz", output.file_name));
-        writeAtomic(&gzip_path, &gzip_bytes)
-            .with_context(|| format!("failed to write {}", gzip_path.display()))?;
+        resource_storage::writeBlob(data_dir, &json_sha256, &gzip_bytes)?;
         if write_json {
             let json_path = version_dir.join(&output.file_name);
             writeAtomic(&json_path, &json_bytes)
@@ -419,8 +428,9 @@ fn recordMasterRelease(
     previous_manifest: Option<&ResourceManifest>,
     date: &str,
 ) {
-    let previous_path =
-        previous_manifest.map(|manifest| out_dir.join(&manifest.version).join("master.mdb"));
+    let previous_path = previous_manifest.map(|manifest| {
+        resource_storage::masterPath(out_dir, &manifest.version, &manifest.master.sha256, false)
+    });
     let previous = previous_manifest
         .zip(previous_path.as_deref())
         .map(|(manifest, path)| MasterSnapshot {
@@ -608,13 +618,15 @@ mod tests {
                 artifact.current_path,
                 format!("/resources/jp/current/{}.gz", artifact.name)
             );
-            assert!(jp_dir
-                .join(&manifest.version)
-                .join(format!("{}.gz", artifact.name))
-                .is_file());
+            assert!(crate::resource_storage::blobFile(&out, &artifact.sha256).is_file());
         }
 
-        let gzipped = std::fs::read(jp_dir.join(&manifest.version).join("character.json.gz"));
+        let character = manifest
+            .artifacts
+            .iter()
+            .find(|artifact| artifact.name == "character.json")
+            .unwrap();
+        let gzipped = std::fs::read(crate::resource_storage::blobFile(&out, &character.sha256));
         let mut json = Vec::new();
         std::io::Read::read_to_end(
             &mut flate2::read::GzDecoder::new(gzipped.unwrap().as_slice()),
@@ -628,6 +640,46 @@ mod tests {
             .iter()
             .all(|card| card["isReleased_jp"] == true && card["isReleased_en"] == true));
 
+        std::fs::remove_dir_all(&out).unwrap();
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn versionsSharingAnArtifactStoreItOnce() {
+        use super::write_outputs;
+        use crate::generators::ResourceOutput;
+
+        let out = std::env::temp_dir().join(format!("shared-blobs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&out);
+        let outputs = |skills: i32| {
+            vec![
+                ResourceOutput {
+                    file_name: "factors.json".into(),
+                    value: serde_json::json!([1, 2, 3]),
+                },
+                ResourceOutput {
+                    file_name: "skills.json".into(),
+                    value: serde_json::json!([skills]),
+                },
+            ]
+        };
+
+        let mut versions = Vec::new();
+        for (version, skills) in [("v1", 1), ("v2", 2)] {
+            let version_dir = out.join(version);
+            std::fs::create_dir_all(&version_dir).unwrap();
+            versions.push(
+                write_outputs(outputs(skills), &out, &version_dir, version, "/r", false).unwrap(),
+            );
+        }
+
+        assert_eq!(versions[0][0].sha256, versions[1][0].sha256);
+        assert_eq!(versions[1][0].path, "/r/v2/factors.json.gz");
+        assert_ne!(versions[0][1].sha256, versions[1][1].sha256);
+        assert_eq!(std::fs::read_dir(out.join("blobs")).unwrap().count(), 3);
+        for version in ["v1", "v2"] {
+            assert_eq!(std::fs::read_dir(out.join(version)).unwrap().count(), 0);
+        }
         std::fs::remove_dir_all(&out).unwrap();
     }
 
