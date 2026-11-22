@@ -13,7 +13,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
 - `character_names.json` overlay generation from the store's mapping, with names refreshed from global `text_data` category `6`
 - `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` DB-first generation from `master.mdb`
-- Versioned gzip artifacts under `generated-data/{master-version}-timeline-{hash}/`
+- Versioned gzip artifacts, each stored once under `generated-data/blobs/` and listed by version manifests
 - `generated-data/manifest.json` for frontend discovery
 - HTTP serving with CDN-friendly cache headers
 - Cloudflare purge hook for mutable `manifest` and `current` URLs
@@ -244,7 +244,7 @@ The JP resolver reads the official Umapyoi news archive. It uses exact gacha IDs
 
 The mission-campaign catalogue (the store's `timeline_campaigns.json` and `planner_mission_rewards.json`) is generated from `mission_data` rows with `mission_type = 4`. Refresh it from an installed JP master database with `scripts/sync_jp_mission_campaign_catalog.py --jp-master <jp-master.mdb> --frontend-root <umamoe-frontend>`. Point `--jp-image-source` (or `UMAMUSUME_JP_CAMPAIGN_ASSET_DIR`) at an AssetRipper directory containing `tex_campaign_mission_logo_<id>.png`; a same-aspect-ratio WebP is created only when a legacy fallback does not already exist, and existing production assets are never overwritten. Every newly available mission group is added to the catalogue automatically. The catalogue records the JP mission event ID, exact mission-condition/reward fingerprint, mission count, and JP display title. During normal resource generation, those fingerprints are compared with the current EN `master.mdb`; an EN event ID is only a guarded fallback when content matching is unavailable. This supplies the actual EN title and global start/end dates even when the JP image ID, JP mission event ID, and EN mission event ID are different. A semantic phase identity such as `fall-g1-missions-part-1` applies official news artwork to every matching mission row in the same release phase, so later races self-resolve without manual ranges.
 
-Production does not ship the full JP `master.mdb`. Planner-relevant JP reward rows are kept in the compact, versioned `planner_master_rewards.json` catalogue in the store instead. To refresh it, generate planner JSON with `JP_MASTER_PATH` pointing to a current installed JP master, then run `node scripts/sync_jp_planner_reward_catalog.mjs <generated-planner_rewards.json> src/jp_data/planner_master_rewards.json`. Resource versions identify this input as `jp-catalog-<hash>`; a direct local JP database is identified as `jp-master-<hash>`. Setting `JP_MASTER_PATH` to a missing file is an error, preventing an intended direct-master build from silently falling back to the catalogue.
+Production does not ship the full JP `master.mdb`. Planner-relevant JP reward rows are kept in the compact, versioned `planner_master_rewards.json` catalogue in the store instead. To refresh it, generate planner JSON with `JP_MASTER_PATH` pointing to a current installed JP master, then run `node scripts/sync_jp_planner_reward_catalog.mjs <generated-planner_rewards.json> src/jp_data/planner_master_rewards.json`. The manifest's `inputs` record this input as `jp_catalog`; a direct local JP database is recorded as `jp_master`. Setting `JP_MASTER_PATH` to a missing file is an error, preventing an intended direct-master build from silently falling back to the catalogue.
 
 Published JP banner odds are kept separately in the store's `planner_gacha_rates.json`, so special banners retain exact rates when production has no JP database. Refresh this catalogue with Node 22+ using `node scripts/sync_jp_planner_gacha_catalog.mjs <jp-master.mdb> src/jp_data/planner_gacha_rates.json`. Matching Global master entries take precedence; JP entries must pass the same pickup-identity check as direct master data. The catalogue is included in the planner resource hash.
 
@@ -335,7 +335,7 @@ CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
 The confirmation CSV hash is part of the generated resource version, so clients that read `/resources/manifest.json` will see a new versioned `banner_timeline.json.gz` path after an edit.
 `PURGE_ON_REFRESH` only controls cache purging for automatic `master.mdb` refreshes; confirmed-date refreshes always purge the mutable manifest/current URLs.
 
-For debugging, also write plain JSON beside the gzip files:
+For debugging, also write plain JSON into the version folder:
 
 ```powershell
 cargo run -- generate --master master.mdb --out generated-data --write-json
@@ -345,23 +345,25 @@ Output layout:
 
 ```text
 generated-data/
-	manifest.json
-	1.21.0-10005900-timeline-0123abcd4567/
-		manifest.json
-		factors.json.gz
-		race_program.json.gz
-		room_match_races.json.gz
-		character_banners.json.gz
-		supports_banners.json.gz
-		paid_gacha_banners.json.gz
-		banner_timeline.json.gz
-		affinity.json.gz
-		character_names.json.gz
-		character.json.gz
-		supports.json.gz
-		support-cards-db.json.gz
-		skills.json.gz
+	manifest.json                  current Global manifest
+	<version>/
+		manifest.json              one manifest per version, nothing else (plus JSON with --write-json)
+	planner/                       the planner set: manifest.json and one folder per version
+	jp/                            the JP set: manifest.json and one folder per version
+	blobs/
+		<sha256>.json.gz           every artifact of every set and version, once
+	masters/
+		<sha256>.mdb               every Global master a version was generated from, once
+		<sha256>.mdb.gz
+	masterdata/                    master release history
+	store/                         shared store copy
 ```
+
+A version is named `<master marker>-<hash>`: the hash is the first 12 hex digits of a SHA-256 over every input the set is generated from (the master, the confirmed dates, the news archive and the store's data files; for JP its master, the Global master and the names), so a change to any of them names a new version. The manifest lists each input's own hash under `inputs`.
+
+An artifact is stored under the SHA-256 of its JSON, the `sha256` its manifest lists, so a file that did not change between versions is written once. URLs stay `/<set>/<version>/<file>.gz`; the server finds the file through the version's manifest. Versions written before this layout keep their files inside their folder and are still served from there.
+
+After each generation the newest 10 versions of the set stay, the current one always among them, and older version folders are deleted. Then every file in `blobs/` and `masters/` that no remaining manifest of any set lists is deleted once it is at least an hour old, so a file another process has just written for a manifest it has not written yet stays. Only folders that hold a `manifest.json` count as versions, never `blobs`, `masters`, `masterdata`, `store`, `planner` or `jp`; a manifest that cannot be read stops the deletion, and a failed cleanup never fails the generation.
 
 ## Shared Store
 

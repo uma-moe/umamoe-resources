@@ -1,5 +1,6 @@
 use crate::master_history::{self, sqliteValueToJson};
 use crate::pipeline::{jp_data_dir, read_manifest, read_version_manifest, ResourceManifest};
+use crate::resource_storage;
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
@@ -282,9 +283,9 @@ async fn getSimulatorMaster(
     }
 
     let manifest = read_version_manifest(&state.data_dir, &version).map_err(internal_error)?;
-    let bytes = fs::read(state.data_dir.join(&version).join("master.mdb.gz"))
-        .await
-        .map_err(internal_error)?;
+    let path =
+        resource_storage::masterPath(&state.data_dir, &version, &manifest.master.sha256, true);
+    let bytes = fs::read(path).await.map_err(internal_error)?;
     let headers = [
         (
             CONTENT_TYPE,
@@ -368,6 +369,7 @@ async fn get_current_resource(
     let manifest = read_manifest(&state.data_dir).map_err(internal_error)?;
     resource_response(
         &state.data_dir,
+        &state.data_dir,
         &manifest,
         &manifest.version,
         &file_name,
@@ -385,6 +387,7 @@ async fn get_current_jp_resource(
     let jp_dir = jp_data_dir(&state.data_dir);
     let manifest = read_manifest(&jp_dir).map_err(internal_error)?;
     resource_response(
+        &state.data_dir,
         &jp_dir,
         &manifest,
         &manifest.version,
@@ -407,7 +410,17 @@ async fn get_versioned_jp_resource(
     } else {
         read_version_manifest(&jp_dir, &version).map_err(internal_error)?
     };
-    resource_response(&jp_dir, &manifest, &version, &file_name, true, false, true).await
+    resource_response(
+        &state.data_dir,
+        &jp_dir,
+        &manifest,
+        &version,
+        &file_name,
+        true,
+        false,
+        true,
+    )
+    .await
 }
 
 async fn get_planner_manifest(State(state): State<AppState>) -> Result<Response, ApiError> {
@@ -442,6 +455,7 @@ async fn get_current_planner_resource(
     let planner_dir = state.data_dir.join("planner");
     let manifest = read_manifest(&planner_dir).map_err(internal_error)?;
     resource_response(
+        &state.data_dir,
         &planner_dir,
         &manifest,
         &manifest.version,
@@ -508,6 +522,7 @@ async fn get_versioned_resource(
     };
     resource_response(
         &state.data_dir,
+        &state.data_dir,
         &manifest,
         &version,
         &file_name,
@@ -530,6 +545,7 @@ async fn get_versioned_planner_resource(
         read_version_manifest(&planner_dir, &version).map_err(internal_error)?
     };
     resource_response(
+        &state.data_dir,
         &planner_dir,
         &manifest,
         &version,
@@ -541,8 +557,11 @@ async fn get_versioned_planner_resource(
     .await
 }
 
+/// `set_dir` is the folder of the set the manifest belongs to; its files may be stored in the data
+/// directory's blobs.
 async fn resource_response(
     data_dir: &FsPath,
+    set_dir: &FsPath,
     manifest: &ResourceManifest,
     version: &str,
     file_name: &str,
@@ -565,9 +584,7 @@ async fn resource_response(
             )
         })?;
 
-    let gzip_path = data_dir
-        .join(version)
-        .join(format!("{}.gz", logical_file_name));
+    let gzip_path = resource_storage::artifactPath(data_dir, set_dir, version, artifact);
     let gzip_bytes = fs::read(&gzip_path).await.map_err(|error| {
         ApiError::new(
             StatusCode::NOT_FOUND,
@@ -784,6 +801,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: file.into(),
                 path: format!("{route}/v1/{file}.gz"),
@@ -889,6 +907,7 @@ mod tests {
                 path: Some("/resources/simulator/test-v1/master.mdb.gz".into()),
                 bytes: Some(3),
             },
+            inputs: Default::default(),
             artifacts: vec![],
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
@@ -963,6 +982,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: "factors.json".into(),
                 path: "/resources/en/test-v1/factors.json.gz".into(),
@@ -1012,6 +1032,171 @@ mod tests {
             };
             assert_eq!(body.as_slice(), expected, "{path}");
         }
+        task.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn filesAreServedFromBlobsAndFromVersionsInTheOldLayout() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "blob-resource-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let manifest = |route: &str, version: &str, file: &str, sha256: &str| ResourceManifest {
+            version: version.into(),
+            generated_at: "test".into(),
+            base_path: format!("{route}/{version}"),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: sha256.repeat(64),
+                path: None,
+                bytes: None,
+            },
+            inputs: Default::default(),
+            artifacts: vec![ResourceArtifact {
+                name: file.into(),
+                path: format!("{route}/{version}/{file}.gz"),
+                current_path: format!("{route}/current/{file}.gz"),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: format!("\"sha256-{version}\""),
+                sha256: sha256.repeat(64),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        // v2 is in the blob layout, v1 keeps its files in its version folder.
+        let write = |folder: std::path::PathBuf,
+                     current: &ResourceManifest,
+                     older: &[&ResourceManifest]| {
+            for manifest in std::iter::once(current).chain(older.iter().copied()) {
+                std::fs::create_dir_all(folder.join(&manifest.version)).unwrap();
+                let bytes = serde_json::to_vec(manifest).unwrap();
+                std::fs::write(folder.join(&manifest.version).join("manifest.json"), bytes)
+                    .unwrap();
+            }
+            std::fs::write(
+                folder.join("manifest.json"),
+                serde_json::to_vec(current).unwrap(),
+            )
+            .unwrap();
+        };
+        write(
+            root.clone(),
+            &manifest("/resources/en", "v2", "skills.json", "b"),
+            &[&manifest("/resources/en", "v1", "skills.json", "a")],
+        );
+        write(
+            root.join("planner"),
+            &manifest("/resources/planner", "v2", "planner_core.json", "c"),
+            &[],
+        );
+        // The same JSON in two sets is one blob.
+        write(
+            root.join("jp"),
+            &manifest("/resources/jp", "j1", "factors.json", "b"),
+            &[],
+        );
+        std::fs::create_dir_all(root.join("blobs")).unwrap();
+        std::fs::create_dir_all(root.join("masters")).unwrap();
+        std::fs::write(
+            root.join("blobs")
+                .join(format!("{}.json.gz", "b".repeat(64))),
+            b"blob",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("blobs")
+                .join(format!("{}.json.gz", "c".repeat(64))),
+            b"plan",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("masters")
+                .join(format!("{}.mdb.gz", "b".repeat(64))),
+            b"new-mdb",
+        )
+        .unwrap();
+        std::fs::write(root.join("v1/skills.json.gz"), b"legacy").unwrap();
+        std::fs::write(root.join("v1/master.mdb.gz"), b"old-mdb").unwrap();
+
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: false,
+        };
+        let app = super::resource_router(state, false);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        for (path, body, etag) in [
+            (
+                "/resources/en/current/skills.json.gz",
+                "blob",
+                "\"sha256-v2\"",
+            ),
+            ("/resources/en/v2/skills.json.gz", "blob", "\"sha256-v2\""),
+            ("/resources/en/v1/skills.json.gz", "legacy", "\"sha256-v1\""),
+            (
+                "/resources/jp/current/factors.json.gz",
+                "blob",
+                "\"sha256-j1\"",
+            ),
+            (
+                "/resources/planner/current/planner_core.json.gz",
+                "plan",
+                "\"sha256-v2\"",
+            ),
+            (
+                "/resources/planner/v2/planner_core.json.gz",
+                "plan",
+                "\"sha256-v2\"",
+            ),
+        ] {
+            let response = client.get(format!("{origin}{path}")).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(response.headers()[super::ETAG], etag, "{path}");
+            assert_eq!(
+                response.headers()[super::CONTENT_ENCODING],
+                "gzip",
+                "{path}"
+            );
+            assert_eq!(
+                response.headers()[super::CONTENT_LENGTH],
+                body.len().to_string().as_str(),
+                "{path}"
+            );
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                body.as_bytes(),
+                "{path}"
+            );
+        }
+        for (version, body, sha256) in [("v2", "new-mdb", "b"), ("v1", "old-mdb", "a")] {
+            let response = client
+                .get(format!(
+                    "{origin}/resources/simulator/{version}/master.mdb.gz"
+                ))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{version}");
+            assert_eq!(
+                response.headers()[super::ETAG],
+                format!("\"sha256-{}\"", sha256.repeat(64)).as_str()
+            );
+            assert_eq!(response.bytes().await.unwrap().as_ref(), body.as_bytes());
+        }
+
         task.abort();
         std::fs::remove_dir_all(root).unwrap();
     }
