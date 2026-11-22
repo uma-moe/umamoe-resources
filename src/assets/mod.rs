@@ -12,7 +12,9 @@ mod types;
 use crate::cache;
 use anyhow::{bail, Context, Result};
 pub use bucket_contents::{bucketInventory, clearBucket, moveRootTree};
-pub use game_art::{buildGameArtSample, previewGameArtDirectory, publishGameArt, GameArtOptions};
+pub use game_art::{
+    buildGameArtSample, previewGameArtDirectory, publishGameArt, GameArtOptions, GameArtSource,
+};
 pub use site_seed::publishSiteSeed;
 use std::path::{Path, PathBuf};
 pub use timeline_art::{

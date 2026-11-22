@@ -10,8 +10,15 @@ struct DbSupportListCard {
 }
 
 pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
+    generate_for(connection, &common::CardReleases::global_master()?)
+}
+
+/// The list as its master has it, each card marked with the regions that have released it.
+pub fn generate_for(
+    connection: &Connection,
+    releases: &common::CardReleases,
+) -> Result<serde_json::Value> {
     let names = common::load_character_name_map(connection)?;
-    let jp_character_ids = common::load_jp_character_ids()?;
     let cards = load_cards(connection)?;
     let mut entries = Vec::with_capacity(cards.len());
 
@@ -32,10 +39,10 @@ pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
             "full_image": format!("tex_support_card_{}.webp", card.card_id),
             "type_icon_url": serde_json::Value::Null,
             "type_icon_alt": serde_json::Value::Null,
-            "isReleased_en": true,
+            "isReleased_en": releases.in_global(card.card_id),
             "isReleased_tw": serde_json::Value::Null,
             "isReleased_cn": serde_json::Value::Null,
-            "isReleased_jp": jp_character_ids.contains(&card.chara_id),
+            "isReleased_jp": releases.in_jp(card.chara_id),
         }));
     }
 

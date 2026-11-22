@@ -117,6 +117,42 @@ pub fn generate_all(
     })
 }
 
+/// The JP set: what the JP master alone describes, under the names the Global set uses, so a
+/// page can read either set. Text is Japanese. The timeline, planner and simulator resources are
+/// built around Global's release schedule and bundled Global data, and have no JP counterpart.
+pub fn generate_jp(jp: &Connection, global: &Connection) -> Result<Vec<ResourceOutput>> {
+    let characters = common::CardReleases::jp_master(global, common::CardTable::Characters)?;
+    let supports = common::CardReleases::jp_master(global, common::CardTable::Supports)?;
+
+    Ok(vec![
+        output("factors.json", factors::generate(jp)?)?,
+        output("race_program.json", race_program::generate(jp)?)?,
+        output("race_to_saddle_mapping.json", race_to_saddle::generate(jp)?)?,
+        output("room_match_races.json", room_match_races::generate(jp)?)?,
+        output(
+            "character_banners.json",
+            banners::generate_character_banners(jp)?,
+        )?,
+        output(
+            "supports_banners.json",
+            banners::generate_support_banners(jp)?,
+        )?,
+        output(
+            "paid_gacha_banners.json",
+            banners::generate_paid_banners(jp)?,
+        )?,
+        output("affinity.json", affinity::generate(jp)?)?,
+        output("character_names.json", character_names::generate_jp(jp)?)?,
+        output("character.json", character::generate_for(jp, &characters)?)?,
+        output("supports.json", supports::generate_for(jp, &characters)?)?,
+        output(
+            "support-cards-db.json",
+            support_cards_db::generate_jp(jp, &supports)?,
+        )?,
+        output("skills.json", skills::generate(jp)?)?,
+    ])
+}
+
 fn output<T>(file_name: impl Into<String>, value: T) -> Result<ResourceOutput>
 where
     T: Serialize,

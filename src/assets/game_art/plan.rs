@@ -650,13 +650,8 @@ mod tests {
         UMA_CONVERTER_REVISION,
     };
     use crate::game_cdn::ANDROID;
-    use crate::game_cdn::GLOBAL_CDN;
+    use crate::game_cdn::{GLOBAL_CDN, JP_CDN};
     use std::collections::BTreeMap;
-
-    static JAPAN_CDN: CdnSource = CdnSource {
-        region: "jp",
-        base_url: "https://jp.invalid",
-    };
 
     const CARD: &str = "supportcard/support30050/tex_support_card_30050";
     const SKILL: &str = "outgame/skillicon/utx_ico_skill_10011";
@@ -739,10 +734,10 @@ mod tests {
 
     #[test]
     fn japanFillsInUntilGlobalHasTheFile() {
-        let japan_only = vec![(&GLOBAL_CDN, vec![]), (&JAPAN_CDN, vec![entry(CARD, 5)])];
+        let japan_only = vec![(&GLOBAL_CDN, vec![]), (&JP_CDN, vec![entry(CARD, 5)])];
         let both = vec![
             (&GLOBAL_CDN, vec![entry(CARD, 7)]),
-            (&JAPAN_CDN, vec![entry(CARD, 5)]),
+            (&JP_CDN, vec![entry(CARD, 5)]),
         ];
         let mut state = ArtState::default();
 

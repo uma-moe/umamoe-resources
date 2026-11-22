@@ -20,6 +20,8 @@ mod pipeline;
 mod static_api;
 mod umapyoi;
 
+use game_cdn::{CdnSource, GLOBAL_CDN, JP_CDN};
+
 #[derive(Parser)]
 #[command(author, version, about = "Serve Umamusume resource JSON streams")]
 struct Cli {
@@ -33,19 +35,26 @@ struct Cli {
 enum Command {
     /// Serve resources over HTTP, generating them from master.mdb first by default.
     Serve(ServeArgs),
-    /// Check the current Global game version and download its master if needed.
+    /// Check a region's current game version and download its master if needed.
     FetchMaster {
+        /// The Global master; the JP one is kept beside it as `jp-<name>`.
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
+        #[arg(long, value_enum, default_value_t = Region::Global)]
+        region: Region,
     },
     /// Generate versioned .json.gz resources without starting the server.
     Generate {
+        /// The Global master; the JP one is kept beside it as `jp-<name>`.
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
         #[arg(long, default_value = "generated-data")]
         out: PathBuf,
         #[arg(long)]
         write_json: bool,
+        /// The set to generate: Global's into the data directory, JP's into `jp/` inside it.
+        #[arg(long, value_enum, default_value_t = Region::Global)]
+        region: Region,
     },
     /// List the asset bucket by top folder, or empty it.
     AssetBucket {
@@ -75,9 +84,14 @@ enum Command {
     },
     /// Build the site's game images from the game CDN and upload the new or changed ones.
     GameArt {
-        /// Refreshed first; its cards decide which portraits are built.
+        /// The Global master; the JP one is kept beside it as `jp-<name>`. The region's master
+        /// is refreshed first; its cards decide which portraits are built.
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
+        /// The region to build. Each has a tree of its own in the bucket: Global's in `en/`,
+        /// JP's in `jp/`.
+        #[arg(long, value_enum, default_value_t = Region::Global)]
+        region: Region,
         /// Report what would be built without downloading game files. With --out-dir, write the
         /// directory documents there as if every file converted.
         #[arg(long)]
@@ -188,6 +202,42 @@ enum Command {
 /// The asset bucket folder Global's art tree is published in; each region has a folder of its own.
 const GLOBAL_ART_FOLDER: &str = "en";
 
+/// The asset bucket folder JP's art tree is published in.
+const JP_ART_FOLDER: &str = "jp";
+
+/// A game region, with its own CDN, version and master.
+#[derive(Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+enum Region {
+    Global,
+    Jp,
+}
+
+impl Region {
+    fn cdn(self) -> &'static CdnSource {
+        match self {
+            Self::Global => &GLOBAL_CDN,
+            Self::Jp => &JP_CDN,
+        }
+    }
+
+    /// Where the region's master is kept, given the Global master's path.
+    fn master(self, global_master: &Path) -> PathBuf {
+        match self {
+            Self::Global => global_master.to_path_buf(),
+            Self::Jp => master_fetch::jpMasterPath(global_master),
+        }
+    }
+
+    /// The asset bucket folder the region's art tree is published in. Every tree has the same
+    /// layout inside its folder.
+    fn folder(self) -> &'static str {
+        match self {
+            Self::Global => GLOBAL_ART_FOLDER,
+            Self::Jp => JP_ART_FOLDER,
+        }
+    }
+}
+
 #[derive(Subcommand)]
 enum AssetBucketAction {
     /// Log the objects and bytes below each top folder, and their total.
@@ -229,6 +279,14 @@ struct ServeArgs {
     /// the bucket keeps a single record of what was published.
     #[arg(long, env = "GAME_ART_PUBLISH")]
     publish_game_art: bool,
+    /// With GAME_ART_PUBLISH, also publish JP's game images as a tree of their own below `jp/`.
+    /// On unless set to false.
+    #[arg(long, env = "JP_GAME_ART_PUBLISH", default_value_t = true, action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    publish_jp_game_art: bool,
+    /// Also generate the JP resource set from the JP master and serve it below `/resources/jp/`.
+    /// On unless set to false.
+    #[arg(long, env = "JP_RESOURCES", default_value_t = true, action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
+    jp_resources: bool,
     /// How often the game art publisher also refreshes the timeline banners.
     #[arg(long, env = "TIMELINE_ART_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(60..), default_value_t = 1800)]
     timeline_art_interval_seconds: u64,
@@ -255,6 +313,8 @@ impl Default for ServeArgs {
             confirmed_banner_dates_path: None,
             confirmed_banner_dates_refresh_interval_seconds: 60,
             publish_game_art: false,
+            publish_jp_game_art: true,
+            jp_resources: true,
             timeline_art_interval_seconds: 1800,
             write_json: false,
             no_generate: false,
@@ -276,16 +336,24 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Serve(cli.server)) {
         Command::Serve(args) => serve(args).await?,
-        Command::FetchMaster { master } => {
-            master_fetch::maybeUpdateMasterMdb(&master).await?;
+        Command::FetchMaster { master, region } => {
+            master_fetch::maybeUpdateMasterMdb(region.cdn(), &region.master(&master)).await?;
         }
         Command::Generate {
             master,
             out,
             write_json,
+            region,
         } => {
-            master_fetch::maybeUpdateMasterMdb(&master).await?;
-            let manifest = pipeline::generate_resources(&master, &out, write_json)?;
+            master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
+            let manifest = match region {
+                Region::Global => pipeline::generate_resources(&master, &out, write_json)?,
+                Region::Jp => {
+                    let jp_master = region.master(&master);
+                    master_fetch::maybeUpdateMasterMdb(&JP_CDN, &jp_master).await?;
+                    pipeline::generate_jp_resources(&jp_master, &master, &out, write_json)?
+                }
+            };
             info!(
                 version = manifest.version,
                 artifacts = manifest.artifacts.len(),
@@ -324,26 +392,32 @@ async fn main() -> Result<()> {
         }
         Command::GameArt {
             master,
+            region,
             dry_run,
             out_dir,
             sample,
             only,
         } => {
-            let options = assets::GameArtOptions::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
-            master_fetch::maybeUpdateMasterMdb(&master).await?;
+            let options = assets::GameArtOptions::fromEnv()?.inFolder(region.folder());
+            let master = region.master(&master);
+            master_fetch::maybeUpdateMasterMdb(region.cdn(), &master).await?;
             let version = master_fetch::localResourceVersion(&master)
                 .context("master.mdb has no version marker")?;
+            let source = assets::GameArtSource {
+                cdn: region.cdn(),
+                master: &master,
+                resource_version: &version,
+            };
             match out_dir {
                 Some(folder) if dry_run => {
-                    assets::previewGameArtDirectory(&master, &version, &folder).await?;
+                    assets::previewGameArtDirectory(&source, &folder).await?;
                 }
                 Some(folder) => {
-                    assets::buildGameArtSample(&options, &master, &version, &folder, sample, &only)
-                        .await?;
+                    assets::buildGameArtSample(&options, &source, &folder, sample, &only).await?;
                 }
                 None => {
-                    let tree = assets::Bucket::fromEnv()?.inFolder(GLOBAL_ART_FOLDER);
-                    assets::publishGameArt(&tree, &options, &master, &version, dry_run).await?;
+                    let tree = assets::Bucket::fromEnv()?.inFolder(region.folder());
+                    assets::publishGameArt(&tree, &options, &source, dry_run).await?;
                 }
             }
         }
@@ -599,7 +673,7 @@ async fn refreshFromGameVersion(
     write_json: bool,
     purge: bool,
 ) -> Result<bool> {
-    let master_updated = master_fetch::maybeUpdateMasterMdb(master).await?;
+    let master_updated = master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, master).await?;
     let master_hash = hex::encode(Sha256::digest(std::fs::read(master)?));
     let resources_match = pipeline::read_manifest(out).is_ok_and(|manifest| {
         let served_from_global_path = manifest
@@ -627,8 +701,43 @@ async fn refreshFromGameVersion(
 }
 
 #[allow(non_snake_case)]
+/// Keeps the JP master current for whatever uses it, and regenerates the JP set when either
+/// master changed. It does nothing when both JP switches are off. The refresh loop is the only
+/// writer of the JP master, as it is of the Global one.
+async fn refreshJpFromGameVersion(args: &ServeArgs) -> Result<bool> {
+    if !args.jp_resources && !args.publish_jp_game_art {
+        return Ok(false);
+    }
+
+    let jp_master = master_fetch::jpMasterPath(&args.master);
+    let master_updated = master_fetch::maybeUpdateMasterMdb(&JP_CDN, &jp_master).await?;
+    if !args.jp_resources {
+        return Ok(master_updated);
+    }
+
+    let version = pipeline::jp_resources_version(&jp_master, &args.master)?;
+    let jp_dir = pipeline::jp_data_dir(&args.data_dir);
+    if pipeline::read_manifest(&jp_dir).is_ok_and(|manifest| manifest.version == version) {
+        return Ok(false);
+    }
+
+    let manifest =
+        pipeline::generate_jp_resources(&jp_master, &args.master, &args.data_dir, args.write_json)?;
+    info!(
+        version = manifest.version,
+        artifacts = manifest.artifacts.len(),
+        "regenerated JP resources"
+    );
+    if args.purge_on_refresh {
+        cache::purge_manifest_current_urls(&manifest).await?;
+    }
+    Ok(true)
+}
+
+#[allow(non_snake_case)]
 fn spawnRefreshLoop(args: ServeArgs) {
     let interval_seconds = args.refresh_interval_seconds;
+    let jp_args = args.clone();
     let master = args.master;
     let data_dir = args.data_dir;
     let write_json = args.write_json;
@@ -640,6 +749,11 @@ fn spawnRefreshLoop(args: ServeArgs) {
     );
 
     tokio::spawn(async move {
+        // JP is an addition: the Global set is served without waiting for JP's first check.
+        if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
+            warn!(error = format!("{error:#}"), "first JP refresh failed");
+        }
+
         let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
         interval.tick().await;
 
@@ -651,13 +765,17 @@ fn spawnRefreshLoop(args: ServeArgs) {
             {
                 warn!(error = %error, "automatic master refresh failed");
             }
+            if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
+                warn!(error = format!("{error:#}"), "automatic JP refresh failed");
+            }
         }
     });
 }
 
 #[allow(non_snake_case)]
-/// Starts the art publishers in Global's tree once the tree that was published at the bucket's
-/// root has been copied there; started before, they would rebuild every file.
+/// Starts the art publishers once the tree that was published at the bucket's root has been
+/// copied into Global's folder; started before, they would rebuild every file. The timeline
+/// banners and the site seed belong to Global's tree.
 fn spawnArtPublishing(args: &ServeArgs) {
     let root = match assets::Bucket::fromEnv() {
         Ok(bucket) => bucket,
@@ -670,6 +788,10 @@ fn spawnArtPublishing(args: &ServeArgs) {
     let retry_seconds = args.refresh_interval_seconds;
     let timeline_interval_seconds = args.timeline_art_interval_seconds;
     let (master, data_dir) = (args.master.clone(), args.data_dir.clone());
+    let mut regions = vec![Region::Global];
+    if args.publish_jp_game_art {
+        regions.push(Region::Jp);
+    }
 
     tokio::spawn(async move {
         while let Err(error) = assets::moveRootTree(&root, &tree).await {
@@ -680,48 +802,86 @@ fn spawnArtPublishing(args: &ServeArgs) {
             tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
         }
 
-        spawnGameArtLoop(retry_seconds, master, tree.clone());
+        spawnGameArtLoop(retry_seconds, master, root, regions);
         spawnTimelineArtLoop(timeline_interval_seconds, data_dir, tree.clone());
         spawnSiteSeedLoop(timeline_interval_seconds, tree);
     });
 }
 
 #[allow(non_snake_case)]
-/// Publishes game art for the version of the local master.mdb, so the cards it reads always
-/// match the files it builds. The refresh loop moves that master to each new game version.
-fn spawnGameArtLoop(interval_seconds: u64, master: PathBuf, bucket: assets::Bucket) {
+/// Publishes each region's game art in its folder of the bucket, for the version of its local
+/// master, so the cards it reads always match the files it builds. The refresh loop moves each
+/// master to its region's new game versions. Regions take turns, Global first, since they share
+/// the converter and its work folder.
+fn spawnGameArtLoop(
+    interval_seconds: u64,
+    master: PathBuf,
+    root: assets::Bucket,
+    regions: Vec<Region>,
+) {
     let options = match assets::GameArtOptions::fromEnv() {
-        Ok(options) => options.inFolder(GLOBAL_ART_FOLDER),
+        Ok(options) => options,
         Err(error) => {
             warn!(error = %error, "game art publishing is on but not configured");
             return;
         }
     };
 
-    info!(interval_seconds, "automatic game art publishing enabled");
+    info!(
+        interval_seconds,
+        regions = regions.len(),
+        "automatic game art publishing enabled"
+    );
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(interval_seconds));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        let mut published_version: Option<String> = None;
+        let mut published_versions: Vec<Option<String>> = vec![None; regions.len()];
 
         loop {
             interval.tick().await;
 
-            let Some(version) = master_fetch::localResourceVersion(&master) else {
-                warn!(master = %master.display(), "game art waits for a master.mdb version marker");
-                continue;
-            };
-            if published_version.as_ref() == Some(&version) {
-                continue;
-            }
-
-            match assets::publishGameArt(&bucket, &options, &master, &version, false).await {
-                Ok(summary) if summary.isComplete() => published_version = Some(version),
-                Ok(_) => {}
-                Err(error) => warn!(error = %error, "game art publishing failed"),
+            for (region, published_version) in regions.iter().zip(&mut published_versions) {
+                let tree = root.inFolder(region.folder());
+                let options = options.clone().inFolder(region.folder());
+                publishRegionArt(*region, &master, &tree, &options, published_version).await;
             }
         }
     });
+}
+
+#[allow(non_snake_case)]
+/// Publishes one region's tree when its master's version is not the one last published.
+async fn publishRegionArt(
+    region: Region,
+    global_master: &Path,
+    bucket: &assets::Bucket,
+    options: &assets::GameArtOptions,
+    published_version: &mut Option<String>,
+) {
+    let cdn = region.cdn();
+    let master = region.master(global_master);
+    let Some(version) = master_fetch::localResourceVersion(&master) else {
+        warn!(master = %master.display(), "game art waits for a master.mdb version marker");
+        return;
+    };
+    if published_version.as_ref() == Some(&version) {
+        return;
+    }
+
+    let source = assets::GameArtSource {
+        cdn,
+        master: &master,
+        resource_version: &version,
+    };
+    match assets::publishGameArt(bucket, options, &source, false).await {
+        Ok(summary) if summary.isComplete() => *published_version = Some(version),
+        Ok(_) => {}
+        Err(error) => warn!(
+            region = cdn.region,
+            error = %error,
+            "game art publishing failed"
+        ),
+    }
 }
 
 #[allow(non_snake_case)]
@@ -911,7 +1071,7 @@ async fn regenerate_after_confirmed_banner_dates_change(
     out: &PathBuf,
     write_json: bool,
 ) -> Result<()> {
-    master_fetch::maybeUpdateMasterMdb(master).await?;
+    master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, master).await?;
     let manifest = pipeline::generate_resources(master, out, write_json)?;
     info!(
         version = manifest.version,
@@ -982,4 +1142,27 @@ fn normalize_text_file(value: &str) -> String {
         normalized.push('\n');
     }
     normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    #[test]
+    fn jp_is_on_unless_switched_off() {
+        let by_default = Cli::try_parse_from(["umamoe-resources"]).unwrap().server;
+        let switched_off = Cli::try_parse_from([
+            "umamoe-resources",
+            "--jp-resources",
+            "false",
+            "--publish-jp-game-art",
+            "0",
+        ])
+        .unwrap()
+        .server;
+
+        assert!(by_default.jp_resources && by_default.publish_jp_game_art);
+        assert!(!switched_off.jp_resources && !switched_off.publish_jp_game_art);
+    }
 }
