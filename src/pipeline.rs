@@ -1,5 +1,6 @@
 use crate::generators;
 use crate::master_history::{self, MasterSnapshot};
+use crate::store::{self, StoreFile};
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -106,10 +107,20 @@ pub fn resources_version(master_path: &Path) -> Result<String> {
 
 fn global_version(master_path: &Path, marker: &str, master_sha256: &str) -> Result<String> {
     let confirmed_dates_hash = generators::timeline::confirmed_dates_version_hash()?;
-    // The JP data the timeline reads: the news archive, the bundled names, and the JP master the
-    // server keeps. One hash keeps the version short enough for Windows paths.
+    // The JP data the timeline reads: the news archive, the names, the timeline's store files and
+    // the JP master the server keeps. One hash keeps the version short enough for Windows paths.
     let mut jp_digest = Sha256::new();
     jp_digest.update(generators::jp_events::version_hash());
+    for file in [
+        StoreFile::TimelineCharacterBanners,
+        StoreFile::TimelineSupportBanners,
+        StoreFile::TimelinePaidBanners,
+        StoreFile::TimelineStoryEvents,
+        StoreFile::TimelineChampionsMeeting,
+        StoreFile::TimelineLegendRaces,
+    ] {
+        jp_digest.update(store::bytes(file));
+    }
     if let Some(path) = names_jp_master(master_path) {
         jp_digest.update(file_sha256(&path)?);
     }
@@ -570,13 +581,18 @@ mod tests {
         }
     }
 
-    /// The bundled Global master stands in for both masters: the queries and the layout are
-    /// what is checked, and every card of a master is released where that master is from.
+    /// The Global master in the repository root stands in for both masters: the queries and the
+    /// layout are what is checked, and every card of a master is released where that master is
+    /// from.
     #[test]
     fn jp_set_is_written_apart_with_its_own_manifest() {
         use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
 
         let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");
+        if !master.is_file() {
+            eprintln!("skipped: no master.mdb in the repository root; `fetch-master` downloads it");
+            return;
+        }
         let out = std::env::temp_dir().join(format!("jp-resource-set-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
 

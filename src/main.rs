@@ -63,6 +63,11 @@ enum Command {
         #[command(subcommand)]
         action: AssetBucketAction,
     },
+    /// Fetch the shared store's files, or upload a provided one.
+    Store {
+        #[command(subcommand)]
+        action: StoreAction,
+    },
     /// Upload a folder of images to the asset bucket, skipping files whose bytes are already there.
     AssetsPublish {
         /// Folder whose files are uploaded, keeping their paths below it.
@@ -258,6 +263,21 @@ enum AssetBucketAction {
     },
 }
 
+#[derive(Subcommand)]
+enum StoreAction {
+    /// Fetch every file the store's bucket holds into the data directory's store/ folder.
+    Pull {
+        #[arg(long, default_value = "generated-data")]
+        data_dir: PathBuf,
+    },
+    /// Upload a local file as a provided store file, such as a regenerated catalogue.
+    Put {
+        /// The store file name, such as timeline_campaigns.json.
+        name: String,
+        path: PathBuf,
+    },
+}
+
 #[derive(Args, Clone)]
 struct ServeArgs {
     #[arg(long, default_value = "127.0.0.1:3000")]
@@ -386,6 +406,10 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        Command::Store { action } => match action {
+            StoreAction::Pull { data_dir } => store::pullCommand(&data_dir).await?,
+            StoreAction::Put { name, path } => store::putCommand(&name, &path).await?,
+        },
         Command::AssetsPublish {
             dir,
             prefix,
