@@ -59,12 +59,14 @@ jobs:
 
       # English names for what only JP has released. Only this step gets the Anthropic key; the
       # servers read the committed names. A failure here must not hold back the news archives.
+      # The masters are downloaded outside the checkout: master.mdb is tracked, and a changed
+      # copy would block the rebase before the push.
       - name: Translate names only JP has released
         continue-on-error: true
         shell: bash
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: cargo run --locked -- translate-names
+        run: cargo run --locked -- translate-names --master "$RUNNER_TEMP/master.mdb"
 
       - name: Commit updated archives
         shell: bash
