@@ -1,6 +1,6 @@
 //! Reads JP's gachas and names from a master database.
 
-use super::types::{JpGacha, JpGachaData, NameKind};
+use super::types::{JpGacha, JpGachaData, MasterNames, NameKind};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
@@ -94,6 +94,15 @@ pub(super) fn readCardCharacters(master: &Connection) -> Result<BTreeMap<i64, i6
         }
     }
     Ok(characters)
+}
+
+/// Every name of every kind in a master.
+pub(super) fn readAllNames(master: &Connection) -> Result<MasterNames> {
+    let mut names = MasterNames::new();
+    for kind in super::KINDS {
+        names.insert(kind, readNames(master, kind)?);
+    }
+    Ok(names)
 }
 
 /// Every name of one kind in a master, by id.
