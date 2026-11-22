@@ -1,8 +1,9 @@
-//! The publisher's side of the store: collects each file from its source, then makes it what
-//! this server generates from and uploads it for the others.
+//! The publisher's side of the store: collects each collected file from its source, then makes
+//! it what this server generates from and uploads it for the others. Provided files it takes
+//! from the bucket like every other server.
 
 use super::types::{StoreFile, TRANSLATION_RETRY, UMAPYOI_REQUEST_INTERVAL_MS};
-use super::{ensureLocal, install, localPath, push};
+use super::{ensureLocal, install, localPath, pullProvided, push};
 use crate::assets::Bucket;
 use crate::generators::planner::GlobalNewsRewardAudit;
 use crate::{global_news, global_social, jp_names, master_fetch, umapyoi};
@@ -70,6 +71,9 @@ async fn syncFile(
     master: &Path,
     translation: &mut TranslationRun,
 ) -> Result<()> {
+    if file.isProvided() {
+        return syncProvided(file, dir, bucket, client).await;
+    }
     ensureLocal(bucket, client, dir, file).await?;
     let path = localPath(dir, file);
     let collected = match file {
@@ -77,6 +81,8 @@ async fn syncFile(
         StoreFile::GlobalNewsArchive => collectGlobalNews(&path).await,
         StoreFile::GlobalSocialArchive => collectGlobalSocial(&path).await,
         StoreFile::NameTranslations => translation.run(master, &path).await,
+        // Provided files returned above.
+        _ => Ok(()),
     };
 
     // Also after a failed collection: an upload that failed last round is still owed.
@@ -89,6 +95,27 @@ async fn syncFile(
         }
     }
     collected
+}
+
+/// Takes the bucket's copy of a provided file, seeding the bucket when it holds none. Without a
+/// bucket, this server's own copy is what generation reads.
+async fn syncProvided(
+    file: StoreFile,
+    dir: &Path,
+    bucket: Option<&Bucket>,
+    client: &reqwest::Client,
+) -> Result<()> {
+    let changed = match bucket {
+        Some(bucket) => pullProvided(bucket, client, dir, file, true).await?,
+        None => {
+            ensureLocal(None, client, dir, file).await?;
+            install(dir, file)?
+        }
+    };
+    if changed {
+        info!(?file, "store file updated");
+    }
+    Ok(())
 }
 
 async fn collectUmapyoi(path: &Path) -> Result<()> {

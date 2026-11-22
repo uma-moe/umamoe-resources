@@ -1,20 +1,46 @@
-//! Shapes of the shared data store: what the publishing server collects from outside sources and
-//! every server generates from. It lives in a bucket, not in git, and each server keeps a copy.
+//! Shapes of the shared data store: what every server generates from, beside the masters. It
+//! lives in a bucket, not in git, and each server keeps a copy.
 
 use std::sync::Arc;
 use std::time::Duration;
 
-/// A file of the store.
+/// A file of the store. Collected files are fetched from outside sources by the publisher, whose
+/// copy is the source of truth. Provided files are static data a maintainer uploads; the bucket's
+/// copy is the source of truth for every server.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum StoreFile {
-    /// JP news, gachas and support cards from umapyoi.
+    /// JP news, gachas and support cards from umapyoi. Collected.
     UmapyoiArchive,
-    /// Official English news posts.
+    /// Official English news posts. Collected.
     GlobalNewsArchive,
-    /// Official English X posts.
+    /// Official English X posts. Collected.
     GlobalSocialArchive,
-    /// English names of what only JP has released.
+    /// English names of what only JP has released. Collected.
     NameTranslations,
+    /// Character names by character id.
+    CharacterNames,
+    /// The JP support card database.
+    SupportCardsDb,
+    TimelineCharacterBanners,
+    TimelineSupportBanners,
+    TimelinePaidBanners,
+    TimelineStoryEvents,
+    TimelineChampionsMeeting,
+    TimelineLegendRaces,
+    TimelineCampaigns,
+    PlannerGachaRates,
+    PlannerMasterRewards,
+    PlannerMissionRewards,
+    /// English mission campaigns whose posts left the news feed.
+    EnglishMissionCampaignAssets,
+    /// Gzipped course geometry keyframes, stored as-is.
+    SimulatorCourseGeometry,
+    /// Gzipped course lane data, stored as-is.
+    SimulatorCourseLanes,
+    /// JP course event tables, packed into one object by course id.
+    CourseEventParamsJp,
+    /// Global course event tables that replace JP's, packed like the JP ones.
+    CourseEventParamsGlobal,
 }
 
 /// A store file's content: what this server last loaded, or the copy built into the binary
