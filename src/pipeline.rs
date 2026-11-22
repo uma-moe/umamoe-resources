@@ -581,13 +581,18 @@ mod tests {
         }
     }
 
-    /// The bundled Global master stands in for both masters: the queries and the layout are
-    /// what is checked, and every card of a master is released where that master is from.
+    /// The Global master in the repository root stands in for both masters: the queries and the
+    /// layout are what is checked, and every card of a master is released where that master is
+    /// from.
     #[test]
     fn jp_set_is_written_apart_with_its_own_manifest() {
         use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
 
         let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");
+        if !master.is_file() {
+            eprintln!("skipped: no master.mdb in the repository root; `fetch-master` downloads it");
+            return;
+        }
         let out = std::env::temp_dir().join(format!("jp-resource-set-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
 
