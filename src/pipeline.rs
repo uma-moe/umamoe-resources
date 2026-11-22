@@ -280,6 +280,7 @@ pub fn generate_resources(
             planner_root.display()
         )
     })?;
+    resource_storage::pruneVersions(out_dir, &[out_dir, &planner_root]);
 
     Ok(manifest)
 }
@@ -347,6 +348,7 @@ pub fn generate_jp_resources(
         .with_context(|| format!("failed to write manifest in {}", version_dir.display()))?;
     writeAtomic(&jp_dir.join("manifest.json"), &manifest_json)
         .with_context(|| format!("failed to write manifest in {}", jp_dir.display()))?;
+    resource_storage::pruneVersions(out_dir, &[&jp_dir]);
 
     Ok(manifest)
 }

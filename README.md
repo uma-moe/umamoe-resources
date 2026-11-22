@@ -13,7 +13,7 @@ Rust webserver for preparing semi-static Umamusume resource JSON from `master.md
 - `affinity.json` generation from `succession_relation` + `succession_relation_member`
 - `character_names.json` overlay generation from the bundled mapping, with names refreshed from global `text_data` category `6`
 - `character.json`, `supports.json`, `support-cards-db.json`, and `skills.json` DB-first generation from `master.mdb`
-- Versioned gzip artifacts under `generated-data/{master-version}-timeline-{hash}/`
+- Versioned gzip artifacts, each stored once under `generated-data/blobs/` and listed by version manifests
 - `generated-data/manifest.json` for frontend discovery
 - HTTP serving with CDN-friendly cache headers
 - Cloudflare purge hook for mutable `manifest` and `current` URLs
@@ -335,7 +335,7 @@ CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS=60
 The confirmation CSV hash is part of the generated resource version, so clients that read `/resources/manifest.json` will see a new versioned `banner_timeline.json.gz` path after an edit.
 `PURGE_ON_REFRESH` only controls cache purging for automatic `master.mdb` refreshes; confirmed-date refreshes always purge the mutable manifest/current URLs.
 
-For debugging, also write plain JSON beside the gzip files:
+For debugging, also write plain JSON into the version folder:
 
 ```powershell
 cargo run -- generate --master master.mdb --out generated-data --write-json
@@ -345,23 +345,23 @@ Output layout:
 
 ```text
 generated-data/
-	manifest.json
-	1.21.0-10005900-timeline-0123abcd4567/
-		manifest.json
-		factors.json.gz
-		race_program.json.gz
-		room_match_races.json.gz
-		character_banners.json.gz
-		supports_banners.json.gz
-		paid_gacha_banners.json.gz
-		banner_timeline.json.gz
-		affinity.json.gz
-		character_names.json.gz
-		character.json.gz
-		supports.json.gz
-		support-cards-db.json.gz
-		skills.json.gz
+	manifest.json                  current Global manifest
+	<version>/
+		manifest.json              one manifest per version, nothing else (plus JSON with --write-json)
+	planner/                       the planner set: manifest.json and one folder per version
+	jp/                            the JP set: manifest.json and one folder per version
+	blobs/
+		<sha256>.json.gz           every artifact of every set and version, once
+	masters/
+		<sha256>.mdb               every Global master a version was generated from, once
+		<sha256>.mdb.gz
+	masterdata/                    master release history
+	store/                         shared store copy
 ```
+
+An artifact is stored under the SHA-256 of its JSON, the `sha256` its manifest lists, so a file that did not change between versions is written once. URLs stay `/<set>/<version>/<file>.gz`; the server finds the file through the version's manifest. Versions written before this layout keep their files inside their folder and are still served from there.
+
+After each generation the newest 10 versions of the set stay, the current one always among them, and older version folders are deleted. Then every file in `blobs/` and `masters/` that no remaining manifest of any set lists is deleted. Only folders that hold a `manifest.json` count as versions, never `blobs`, `masters`, `masterdata`, `store`, `planner` or `jp`; a manifest that cannot be read stops the deletion, and a failed cleanup never fails the generation.
 
 ## Shared Store
 
