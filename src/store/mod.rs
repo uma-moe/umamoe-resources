@@ -1,5 +1,6 @@
-//! The shared data store: news archives and name translations. One server, the publisher,
-//! collects them from their sources and writes them to a bucket. Every server keeps a copy in
+//! The shared data store: the data every server generates from beside the masters. One server,
+//! the publisher, collects the news archives and name translations from their sources and writes
+//! them to a bucket; maintainers upload the static data files there. Every server keeps a copy in
 //! its data directory and generates from the copy it last loaded, so the servers agree without
 //! the data passing through git.
 
@@ -8,13 +9,17 @@
 #[path = "../types/store.rs"]
 mod types;
 
+mod bundled;
+mod commands;
 mod sync;
 
+pub use commands::{pullCommand, putCommand};
 pub use sync::{auditGlobalNews, spawnSyncLoop};
 pub use types::{StoreBytes, StoreFile, LOCAL_FOLDER};
 
 use crate::assets::Bucket;
 use anyhow::{Context, Result};
+use bundled::bundled;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError, RwLock};
@@ -25,11 +30,28 @@ use types::{BUCKET_FOLDER, CACHE_CONTROL};
 static LOADED: RwLock<BTreeMap<StoreFile, Arc<[u8]>>> = RwLock::new(BTreeMap::new());
 
 impl StoreFile {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 21] = [
         Self::UmapyoiArchive,
         Self::GlobalNewsArchive,
         Self::GlobalSocialArchive,
         Self::NameTranslations,
+        Self::CharacterNames,
+        Self::SupportCardsDb,
+        Self::TimelineCharacterBanners,
+        Self::TimelineSupportBanners,
+        Self::TimelinePaidBanners,
+        Self::TimelineStoryEvents,
+        Self::TimelineChampionsMeeting,
+        Self::TimelineLegendRaces,
+        Self::TimelineCampaigns,
+        Self::PlannerGachaRates,
+        Self::PlannerMasterRewards,
+        Self::PlannerMissionRewards,
+        Self::EnglishMissionCampaignAssets,
+        Self::SimulatorCourseGeometry,
+        Self::SimulatorCourseLanes,
+        Self::CourseEventParamsJp,
+        Self::CourseEventParamsGlobal,
     ];
 
     /// The file's name in the bucket and in a server's copy.
@@ -39,21 +61,48 @@ impl StoreFile {
             Self::GlobalNewsArchive => "official_news_archive.json",
             Self::GlobalSocialArchive => "official_social_archive.json",
             Self::NameTranslations => "name_translations.json",
+            Self::CharacterNames => "character_names.json",
+            Self::SupportCardsDb => "support-cards-db.json",
+            Self::TimelineCharacterBanners => "timeline_character_banners.json",
+            Self::TimelineSupportBanners => "timeline_support_banners.json",
+            Self::TimelinePaidBanners => "timeline_paid_banners.json",
+            Self::TimelineStoryEvents => "timeline_story_events.json",
+            Self::TimelineChampionsMeeting => "timeline_champions_meeting.json",
+            Self::TimelineLegendRaces => "timeline_legend_races.json",
+            Self::TimelineCampaigns => "timeline_campaigns.json",
+            Self::PlannerGachaRates => "planner_gacha_rates.json",
+            Self::PlannerMasterRewards => "planner_master_rewards.json",
+            Self::PlannerMissionRewards => "planner_mission_rewards.json",
+            Self::EnglishMissionCampaignAssets => "english_mission_campaign_assets.json",
+            Self::SimulatorCourseGeometry => "simulator_course_geometry.json.gz",
+            Self::SimulatorCourseLanes => "simulator_course_lanes.json.gz",
+            Self::CourseEventParamsJp => "course_event_params_jp.json",
+            Self::CourseEventParamsGlobal => "course_event_params_global.json",
         }
     }
 
-    /// The copy built into the binary. It seeds a store that has no such file yet, and stands in
-    /// on a server that cannot reach the store.
-    fn bundled(self) -> &'static [u8] {
-        match self {
-            Self::UmapyoiArchive => include_bytes!("../jp_data/umapyoi_archive.json"),
-            Self::GlobalNewsArchive => {
-                include_bytes!("../global_data/official_news_archive.json")
-            }
-            Self::GlobalSocialArchive => {
-                include_bytes!("../global_data/official_social_archive.json")
-            }
-            Self::NameTranslations => include_bytes!("../jp_data/name_translations.json"),
+    /// The file a store file name names.
+    pub fn fromFileName(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|file| file.fileName() == name)
+    }
+
+    /// Whether a maintainer provides the file, so the bucket's copy is the source of truth, rather
+    /// than the publisher collecting it.
+    pub fn isProvided(self) -> bool {
+        !matches!(
+            self,
+            Self::UmapyoiArchive
+                | Self::GlobalNewsArchive
+                | Self::GlobalSocialArchive
+                | Self::NameTranslations
+        )
+    }
+
+    /// Gzipped files are stored as they are.
+    fn contentType(self) -> &'static str {
+        match self.fileName().ends_with(".gz") {
+            true => "application/gzip",
+            false => "application/json",
         }
     }
 }
@@ -80,7 +129,7 @@ pub fn bytes(file: StoreFile) -> StoreBytes {
     let loaded = LOADED.read().unwrap_or_else(PoisonError::into_inner);
     match loaded.get(&file) {
         Some(bytes) => StoreBytes::Loaded(bytes.clone()),
-        None => StoreBytes::Bundled(file.bundled()),
+        None => StoreBytes::Bundled(bundled(file)),
     }
 }
 
@@ -108,16 +157,20 @@ pub fn bucketFromEnv() -> Option<Bucket> {
     })
 }
 
-/// Readies this server's copy before its first generation. A reader takes what the bucket holds.
-/// The publisher writes the bucket, so it keeps its own files and only fills in those it lacks.
-/// A file that cannot be readied is read from the bundled copy until a later attempt succeeds.
+/// Readies this server's copy before its first generation. A reader takes what the bucket holds,
+/// and so does the publisher for provided files. For collected files, and for every file when it
+/// has no bucket, the publisher keeps its own files and only fills in those it lacks. A file that
+/// cannot be readied is read from the bundled copy until a later attempt succeeds.
 pub async fn open(dir: &Path, bucket: Option<&Bucket>, publishes: bool) {
     let client = reqwest::Client::new();
     for file in StoreFile::ALL {
-        let readied = match (publishes, bucket) {
-            (true, _) => ensureLocal(bucket, &client, dir, file).await,
-            (false, Some(bucket)) => pullFile(bucket, &client, dir, file).await.map(|_| ()),
-            (false, None) => Ok(()),
+        let readied = match (file.isProvided(), publishes, bucket) {
+            (true, _, Some(bucket)) => pullProvided(bucket, &client, dir, file, publishes)
+                .await
+                .map(|_| ()),
+            (_, true, _) => ensureLocal(bucket, &client, dir, file).await,
+            (false, false, Some(bucket)) => pullFile(bucket, &client, dir, file).await.map(|_| ()),
+            (_, _, None) => Ok(()),
         };
         if let Err(error) = readied.and_then(|()| install(dir, file).map(|_| ())) {
             warn!(
@@ -140,7 +193,25 @@ pub async fn pull(bucket: &Bucket, dir: &Path) -> Result<bool> {
     Ok(changed)
 }
 
+/// Fetches the bucket's copy of the file when it differs from this server's, and makes it what
+/// generation reads. Returns whether what generation reads changed.
 async fn pullFile(
+    bucket: &Bucket,
+    client: &reqwest::Client,
+    dir: &Path,
+    file: StoreFile,
+) -> Result<bool> {
+    if !fetchFile(bucket, client, dir, file).await? {
+        return Ok(false);
+    }
+    let changed = install(dir, file)?;
+    info!(?file, "store file fetched");
+    Ok(changed)
+}
+
+/// Writes the bucket's copy of the file over this server's when they differ. Returns whether it
+/// did.
+async fn fetchFile(
     bucket: &Bucket,
     client: &reqwest::Client,
     dir: &Path,
@@ -158,9 +229,40 @@ async fn pullFile(
         return Ok(false);
     };
     writeLocal(&path, &bytes)?;
-    let changed = install(dir, file)?;
-    info!(?file, "store file fetched");
-    Ok(changed)
+    Ok(true)
+}
+
+/// Takes the bucket's copy of a provided file. The publisher first seeds a bucket that holds none
+/// from the bundled copy; a bucket that cannot be asked is an error, never a reason to seed.
+async fn pullProvided(
+    bucket: &Bucket,
+    client: &reqwest::Client,
+    dir: &Path,
+    file: StoreFile,
+    publishes: bool,
+) -> Result<bool> {
+    if publishes && bucket.objectEtag(client, file.fileName()).await?.is_none() {
+        upload(bucket, client, file, bundled(file).to_vec()).await?;
+        info!(?file, "store file seeded from the bundled copy");
+    }
+    pullFile(bucket, client, dir, file).await
+}
+
+async fn upload(
+    bucket: &Bucket,
+    client: &reqwest::Client,
+    file: StoreFile,
+    bytes: Vec<u8>,
+) -> Result<()> {
+    bucket
+        .putObjectWithCache(
+            client,
+            file.fileName(),
+            bytes,
+            file.contentType(),
+            CACHE_CONTROL,
+        )
+        .await
 }
 
 /// Uploads this server's copy of the file when the bucket's differs.
@@ -177,9 +279,7 @@ async fn push(
     if bucket.objectEtag(client, key).await?.as_deref() == Some(etag(&bytes).as_str()) {
         return Ok(false);
     }
-    bucket
-        .putObjectWithCache(client, key, bytes, "application/json", CACHE_CONTROL)
-        .await?;
+    upload(bucket, client, file, bytes).await?;
     Ok(true)
 }
 
@@ -202,7 +302,7 @@ async fn ensureLocal(
     };
     match stored {
         Some(bytes) => writeLocal(&path, &bytes),
-        None => writeLocal(&path, file.bundled()),
+        None => writeLocal(&path, bundled(file)),
     }
 }
 
@@ -256,8 +356,8 @@ mod tests {
     #[test]
     fn everyFileHasAParseableBundledCopy() {
         for file in StoreFile::ALL {
-            serde_json::from_slice::<serde_json::Value>(&bytes(file))
-                .unwrap_or_else(|error| panic!("{file:?}: {error}"));
+            commands::checkParses(file, &bytes(file))
+                .unwrap_or_else(|error| panic!("{file:?}: {error:#}"));
         }
     }
 
@@ -271,7 +371,7 @@ mod tests {
         ensureLocal(None, &client, &dir, file).await.unwrap();
         assert_eq!(
             readLocal(&localPath(&dir, file)).unwrap().unwrap(),
-            file.bundled()
+            bundled(file)
         );
 
         writeLocal(&localPath(&dir, file), b"{}").unwrap();

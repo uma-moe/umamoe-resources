@@ -1,12 +1,10 @@
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
-const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
-const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
 const ALGORITHM_VERSION: u8 = 9;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -285,7 +283,7 @@ fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<Additional
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
     digest.update(umapyoi_archive());
-    digest.update(include_bytes!("../jp_data/planner_gacha_rates.json"));
+    digest.update(store::bytes(StoreFile::PlannerGachaRates));
     digest.update([ALGORITHM_VERSION]);
     crate::jp_names::hashNames(&mut digest);
     hex::encode(digest.finalize())
@@ -744,12 +742,15 @@ fn maximum_duration_days(kind: NewsTimelineKind) -> i64 {
 fn curated_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
     let mut ids = BTreeSet::new();
     for (name, bytes) in [
-        ("character", CHARACTER_BANNERS),
-        ("support", SUPPORT_BANNERS),
-        ("paid", PAID_BANNERS),
+        (
+            "character",
+            store::bytes(StoreFile::TimelineCharacterBanners),
+        ),
+        ("support", store::bytes(StoreFile::TimelineSupportBanners)),
+        ("paid", store::bytes(StoreFile::TimelinePaidBanners)),
     ] {
-        let banners: Vec<Value> = serde_json::from_slice(bytes)
-            .with_context(|| format!("failed to parse bundled {name} timeline banners"))?;
+        let banners: Vec<Value> = serde_json::from_slice(&bytes)
+            .with_context(|| format!("failed to parse {name} timeline banners"))?;
         ids.extend(
             banners
                 .iter()
@@ -760,9 +761,8 @@ fn curated_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
 }
 
 fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Result<Value> {
-    let rates: Value =
-        serde_json::from_slice(include_bytes!("../jp_data/planner_gacha_rates.json"))
-            .context("failed to parse bundled JP gacha pools")?;
+    let rates: Value = serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
+        .context("failed to parse JP gacha pools")?;
     let mut candidates = BTreeMap::<i64, Value>::new();
     let supports = archive
         .get("supports")
