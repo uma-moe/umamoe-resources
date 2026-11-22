@@ -9,6 +9,13 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time::sleep;
 
+/// Where the official English X posts are collected from.
+pub const PROFILE_URL: &str = "https://x.com/umamusume_eng";
+pub const SYNDICATION_URL: &str =
+    "https://syndication.twitter.com/srv/timeline-profile/screen-name/umamusume_eng";
+pub const ARCHIVE_INDEX_ENDPOINT: &str = "https://web.archive.org/cdx/search/cdx";
+pub const OEMBED_ENDPOINT: &str = "https://publish.twitter.com/oembed";
+
 const ARCHIVE_VERSION: u8 = 1;
 const ACCOUNT: &str = "umamusume_eng";
 const ARCHIVE_INDEX_LOOKBACK_DAYS: i64 = 90;

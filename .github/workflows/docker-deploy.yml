@@ -246,6 +246,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
         run: |
           set -euo pipefail
@@ -308,11 +310,29 @@ jobs:
             env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
-          # One server writes game art, so two never race on the bucket's record of it.
+          # Every server reads the shared store; unset, it lives in the asset bucket's store/ folder.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
             if [ -n "$GAME_ART_CONVERTERS" ]; then
               env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
             fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi
@@ -549,6 +569,8 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
           GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
         run: |
           set -euo pipefail
@@ -611,11 +633,29 @@ jobs:
             env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
           fi
 
-          # One server writes game art, so two never race on the bucket's record of it.
+          # Every server reads the shared store; unset, it lives in the asset bucket's store/ folder.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
           if [ "$PUBLISHES_GAME_ART" = "true" ]; then
             env_contents+=$'\n'"GAME_ART_PUBLISH=true"
             if [ -n "$GAME_ART_CONVERTERS" ]; then
               env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
             fi
             env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
           fi

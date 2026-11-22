@@ -19,6 +19,7 @@ mod master_fetch;
 mod master_history;
 mod pipeline;
 mod static_api;
+mod store;
 mod umapyoi;
 
 use game_cdn::{CdnSource, GLOBAL_CDN, JP_CDN};
@@ -161,7 +162,7 @@ enum Command {
     },
     /// Incrementally archive JP news events and gacha details from umapyoi.net.
     SyncUmapyoi {
-        #[arg(long, default_value = "https://umapyoi.net/api/v1")]
+        #[arg(long, default_value = umapyoi::BASE_URL)]
         base_url: String,
         #[arg(long, default_value = "src/jp_data/umapyoi_archive.json")]
         out: PathBuf,
@@ -177,35 +178,33 @@ enum Command {
     },
     /// Archive official English news posts from Umapyoi for Global planner rewards.
     SyncGlobalNews {
-        #[arg(long, default_value = "https://umapyoi.net/api/v1/news/en")]
+        #[arg(long, default_value = global_news::ENDPOINT)]
         endpoint: String,
         #[arg(long, default_value = "src/global_data/official_news_archive.json")]
         out: PathBuf,
     },
     /// Archive official English X posts for Global planner rewards.
     SyncGlobalSocial {
-        #[arg(long, default_value = "https://x.com/umamusume_eng")]
+        #[arg(long, default_value = global_social::PROFILE_URL)]
         profile_url: String,
-        #[arg(
-            long,
-            default_value = "https://syndication.twitter.com/srv/timeline-profile/screen-name/umamusume_eng"
-        )]
+        #[arg(long, default_value = global_social::SYNDICATION_URL)]
         syndication_url: String,
-        #[arg(long, default_value = "https://web.archive.org/cdx/search/cdx")]
+        #[arg(long, default_value = global_social::ARCHIVE_INDEX_ENDPOINT)]
         archive_index_endpoint: String,
-        #[arg(long, default_value = "https://publish.twitter.com/oembed")]
+        #[arg(long, default_value = global_social::OEMBED_ENDPOINT)]
         oembed_endpoint: String,
         #[arg(long, default_value = "src/global_data/official_social_archive.json")]
         out: PathBuf,
     },
-    /// Refresh both masters and translate the names only JP has released with Claude into the
-    /// bundled translations (needs ANTHROPIC_API_KEY).
+    /// Refresh both masters and translate the names only JP has released with Claude (needs
+    /// ANTHROPIC_API_KEY). The publishing server does this on its own; this is for a local copy.
     TranslateNames {
         /// The Global master; the JP one is kept beside it as `jp-<name>`.
         #[arg(long, default_value = "master.mdb")]
         master: PathBuf,
-        #[arg(long, default_value = "src/jp_data")]
-        out_dir: PathBuf,
+        /// The translations to extend.
+        #[arg(long, default_value = "generated-data/store/name_translations.json")]
+        out: PathBuf,
     },
 }
 
@@ -285,8 +284,9 @@ struct ServeArgs {
     /// How often the server checks CONFIRMED_BANNER_DATES_URL for edits.
     #[arg(long, env = "CONFIRMED_BANNER_DATES_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 60)]
     confirmed_banner_dates_refresh_interval_seconds: u64,
-    /// Build and upload new game images whenever the game version changes. Set on one server only:
-    /// the bucket keeps a single record of what was published.
+    /// Makes this the publishing server: it builds and uploads new game images whenever the game
+    /// version changes, and collects news and name translations into the shared store. Set on
+    /// one server only: the bucket keeps a single record of what was published.
     #[arg(long, env = "GAME_ART_PUBLISH")]
     publish_game_art: bool,
     /// With GAME_ART_PUBLISH, also publish JP's game images as a tree of their own below `jp/`.
@@ -297,6 +297,9 @@ struct ServeArgs {
     /// On unless set to false.
     #[arg(long, env = "JP_RESOURCES", default_value_t = true, action = clap::ArgAction::Set, value_parser = clap::builder::BoolishValueParser::new())]
     jp_resources: bool,
+    /// How often the publishing server collects news and new names into the shared store.
+    #[arg(long, env = "STORE_SYNC_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(300..), default_value_t = 1800)]
+    store_sync_interval_seconds: u64,
     /// How often the game art publisher also refreshes the timeline banners.
     #[arg(long, env = "TIMELINE_ART_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(60..), default_value_t = 1800)]
     timeline_art_interval_seconds: u64,
@@ -325,6 +328,7 @@ impl Default for ServeArgs {
             publish_game_art: false,
             publish_jp_game_art: true,
             jp_resources: true,
+            store_sync_interval_seconds: 1800,
             timeline_art_interval_seconds: 1800,
             write_json: false,
             no_generate: false,
@@ -355,6 +359,7 @@ async fn main() -> Result<()> {
             write_json,
             region,
         } => {
+            openLocalStore(&out).await;
             master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
             let manifest = match region {
                 Region::Global => pipeline::generate_resources(&master, &out, write_json)?,
@@ -439,6 +444,7 @@ async fn main() -> Result<()> {
             sample,
             compare_frontend,
         } => {
+            openLocalStore(&data_dir).await;
             let timeline_path = match timeline {
                 Some(path) => path,
                 None => assets::currentTimelinePath(&data_dir)?,
@@ -470,6 +476,7 @@ async fn main() -> Result<()> {
             write_json,
             purge,
         } => {
+            openLocalStore(&out).await;
             if refreshFromGameVersion(&master, &out, write_json, purge).await? {
                 info!("master.mdb refresh completed");
             } else {
@@ -504,29 +511,15 @@ async fn main() -> Result<()> {
                 warn!(error, "umapyoi source could not be fully synchronized");
             }
         }
-        Command::TranslateNames { master, out_dir } => {
+        Command::TranslateNames { master, out } => {
             let jp_master = master_fetch::jpMasterPath(&master);
             master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
             master_fetch::maybeUpdateMasterMdb(&JP_CDN, &jp_master).await?;
-            jp_names::translateNames(&master, &jp_master, &out_dir).await?;
+            jp_names::translateNames(&master, &jp_master, &out).await?;
         }
         Command::SyncGlobalNews { endpoint, out } => {
             let summary = global_news::sync(&endpoint, &out).await?;
-            let audit = generators::planner::audit_global_news_reward_archive(&out)?;
-            if !audit.issues.is_empty() {
-                let issues = audit
-                    .issues
-                    .iter()
-                    .map(|issue| {
-                        format!(
-                            "EN post {} ({}): {}",
-                            issue.announce_id, issue.page_url, issue.reason
-                        )
-                    })
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                anyhow::bail!("official Global news reward audit failed:\n{issues}");
-            }
+            let audit = store::auditGlobalNews(&out)?;
             info!(
                 posts = summary.posts,
                 new_posts = summary.new_posts,
@@ -586,6 +579,14 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Readies the store copy in `data_dir` for a one-shot command, so it generates from the same
+/// data a server there would.
+#[allow(non_snake_case)]
+async fn openLocalStore(data_dir: &Path) {
+    let dir = data_dir.join(store::LOCAL_FOLDER);
+    store::open(&dir, store::bucketFromEnv().as_ref(), false).await;
+}
+
 async fn serve(args: ServeArgs) -> Result<()> {
     let confirmed_banner_dates_url = confirmed_banner_dates_url(&args).map(ToOwned::to_owned);
     let confirmed_banner_dates_path = confirmed_banner_dates_path(&args);
@@ -624,6 +625,10 @@ async fn serve(args: ServeArgs) -> Result<()> {
         false
     };
 
+    let store_dir = args.data_dir.join(store::LOCAL_FOLDER);
+    let store_bucket = store::bucketFromEnv();
+    store::open(&store_dir, store_bucket.as_ref(), args.publish_game_art).await;
+
     let refreshed_before_serve = refreshFromGameVersion(
         &args.master,
         &args.data_dir,
@@ -646,9 +651,17 @@ async fn serve(args: ServeArgs) -> Result<()> {
         cache::purge_manifest_current_urls(&manifest).await?;
     }
 
-    spawnRefreshLoop(args.clone());
     if args.publish_game_art {
+        spawnRefreshLoop(args.clone(), None);
+        store::spawnSyncLoop(
+            store_dir,
+            store_bucket,
+            args.master.clone(),
+            args.store_sync_interval_seconds,
+        );
         spawnArtPublishing(&args);
+    } else {
+        spawnRefreshLoop(args.clone(), store_bucket);
     }
 
     match (confirmed_banner_dates_url, confirmed_banner_dates_path) {
@@ -752,8 +765,11 @@ async fn refreshJpFromGameVersion(args: &ServeArgs) -> Result<bool> {
 }
 
 #[allow(non_snake_case)]
-fn spawnRefreshLoop(args: ServeArgs) {
+/// `store_bucket` is the shared store a reading server follows; the publishing server writes the
+/// store itself and passes none.
+fn spawnRefreshLoop(args: ServeArgs, store_bucket: Option<assets::Bucket>) {
     let interval_seconds = args.refresh_interval_seconds;
+    let store_dir = args.data_dir.join(store::LOCAL_FOLDER);
     let jp_args = args.clone();
     let master = args.master;
     let data_dir = args.data_dir;
@@ -777,6 +793,15 @@ fn spawnRefreshLoop(args: ServeArgs) {
         loop {
             interval.tick().await;
 
+            // The store first: both sets regenerate when one of its files changed.
+            if let Some(bucket) = &store_bucket {
+                if let Err(error) = store::pull(bucket, &store_dir).await {
+                    warn!(
+                        error = format!("{error:#}"),
+                        "store could not be fetched; keeping this server's copy"
+                    );
+                }
+            }
             // JP first: the Global set reads the JP master, so it picks up a new one at once.
             if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
                 warn!(error = format!("{error:#}"), "automatic JP refresh failed");

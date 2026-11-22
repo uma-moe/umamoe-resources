@@ -143,9 +143,7 @@ pub fn generate_resources(
     write_json: bool,
 ) -> Result<ResourceManifest> {
     // Background refreshers publish complete exports in order.
-    let _generation = GENERATION_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))?;
+    let _generation = lockGeneration()?;
     let jp_master_path = planner_jp_master()?;
     let jp_connection = jp_master_path.as_deref().map(open_jp_master).transpose()?;
     let jp_names_connection = names_jp_master(master_path)
@@ -293,9 +291,7 @@ pub fn generate_jp_resources(
     out_dir: &Path,
     write_json: bool,
 ) -> Result<ResourceManifest> {
-    let _generation = GENERATION_LOCK
-        .lock()
-        .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))?;
+    let _generation = lockGeneration()?;
     let master_bytes = fs::read(jp_master_path)
         .with_context(|| format!("failed to read JP master at {}", jp_master_path.display()))?;
     let master_sha256 = sha256_hex(&master_bytes);
@@ -369,7 +365,7 @@ fn jp_set_version(marker: &str, master_sha256: &str, global_master_path: &Path) 
         )
     })?);
     let mut names = Sha256::new();
-    crate::jp_names::hashBundled(&mut names);
+    crate::jp_names::hashNames(&mut names);
     let names_sha256 = hex::encode(names.finalize());
     Ok(sanitize_version(&format!(
         "{}-master-{}-global-{}-names-{}",
@@ -434,6 +430,15 @@ fn recordMasterRelease(
     if let Err(error) = master_history::recordRelease(out_dir, current, previous.as_ref(), date) {
         warn!(error = %error, "failed to record the master release history");
     }
+}
+
+/// Held while a resource set is generated, and by whatever replaces data generation reads, so
+/// one export never mixes two versions of it.
+#[allow(non_snake_case)]
+pub(crate) fn lockGeneration() -> Result<std::sync::MutexGuard<'static, ()>> {
+    GENERATION_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("resource generation lock poisoned"))
 }
 
 #[allow(non_snake_case)]

@@ -1,12 +1,9 @@
-//! Shapes of JP's gachas and names, and of the English names the translation job keeps in
-//! `src/jp_data` for what only JP has released.
+//! Shapes of JP's gachas and names, and of the English names the shared store keeps for what
+//! only JP has released.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-/// The file the sync job writes its translations to, below `src/jp_data`.
-pub const TRANSLATIONS_FILE: &str = "name_translations.json";
 
 /// The model that translates names Global has not released.
 pub const TRANSLATION_MODEL: &str = "claude-opus-5-5";
