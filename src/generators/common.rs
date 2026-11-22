@@ -1,3 +1,4 @@
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use rusqlite::Connection;
@@ -5,7 +6,6 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
 const CHARACTER_NAME_CATEGORY: i64 = 6;
-const BUNDLED_CHARACTER_NAMES_JSON: &[u8] = include_bytes!("../jp_data/character_names.json");
 
 pub fn load_character_name_map(connection: &Connection) -> Result<BTreeMap<i64, String>> {
     let mut name_map = BTreeMap::new();
@@ -31,8 +31,8 @@ pub fn load_character_name_map(connection: &Connection) -> Result<BTreeMap<i64, 
 }
 
 pub fn read_character_names() -> Result<Value> {
-    serde_json::from_slice(BUNDLED_CHARACTER_NAMES_JSON)
-        .context("failed to parse bundled src/jp_data/character_names.json")
+    serde_json::from_slice(&store::bytes(StoreFile::CharacterNames))
+        .context("failed to parse store file character_names.json")
 }
 
 pub fn load_jp_character_ids() -> Result<BTreeSet<i64>> {

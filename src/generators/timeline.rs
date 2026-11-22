@@ -17,20 +17,6 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::{env, fs, path::Path};
 
-const BUNDLED_TIMELINE_CHARACTER_BANNERS_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_character_banners.json");
-const BUNDLED_TIMELINE_SUPPORT_BANNERS_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_support_banners.json");
-const BUNDLED_TIMELINE_PAID_BANNERS_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_paid_banners.json");
-const BUNDLED_TIMELINE_STORY_EVENTS_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_story_events.json");
-const BUNDLED_TIMELINE_CHAMPIONS_MEETING_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_champions_meeting.json");
-const BUNDLED_TIMELINE_LEGEND_RACES_JSON: &[u8] =
-    include_bytes!("../jp_data/timeline_legend_races.json");
-const BUNDLED_TIMELINE_CAMPAIGNS_JSON: &[u8] = include_bytes!("../jp_data/timeline_campaigns.json");
-const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const CONFIRMED_GLOBAL_BANNER_DATES_CSV: &str =
     include_str!("../jp_data/confirmed_global_banner_dates.csv");
 /// Support card titles in brackets; 77 holds the card's character name.
@@ -696,7 +682,7 @@ pub fn generate(
         &confirmed_dates,
         &unique_anchors,
         observed_rate,
-    ));
+    )?);
     events.extend(timeline_story_events.iter().map(|event| {
         story_event(
             event,
@@ -1614,13 +1600,13 @@ fn paid_events(
     confirmed_dates: &ConfirmedDateLookup,
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
-) -> Vec<BannerTimelineEvent> {
-    let step_ups = crate::generators::planner::bundled_step_ups();
+) -> Result<Vec<BannerTimelineEvent>> {
+    let step_ups = crate::generators::planner::bundled_step_ups()?;
     let later_steps: BTreeSet<i64> = step_ups
         .values()
         .flat_map(|schedule| schedule.steps.iter().skip(1).map(|step| step.gacha_id))
         .collect();
-    banners
+    Ok(banners
         .iter()
         .filter(|banner| {
             !confirmed_dates.is_hidden_banner(ConfirmedTimelineKind::Paid, banner.gacha_id)
@@ -1652,7 +1638,7 @@ fn paid_events(
             }
             event
         })
-        .collect()
+        .collect())
 }
 
 fn paid_event(
@@ -3320,7 +3306,7 @@ pub(crate) fn confirmed_dates_version_hash() -> Result<String> {
             .as_bytes(),
     );
     hasher.update(b"\n# bundled mission campaigns\n");
-    hasher.update(BUNDLED_TIMELINE_CAMPAIGNS_JSON);
+    hasher.update(store::bytes(StoreFile::TimelineCampaigns));
     Ok(hex::encode(hasher.finalize()))
 }
 
@@ -3956,8 +3942,8 @@ impl DatePrediction {
 
 fn load_timeline_character_banners() -> Result<Vec<TimelineCharacterBanner>> {
     let raw_banners: Vec<RawTimelineCharacterBanner> =
-        serde_json::from_slice(BUNDLED_TIMELINE_CHARACTER_BANNERS_JSON)
-            .context("failed to parse bundled timeline_character_banners.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineCharacterBanners))
+            .context("failed to parse store file timeline_character_banners.json")?;
 
     raw_banners
         .into_iter()
@@ -3977,8 +3963,8 @@ fn load_timeline_character_banners() -> Result<Vec<TimelineCharacterBanner>> {
 
 fn load_timeline_support_banners() -> Result<Vec<TimelineSupportBanner>> {
     let raw_banners: Vec<RawTimelineSupportBanner> =
-        serde_json::from_slice(BUNDLED_TIMELINE_SUPPORT_BANNERS_JSON)
-            .context("failed to parse bundled timeline_support_banners.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineSupportBanners))
+            .context("failed to parse store file timeline_support_banners.json")?;
 
     raw_banners
         .into_iter()
@@ -3999,8 +3985,8 @@ fn load_timeline_support_banners() -> Result<Vec<TimelineSupportBanner>> {
 
 fn load_timeline_paid_banners() -> Result<Vec<TimelinePaidBanner>> {
     let raw_banners: Vec<RawTimelinePaidBanner> =
-        serde_json::from_slice(BUNDLED_TIMELINE_PAID_BANNERS_JSON)
-            .context("failed to parse bundled timeline_paid_banners.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelinePaidBanners))
+            .context("failed to parse store file timeline_paid_banners.json")?;
 
     raw_banners
         .into_iter()
@@ -4095,8 +4081,8 @@ fn load_timeline_story_events(
     jp_connection: Option<&Connection>,
 ) -> Result<Vec<TimelineStoryEvent>> {
     let raw_events: Vec<RawTimelineStoryEvent> =
-        serde_json::from_slice(BUNDLED_TIMELINE_STORY_EVENTS_JSON)
-            .context("failed to parse bundled timeline_story_events.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineStoryEvents))
+            .context("failed to parse store file timeline_story_events.json")?;
 
     let mut events = raw_events
         .into_iter()
@@ -4178,8 +4164,8 @@ fn append_master_story_events(
 
 fn load_timeline_champions_meetings() -> Result<Vec<TimelineChampionsMeeting>> {
     let raw_events: Vec<RawTimelineChampionsMeeting> =
-        serde_json::from_slice(BUNDLED_TIMELINE_CHAMPIONS_MEETING_JSON)
-            .context("failed to parse bundled timeline_champions_meeting.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineChampionsMeeting))
+            .context("failed to parse store file timeline_champions_meeting.json")?;
     let mut events = raw_events
         .into_iter()
         .map(|event| {
@@ -4406,8 +4392,8 @@ fn load_timeline_legend_races(
     jp_connection: Option<&Connection>,
 ) -> Result<Vec<TimelineLegendRace>> {
     let raw_events: Vec<RawTimelineLegendRace> =
-        serde_json::from_slice(BUNDLED_TIMELINE_LEGEND_RACES_JSON)
-            .context("failed to parse bundled timeline_legend_races.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineLegendRaces))
+            .context("failed to parse store file timeline_legend_races.json")?;
     let mut events = raw_events
         .into_iter()
         .map(|event| {
@@ -4655,8 +4641,8 @@ fn master_legend_course(distance: i64, ground: i64) -> String {
 
 fn load_timeline_campaigns(connection: &Connection) -> Result<Vec<TimelineCampaign>> {
     let raw_campaigns: Vec<RawTimelineCampaign> =
-        serde_json::from_slice(BUNDLED_TIMELINE_CAMPAIGNS_JSON)
-            .context("failed to parse bundled timeline_campaigns.json")?;
+        serde_json::from_slice(&store::bytes(StoreFile::TimelineCampaigns))
+            .context("failed to parse store file timeline_campaigns.json")?;
 
     let mut campaigns = raw_campaigns
         .into_iter()
@@ -5149,9 +5135,10 @@ fn load_umapyoi_support_card_names() -> Result<(BTreeMap<i64, String>, BTreeMap<
 }
 
 fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
-    let raw_entries: Vec<RawSupportCardName> =
-        serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
-            .context("failed to parse bundled support-cards-db.json for timeline support names")?;
+    let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(&store::bytes(
+        StoreFile::SupportCardsDb,
+    ))
+    .context("failed to parse store file support-cards-db.json for timeline support names")?;
 
     Ok(raw_entries
         .into_iter()
@@ -5166,10 +5153,10 @@ fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
 }
 
 fn load_bundled_support_card_specific_names() -> Result<BTreeMap<i64, String>> {
-    let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(
-        BUNDLED_JP_SUPPORT_CARDS_DB_JSON,
-    )
-    .context("failed to parse bundled support-cards-db.json for timeline support card names")?;
+    let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(&store::bytes(
+        StoreFile::SupportCardsDb,
+    ))
+    .context("failed to parse store file support-cards-db.json for timeline support card names")?;
 
     Ok(raw_entries
         .into_iter()
@@ -6991,7 +6978,8 @@ mod tests {
             &empty_confirmed_date_lookup(),
             &[],
             FALLBACK_ACCELERATION_RATE,
-        );
+        )
+        .unwrap();
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].gacha_id, Some(50073));
         assert_eq!(events[1].gacha_id, Some(50078));
