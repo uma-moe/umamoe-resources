@@ -20,8 +20,13 @@ if (!Array.isArray(document.rewards)) {
   throw new Error(`Expected a rewards array in ${inputPath}`);
 }
 
+// Uma Sanpo walking rewards (`campaign-catalog-*`) are read live from the JP master the server
+// keeps, so they stay out of the catalogue.
 const rewards = document.rewards
-  .filter((reward) => reward.provenance === 'jp_master')
+  .filter(
+    (reward) =>
+      reward.provenance === 'jp_master' && !reward.id.startsWith('campaign-catalog-'),
+  )
   .map(
     ({
       id,

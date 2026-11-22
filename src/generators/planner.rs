@@ -32,7 +32,6 @@ const FRIEND_POINT_EXCHANGE_ID: i64 = 2_000;
 const CLOVER_EXCHANGE_ID: i64 = 4_000;
 const TRAINER_SKILLS_TEST_CURRENCY_CATEGORY: i64 = 165;
 const RACING_CARNIVAL_CURRENCY_CATEGORY: i64 = 166;
-const JP_CAMPAIGN_REWARDS: &[u8] = include_bytes!("../jp_data/planner_campaign_rewards.json");
 
 #[derive(Debug)]
 pub struct GeneratedPlanner {
@@ -582,7 +581,6 @@ pub fn version_hash() -> String {
     digest.update(store::bytes(StoreFile::PlannerMissionRewards));
     digest.update(store::bytes(StoreFile::PlannerMasterRewards));
     digest.update(store::bytes(StoreFile::PlannerGachaRates));
-    digest.update(JP_CAMPAIGN_REWARDS);
     hex::encode(digest.finalize())
 }
 
@@ -592,9 +590,12 @@ pub fn jp_master_reward_catalog_version_hash() -> String {
     hex::encode(digest.finalize())
 }
 
+/// `jp_connection` is the JP master given only to refresh the bundled reward catalogue;
+/// `jp_names` is the JP master the server keeps, which the walking campaigns are read from.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
+    jp_names: Option<&Connection>,
     _character_banners: &[CharacterBanner],
     _support_banners: &[SupportBanner],
     _paid_banners: &[PaidBanner],
@@ -706,7 +707,7 @@ pub fn generate(
         global_archive_as_of,
     );
 
-    let mut rewards = load_master_rewards(connection, jp_connection, timeline)?;
+    let mut rewards = load_master_rewards(connection, jp_connection, jp_names, timeline)?;
     rewards.extend(global_rewards);
     // Keep every JP post in the comparison archive, but only place rewards on
     // the Global planner when a timeline event supplies a defensible date.
@@ -3212,6 +3213,7 @@ fn income_rule(
 fn load_master_rewards(
     connection: &Connection,
     jp_connection: Option<&Connection>,
+    jp_names: Option<&Connection>,
     timeline: &Value,
 ) -> Result<Vec<PlannerReward>> {
     let mut rewards = Vec::new();
@@ -3304,7 +3306,7 @@ fn load_master_rewards(
     if jp_connection.is_none() {
         load_master_reward_catalog(timeline, &mut rewards)?;
     }
-    load_campaign_reward_catalog(timeline, &mut rewards)?;
+    loadWalkingCampaignRewards(connection, jp_names, timeline, &mut rewards)?;
     load_login_bonus_rewards_for(
         connection,
         timeline,
@@ -3330,62 +3332,239 @@ fn load_master_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>
     append_master_reward_catalog_rows(timeline, rewards, rows)
 }
 
-fn load_campaign_reward_catalog(timeline: &Value, rewards: &mut Vec<PlannerReward>) -> Result<()> {
-    let rows: Vec<PlannerRewardCatalogRow> = serde_json::from_slice(JP_CAMPAIGN_REWARDS)
-        .context("failed to parse bundled JP campaign reward catalogue")?;
-    let timeline_ends = timeline
+/// Uma Sanpo ("Let's Go! Uma Outing!") walking campaigns. The JP master lists every
+/// campaign, which links to the timeline event of its JP start date. A campaign the Global
+/// master also has uses the Global rows and dates, linked or not; any other is projected
+/// onto its event and left out when it has none. Without a JP master there are no walking
+/// rewards.
+#[allow(non_snake_case)]
+fn loadWalkingCampaignRewards(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    timeline: &Value,
+    rewards: &mut Vec<PlannerReward>,
+) -> Result<()> {
+    let Some(jp_connection) = jp_connection else {
+        return Ok(());
+    };
+    let global_campaigns = walkingCampaignDates(connection)?;
+    let event_links = walkingEventLinks(timeline);
+
+    for (campaign_id, (jp_start, _)) in walkingCampaignDates(jp_connection)? {
+        let Some(jp_start) = DateTime::from_timestamp(jp_start, 0) else {
+            continue;
+        };
+        let jp_day = jp_start.format("%Y-%m-%d").to_string();
+        let link = event_links.get(&jp_day);
+        let (source, region, provenance, confidence, available_at) =
+            match (global_campaigns.get(&campaign_id), link) {
+                (Some(&(_, end)), _) => (
+                    connection,
+                    "Global",
+                    "global_master",
+                    "exact_source",
+                    timestamp_to_rfc3339(end),
+                ),
+                (None, Some((_, end))) => (
+                    jp_connection,
+                    "JP",
+                    "jp_master",
+                    "projected_parity",
+                    end.clone(),
+                ),
+                // A JP-only campaign without a timeline event has nothing to project onto.
+                (None, None) => continue,
+            };
+        let (reward_set_ids, items) = walkingCampaignItems(source, campaign_id)?;
+        let reward_set_ids = reward_set_ids
+            .iter()
+            .map(i64::to_string)
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        // The ids keep the prefix of the hand-written catalogue they replace and the JP start
+        // date whatever event they link to, so reward toggles the planner stored stay valid.
+        let id_prefix = format!("campaign-catalog-uma-sanpo-{jp_day}");
+        let template = PlannerReward {
+            id: String::new(),
+            label: "Let's Go! Uma Outing! rewards".to_string(),
+            event_id: link.map(|(event_id, _)| event_id.clone()),
+            gacha_id: None,
+            currency: "free_jewels",
+            amount: None,
+            available_at,
+            available_until: None,
+            provenance,
+            assumption: "all_campaign_rewards",
+            default_enabled: false,
+            source_url: None,
+            source_items: Vec::new(),
+            confidence,
+            evidence: Some(format!(
+                "{region} master walking reward sets {reward_set_ids}"
+            )),
+        };
+        for (currency, amount) in planner_equivalents(&items) {
+            let suffix = match currency {
+                "free_jewels" => "free-jewels".to_string(),
+                "gold_crystal" => "gold-crystal-shard".to_string(),
+                other => other.replace('_', "-"),
+            };
+            rewards.push(PlannerReward {
+                id: format!("{id_prefix}-{suffix}"),
+                currency,
+                amount: Some(amount),
+                source_items: items
+                    .iter()
+                    .filter(|item| planner_currency_for_item(item) == Some(currency))
+                    .cloned()
+                    .collect(),
+                ..template.clone()
+            });
+        }
+        let details = items
+            .into_iter()
+            .filter(|item| planner_currency_for_item(item).is_none())
+            .collect::<Vec<_>>();
+        if !details.is_empty() {
+            rewards.push(PlannerReward {
+                id: format!("{id_prefix}-item-details"),
+                label: "Let's Go! Uma Outing! reward details".to_string(),
+                source_items: details,
+                ..template
+            });
+        }
+    }
+    Ok(())
+}
+
+/// The timeline event a walking campaign starting on each JP day (`YYYY-MM-DD`) links to,
+/// with the date its rewards become available: `news-event-uma-sanpo-<day>`, else a
+/// campaign starting that JP day with "sanpo" in its title. Some campaigns are named as
+/// variants, such as the Gyaru-Sanpo and KFC Sanpo campaigns, and an unrelated campaign
+/// can start the same day, so the date alone is not enough.
+#[allow(non_snake_case)]
+fn walkingEventLinks(timeline: &Value) -> BTreeMap<String, (String, String)> {
+    let mut links = BTreeMap::new();
+    for event in timeline
         .get("events")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|event| {
-            Some((
-                event.get("id")?.as_str()?.to_string(),
-                event
-                    .get("estimated_end_date")
-                    .or_else(|| event.get("global_release_date"))?
-                    .as_str()?
-                    .to_string(),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    for row in rows {
-        let currency = catalog_currency(&row.currency)?;
-        let assumption = catalog_assumption(&row.assumption)?;
-        if rewards.iter().any(|reward| {
-            reward.provenance == "global_master"
-                && reward.event_id == row.event_id
-                && reward.currency == currency
-                && reward.amount == row.amount
-        }) {
+    {
+        let (Some(event_id), Some(end)) = (
+            event.get("id").and_then(Value::as_str),
+            event
+                .get("estimated_end_date")
+                .or_else(|| event.get("global_release_date"))
+                .and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let link = (event_id.to_string(), end.to_string());
+        if let Some(jp_day) = event_id.strip_prefix("news-event-uma-sanpo-") {
+            links.insert(jp_day.to_string(), link);
             continue;
         }
-        let available_at = row
-            .event_id
-            .as_ref()
-            .and_then(|event_id| timeline_ends.get(event_id))
-            .cloned()
-            .unwrap_or(row.available_at);
-        rewards.push(PlannerReward {
-            id: format!("campaign-catalog-{}", row.id),
-            label: row.label,
-            event_id: row.event_id,
-            gacha_id: row.gacha_id,
-            currency,
-            amount: row.amount,
-            available_at,
-            available_until: None,
-            provenance: "jp_campaign_catalog",
-            assumption,
-            default_enabled: row.default_enabled,
-            source_url: row.source_url,
-            source_items: row.source_items,
-            confidence: "projected_parity",
-            evidence: row.evidence,
-        });
+
+        let is_sanpo_campaign = event.get("type").and_then(Value::as_str) == Some("campaign")
+            && event
+                .get("title")
+                .and_then(Value::as_str)
+                .is_some_and(|title| title.to_lowercase().contains("sanpo"));
+        if !is_sanpo_campaign {
+            continue;
+        }
+        if let Some(jp_day) = event
+            .get("jp_release_date")
+            .and_then(Value::as_str)
+            .and_then(|date| date.get(..10))
+        {
+            links.entry(jp_day.to_string()).or_insert(link);
+        }
     }
-    Ok(())
+    links
+}
+
+/// The start and end of every walking campaign the master has, by campaign id. Empty when
+/// the master lacks the walking tables. The permanent walking mode
+/// (`constant_walking_data`) is not a campaign and is not read.
+#[allow(non_snake_case)]
+fn walkingCampaignDates(connection: &Connection) -> Result<BTreeMap<i64, (i64, i64)>> {
+    for table in [
+        "campaign_walking_data",
+        "campaign_walking_chara",
+        "campaign_walking_location",
+        "campaign_walking_reward_set",
+        "campaign_data",
+    ] {
+        if !sqlite_table_exists(connection, table)? {
+            return Ok(BTreeMap::new());
+        }
+    }
+
+    // Only columns both regions have: JP's walking table adds `special_campaign_type`.
+    let mut statement = connection.prepare(
+        r#"
+        SELECT walking.campaign_id, campaign.start_time, campaign.end_time
+        FROM campaign_walking_data AS walking
+        JOIN campaign_data AS campaign
+          ON campaign.campaign_id = walking.campaign_id
+        "#,
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?),
+        ))
+    })?;
+    rows.collect::<rusqlite::Result<BTreeMap<_, _>>>()
+        .map_err(Into::into)
+}
+
+/// The reward sets a walking campaign's destinations offer and their items, each item
+/// summed across the sets times its claim limit, in master row order.
+#[allow(non_snake_case)]
+fn walkingCampaignItems(
+    connection: &Connection,
+    campaign_id: i64,
+) -> Result<(Vec<i64>, Vec<PlannerSourceItem>)> {
+    let mut statement = connection.prepare(
+        r#"
+        WITH reward_sets AS (
+            SELECT DISTINCT location.reward_set_id
+            FROM campaign_walking_chara AS chara
+            JOIN campaign_walking_location AS location
+              ON location.id IN (chara.location_1, chara.location_2, chara.location_3)
+            WHERE chara.campaign_id = ?1
+        )
+        SELECT reward.reward_set_id, reward.item_category, reward.item_id,
+               reward.item_num * reward.limit_num
+        FROM campaign_walking_reward_set AS reward
+        JOIN reward_sets
+          ON reward_sets.reward_set_id = reward.reward_set_id
+        ORDER BY reward.reward_set_id, reward.id
+        "#,
+    )?;
+    let rows = statement.query_map([campaign_id], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+
+    let mut reward_set_ids = Vec::new();
+    let mut items = Vec::new();
+    for row in rows {
+        let (reward_set_id, item_category, item_id, amount) = row?;
+        if reward_set_ids.last() != Some(&reward_set_id) {
+            reward_set_ids.push(reward_set_id);
+        }
+        add_source_item(&mut items, item_category, item_id, amount);
+    }
+    Ok((reward_set_ids, items))
 }
 
 fn append_master_reward_catalog_rows(
@@ -8439,13 +8618,12 @@ mod tests {
         extract_news_free_pull_target_windows, global_news_timeline_metadata, has_cost_context,
         has_sales_context, html_to_text, is_global_correction_notice,
         is_projectable_jp_news_reward, jewel_amounts_from_line, load_archive,
-        load_campaign_reward_catalog, load_competitive_reward_metadata, load_competitive_variants,
-        load_competitive_variants_for, load_daily_pack_rules, load_event_exchange_rewards,
-        load_factor_research_rewards_for, load_gachas, load_general_event_mission_items,
-        load_global_news_archive, load_global_news_rewards, load_global_social_rewards,
-        load_login_bonus_rewards_for, load_mission_campaign_rewards,
-        load_monthly_ticket_exchange_rules, load_news_details, load_news_rewards,
-        load_paid_news_income_rules, load_story_rewards,
+        load_competitive_reward_metadata, load_competitive_variants, load_competitive_variants_for,
+        load_daily_pack_rules, load_event_exchange_rewards, load_factor_research_rewards_for,
+        load_gachas, load_general_event_mission_items, load_global_news_archive,
+        load_global_news_rewards, load_global_social_rewards, load_login_bonus_rewards_for,
+        load_mission_campaign_rewards, load_monthly_ticket_exchange_rules, load_news_details,
+        load_news_rewards, load_paid_news_income_rules, load_story_rewards,
         load_temporary_character_story_rewards_for, match_news_event,
         partition_news_free_pull_campaign_days, partition_news_free_pull_days,
         planner_reward_event_ids, prefer_detailed_gift_sections, prefer_global_news_over_jp_news,
@@ -8631,50 +8809,190 @@ mod tests {
             .contains("bundled JP master catalogue"));
     }
 
+    /// A master with walking campaign 226 (JP 2022-10-19) on reward sets 1 and 2, and
+    /// campaign 279 (JP 2023-01-20) on set 3. `special_campaign_type` exists only in JP's
+    /// master, so the Global fixture leaves it out.
+    #[allow(non_snake_case)]
+    fn walkingMaster(jp: bool, campaign_dates: &str, reward_sets: &str) -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        let special_column = if jp {
+            ", special_campaign_type INTEGER"
+        } else {
+            ""
+        };
+        connection
+            .execute_batch(&format!(
+                r#"
+                CREATE TABLE campaign_walking_data (id INTEGER, campaign_id INTEGER{special_column});
+                CREATE TABLE campaign_data (campaign_id INTEGER, start_time INTEGER, end_time INTEGER);
+                CREATE TABLE campaign_walking_chara (
+                    campaign_id INTEGER, chara_id INTEGER,
+                    location_1 INTEGER, location_2 INTEGER, location_3 INTEGER
+                );
+                CREATE TABLE campaign_walking_location (id INTEGER, reward_set_id INTEGER);
+                CREATE TABLE campaign_walking_reward_set (
+                    id INTEGER, reward_set_id INTEGER, limit_num INTEGER,
+                    item_category INTEGER, item_id INTEGER, item_num INTEGER
+                );
+                INSERT INTO campaign_walking_data (id, campaign_id) VALUES (1, 226), (2, 279);
+                INSERT INTO campaign_data VALUES {campaign_dates};
+                INSERT INTO campaign_walking_chara VALUES
+                    (226, 1001, 1, 2, 1), (226, 1002, 2, 1, 2), (279, 1001, 3, 3, 3);
+                INSERT INTO campaign_walking_location VALUES (1, 1), (2, 2), (3, 3);
+                INSERT INTO campaign_walking_reward_set VALUES {reward_sets};
+                "#
+            ))
+            .unwrap();
+        connection
+    }
+
+    const JP_WALKING_DATES: &str = "(226, 1666148400, 1666925999), (279, 1674183600, 1675047599)";
+    const JP_WALKING_SETS: &str = "(1, 1, 1, 90, 43, 50), (2, 1, 1, 164, 150, 1),
+        (3, 1, 2, 91, 59, 20000), (4, 2, 1, 90, 43, 50), (5, 2, 1, 21, 34, 5),
+        (6, 2, 1, 91, 59, 10000), (7, 3, 1, 90, 43, 50), (8, 3, 1, 93, 44, 3)";
+
     #[test]
-    fn bundled_campaign_catalog_exposes_uma_sanpo_rewards() {
+    #[allow(non_snake_case)]
+    fn walkingCampaignsSumTheirRewardSetsOntoTheirNewsEvent() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = Connection::open_in_memory().unwrap();
+        let timeline = json!({"events": [{
+            "id": "news-event-uma-sanpo-2022-10-19",
+            "type": "campaign",
+            "global_release_date": "2026-09-01T22:00:00Z",
+            "estimated_end_date": "2026-09-10T14:59:00Z"
+        }]});
+        let mut rewards = Vec::new();
+
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &timeline, &mut rewards).unwrap();
+
+        let reward = |id: &str| {
+            rewards
+                .iter()
+                .find(|reward| reward.id == id)
+                .unwrap_or_else(|| panic!("{id} should be present"))
+        };
+        let jewels = reward("campaign-catalog-uma-sanpo-2022-10-19-free-jewels");
+        // Each reward set counts once, however many destinations offer it.
+        assert_eq!(jewels.amount, Some(100));
+        assert_eq!(
+            jewels.event_id.as_deref(),
+            Some("news-event-uma-sanpo-2022-10-19")
+        );
+        assert_eq!(jewels.available_at, "2026-09-10T14:59:00Z");
+        assert_eq!(jewels.provenance, "jp_master");
+        assert_eq!(jewels.confidence, "projected_parity");
+        assert!(!jewels.default_enabled);
+        assert_eq!(
+            jewels.evidence.as_deref(),
+            Some("JP master walking reward sets 1, 2")
+        );
+        assert_eq!(
+            reward("campaign-catalog-uma-sanpo-2022-10-19-gold-crystal-shard").amount,
+            Some(1)
+        );
+        let details = reward("campaign-catalog-uma-sanpo-2022-10-19-item-details");
+        assert_eq!(details.amount, None);
+        assert_eq!(details.label, "Let's Go! Uma Outing! reward details");
+        assert_eq!(
+            details
+                .source_items
+                .iter()
+                .map(|item| (item.item_category, item.item_id, item.amount))
+                .collect::<Vec<_>>(),
+            // Money is 20,000 claimable twice in set 1 plus 10,000 in set 2.
+            vec![(91, 59, 50_000), (21, 34, 5)]
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn walkingCampaignsLinkSanpoVariantsByTitle() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = Connection::open_in_memory().unwrap();
+        let campaign = |id: &str, title: &str, end: &str| {
+            json!({
+                "id": id,
+                "type": "campaign",
+                "title": title,
+                "jp_release_date": "2023-01-20T03:00:00Z",
+                "global_release_date": "2027-01-09T22:00:00Z",
+                "estimated_end_date": end
+            })
+        };
+        // An unrelated campaign starts the same JP day.
         let timeline = json!({"events": [
-            {
-                "id": "news-event-uma-sanpo-2022-10-19",
-                "type": "campaign",
-                "global_release_date": "2026-09-01T22:00:00Z",
-                "estimated_end_date": "2026-09-10T22:00:00Z"
-            },
-            {
-                "id": "news-event-holiday-celebration-2022-11-28",
-                "type": "campaign",
-                "global_release_date": "2026-09-28T22:00:00Z",
-                "estimated_end_date": "2026-10-12T22:00:00Z"
-            }
+            campaign("news-event-campaign-1299", "Gal Week Campaign", "2027-01-20T22:00:00Z"),
+            campaign("news-event-campaign-1310", "Held \"Gyaru-Sanpo Campaign", "2027-01-23T22:00:00Z")
         ]});
         let mut rewards = Vec::new();
 
-        load_campaign_reward_catalog(&timeline, &mut rewards).unwrap();
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &timeline, &mut rewards).unwrap();
 
-        assert_eq!(rewards.len(), 4);
-        let jewels = rewards
+        let linked = rewards
             .iter()
-            .find(|reward| reward.id.ends_with("free-jewels"))
-            .expect("Uma Sanpo jewel total should be present");
-        assert_eq!(jewels.amount, Some(150));
-        assert_eq!(jewels.available_at, "2026-09-10T22:00:00Z");
-        assert_eq!(jewels.provenance, "jp_campaign_catalog");
+            .find(|reward| reward.id == "campaign-catalog-uma-sanpo-2023-01-20-free-jewels")
+            .expect("the variant campaign should link by its title");
+        assert_eq!(linked.event_id.as_deref(), Some("news-event-campaign-1310"));
+        assert_eq!(linked.available_at, "2027-01-23T22:00:00Z");
+        assert_eq!(linked.label, "Let's Go! Uma Outing! rewards");
+    }
 
-        let details = rewards
-            .iter()
-            .find(|reward| reward.id.ends_with("item-details"))
-            .expect("Uma Sanpo item details should be present");
-        assert_eq!(details.source_items.len(), 11);
-        assert!(details
-            .source_items
-            .iter()
-            .any(|item| item.item_category == 91 && item.item_id == 59 && item.amount == 40_000));
+    #[test]
+    #[allow(non_snake_case)]
+    fn jpOnlyWalkingCampaignsWithoutAnEventAreSkipped() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = Connection::open_in_memory().unwrap();
+        let mut rewards = Vec::new();
 
-        let holiday = rewards
-            .iter()
-            .find(|reward| reward.id.contains("holiday-celebration"))
-            .expect("Holiday Celebration gifts should be linked");
-        assert_eq!(holiday.available_at, "2026-10-12T22:00:00Z");
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &json!({"events": []}), &mut rewards)
+            .unwrap();
+
+        assert!(rewards.is_empty());
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn globalWalkingRowsAndDatesWinOverJp() {
+        let jp = walkingMaster(true, JP_WALKING_DATES, JP_WALKING_SETS);
+        let global = walkingMaster(
+            false,
+            "(226, 1788300000, 1789052399)",
+            "(1, 1, 1, 90, 43, 60), (4, 2, 1, 90, 43, 60)",
+        );
+        let mut rewards = Vec::new();
+
+        super::loadWalkingCampaignRewards(&global, Some(&jp), &json!({"events": []}), &mut rewards)
+            .unwrap();
+
+        // Emitted without a timeline event; the JP-only campaign has none to project onto.
+        assert_eq!(rewards.len(), 1);
+        let jewels = &rewards[0];
+        assert_eq!(
+            jewels.id,
+            "campaign-catalog-uma-sanpo-2022-10-19-free-jewels"
+        );
+        assert_eq!(jewels.event_id, None);
+        assert_eq!(jewels.amount, Some(120));
+        assert_eq!(jewels.available_at, "2026-09-10T14:59:59+00:00");
+        assert_eq!(jewels.provenance, "global_master");
+        assert_eq!(jewels.confidence, "exact_source");
+        assert_eq!(
+            jewels.evidence.as_deref(),
+            Some("Global master walking reward sets 1, 2")
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn noJpMasterMeansNoWalkingRewards() {
+        let global = walkingMaster(false, JP_WALKING_DATES, JP_WALKING_SETS);
+        let mut rewards = Vec::new();
+
+        super::loadWalkingCampaignRewards(&global, None, &json!({"events": []}), &mut rewards)
+            .unwrap();
+
+        assert!(rewards.is_empty());
     }
 
     #[test]
