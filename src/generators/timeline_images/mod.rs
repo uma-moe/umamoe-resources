@@ -17,9 +17,6 @@ use std::collections::BTreeMap;
 
 pub use parity::{compare_with_frontend_sources, FrontendSources, LocaleParity, ParityReport};
 
-const RECOVERED_CAMPAIGNS_JSON: &[u8] =
-    include_bytes!("../../jp_data/english_mission_campaign_assets.json");
-
 const DAY_MS: i64 = 86_400_000;
 
 /// The frontend's folder for each event type's own pictures, used when an event names none.
@@ -144,8 +141,9 @@ impl BannerNews {
         let global: GlobalNewsArchive =
             serde_json::from_slice(&store::bytes(StoreFile::GlobalNewsArchive))
                 .context("the English news archive is not valid JSON")?;
-        let recovered_campaigns = serde_json::from_slice(RECOVERED_CAMPAIGNS_JSON)
-            .context("the bundled recovered campaigns are not valid JSON")?;
+        let recovered_campaigns =
+            serde_json::from_slice(&store::bytes(StoreFile::EnglishMissionCampaignAssets))
+                .context("the recovered campaigns are not valid JSON")?;
 
         Ok(Self {
             japanese: japanese.news,

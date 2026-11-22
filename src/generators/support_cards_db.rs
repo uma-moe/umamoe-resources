@@ -1,12 +1,12 @@
 use crate::generators::common;
 use crate::jp_names::{CardNames, NameBook};
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const SUPPORT_CARD_FULL_NAME_CATEGORY: i64 = 75;
 const SUPPORT_CARD_TITLE_CATEGORY: i64 = 76;
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
@@ -140,8 +140,8 @@ fn merge_with_jp_support_cards_db(
     card_text: &SupportCardTextData,
     card_names: &NameBook,
 ) -> Result<Value> {
-    let jp_entries: Value = serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
-        .context("failed to parse bundled src/jp_data/support-cards-db.json")?;
+    let jp_entries: Value = serde_json::from_slice(&store::bytes(StoreFile::SupportCardsDb))
+        .context("failed to parse store file support-cards-db.json")?;
     let jp_entries = jp_entries
         .as_array()
         .context("src/jp_data/support-cards-db.json must be a JSON array")?;

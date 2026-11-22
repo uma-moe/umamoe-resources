@@ -1,6 +1,7 @@
 use crate::generators;
 use crate::master_history::{self, MasterSnapshot};
 use crate::resource_storage;
+use crate::store::{self, StoreFile};
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use flate2::write::GzEncoder;
@@ -111,8 +112,9 @@ pub fn resources_version(master_path: &Path) -> Result<String> {
 }
 
 /// The Global version and the hashes of everything it is generated from: the master, the
-/// confirmed dates, the JP data the timeline reads (the news archive and the JP master the
-/// server keeps), the bundled course, planner and geometry data, and the planner's JP rewards.
+/// confirmed dates, the JP data the timeline reads (the news archive, the timeline's store files
+/// and the JP master the server keeps), the course, planner and geometry data, and the planner's
+/// JP rewards.
 fn global_version(
     master_path: &Path,
     marker: &str,
@@ -126,6 +128,21 @@ fn global_version(
     inputs.insert(
         "jp_events".to_string(),
         generators::jp_events::version_hash(),
+    );
+    let mut timeline_lists = Sha256::new();
+    for file in [
+        StoreFile::TimelineCharacterBanners,
+        StoreFile::TimelineSupportBanners,
+        StoreFile::TimelinePaidBanners,
+        StoreFile::TimelineStoryEvents,
+        StoreFile::TimelineChampionsMeeting,
+        StoreFile::TimelineLegendRaces,
+    ] {
+        timeline_lists.update(store::bytes(file));
+    }
+    inputs.insert(
+        "timeline_lists".to_string(),
+        hex::encode(timeline_lists.finalize()),
     );
     if let Some(path) = names_jp_master(master_path) {
         inputs.insert("jp_names_master".to_string(), file_sha256(&path)?);
@@ -612,13 +629,18 @@ mod tests {
         }
     }
 
-    /// The bundled Global master stands in for both masters: the queries and the layout are
-    /// what is checked, and every card of a master is released where that master is from.
+    /// The Global master in the repository root stands in for both masters: the queries and the
+    /// layout are what is checked, and every card of a master is released where that master is
+    /// from.
     #[test]
     fn jp_set_is_written_apart_with_its_own_manifest() {
         use super::{generate_jp_resources, jp_data_dir, jp_resources_version, read_manifest};
 
         let master = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("master.mdb");
+        if !master.is_file() {
+            eprintln!("skipped: no master.mdb in the repository root; `fetch-master` downloads it");
+            return;
+        }
         let out = std::env::temp_dir().join(format!("jp-resource-set-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&out);
 
