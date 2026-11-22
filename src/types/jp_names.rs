@@ -1,25 +1,18 @@
-//! Shapes of the JP data the sync job keeps in `src/jp_data`: JP's gachas and the English names
-//! of what only JP has released.
+//! Shapes of JP's gachas and names, and of the English names the translation job keeps in
+//! `src/jp_data` for what only JP has released.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// The file the sync job writes JP's gachas to, below `src/jp_data`.
-pub const GACHAS_FILE: &str = "jp_gachas.json";
-
 /// The file the sync job writes its translations to, below `src/jp_data`.
 pub const TRANSLATIONS_FILE: &str = "name_translations.json";
-
-/// The file the sync job writes JP's own names to, below `src/jp_data`, for resource sets built
-/// without JP's master.
-pub const JAPANESE_NAMES_FILE: &str = "jp_names.json";
 
 /// The model that translates names Global has not released.
 pub const TRANSLATION_MODEL: &str = "claude-opus-5-5";
 
 /// A pickup gacha as JP's master describes it.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct JpGacha {
     pub gacha_id: i64,
     pub gacha_type: i64,
@@ -29,13 +22,6 @@ pub struct JpGacha {
     pub end_date: DateTime<Utc>,
     /// Rarest first, then by card id.
     pub pickup_card_ids: Vec<i64>,
-}
-
-#[derive(Debug, Default, Serialize, Deserialize)]
-pub struct JpGachaData {
-    pub gachas: Vec<JpGacha>,
-    /// The character of every JP character card and support card, by card id.
-    pub card_characters: BTreeMap<i64, i64>,
 }
 
 /// What a translated name names; each kind is one text category of the masters.

@@ -1,7 +1,7 @@
 //! The English and Japanese names of characters and cards that every resource reads.
 
 use super::types::{CardNames, MasterNames, NameBook, NameKind};
-use super::{bundledGachaData, bundledJapaneseNames, bundledNames, master, KINDS};
+use super::{bundledNames, master, KINDS};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde_json::Value;
@@ -9,17 +9,13 @@ use std::collections::BTreeMap;
 
 impl NameBook {
     /// English names: Global's master wins, then the hand-written overrides, then the bundled
-    /// character names, then the translations. Japanese names come from `jp` when the set is
-    /// built with JP's master, and otherwise from the copy the sync job bundles.
+    /// character names, then the translations. Japanese names, and the characters of cards only
+    /// JP has, come from JP's master; without it there are none.
     pub fn load(global: &Connection, jp: Option<&Connection>) -> Result<Self> {
         let loc = bundledNames()?;
-        let mut card_characters = bundledGachaData()?.card_characters;
-        let japanese = match jp {
-            Some(jp) => {
-                card_characters.extend(master::readCardCharacters(jp)?);
-                master::readAllNames(jp)?
-            }
-            None => bundledJapaneseNames()?,
+        let (japanese, mut card_characters) = match jp {
+            Some(jp) => (master::readAllNames(jp)?, master::readCardCharacters(jp)?),
+            None => Default::default(),
         };
         card_characters.extend(master::readCardCharacters(global)?);
 
@@ -49,6 +45,11 @@ impl NameBook {
     pub fn english(&self, kind: NameKind) -> &BTreeMap<i64, String> {
         static EMPTY: BTreeMap<i64, String> = BTreeMap::new();
         self.english.get(&kind).unwrap_or(&EMPTY)
+    }
+
+    /// The character of every card either master has, by card id.
+    pub fn cardCharacters(&self) -> &BTreeMap<i64, i64> {
+        &self.card_characters
     }
 
     /// A character's English and Japanese name.
