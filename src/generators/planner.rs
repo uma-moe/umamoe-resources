@@ -596,7 +596,8 @@ pub fn jp_master_reward_catalog_version_hash() -> String {
 }
 
 /// `jp_connection` is the JP master given only to refresh the bundled reward catalogue;
-/// `jp_names` is the JP master the server keeps, which the walking campaigns are read from.
+/// `jp_names` is the JP master the server keeps, which JP's gachas and the walking campaigns are
+/// read from.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
@@ -610,7 +611,7 @@ pub fn generate(
     let global_news_archive = load_global_news_archive()?;
     let global_social_archive = load_global_social_archive()?;
     let timeline_links = timeline_gacha_links(timeline);
-    let mut gachas = load_gachas_with_jp(connection, jp_connection, &timeline_links)?;
+    let mut gachas = load_gachas_with_jp(connection, jp_names, &timeline_links)?;
     apply_free_pulls(connection, &mut gachas)?;
     let free_pull_campaigns = apply_news_free_pulls(&archive, &timeline_links, &mut gachas);
 
@@ -1677,14 +1678,16 @@ fn plannerPickup(card_type: i64, card_id: i64, odds: i64, spark: i64) -> Planner
     }
 }
 
+/// The Global master's gachas, then JP's from `jp_master`, the JP master the server keeps. The
+/// store's catalogue stands in for JP's when there is no JP master.
 fn load_gachas_with_jp(
     connection: &Connection,
-    jp_connection: Option<&Connection>,
+    jp_master: Option<&Connection>,
     timeline_links: &BTreeMap<i64, TimelineLink>,
 ) -> Result<BTreeMap<i64, GachaAccumulator>> {
     let mut gachas = load_gachas(connection, timeline_links)?;
-    let mut jp_gachas = if let Some(jp_connection) = jp_connection {
-        load_gachas(jp_connection, timeline_links)?
+    let mut jp_gachas = if let Some(jp_master) = jp_master {
+        load_gachas(jp_master, timeline_links)?
     } else {
         let mut bundled: BTreeMap<i64, GachaAccumulator> =
             serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))

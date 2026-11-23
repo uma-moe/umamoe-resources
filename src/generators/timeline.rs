@@ -551,7 +551,7 @@ pub fn generate(
     let mut timeline_legend_races = load_timeline_legend_races(jp_connection)?;
     let mut timeline_campaigns = load_timeline_campaigns(connection)?;
     let mut additional_gacha_banners =
-        crate::generators::jp_events::additional_gacha_banner_events(&from_master)?;
+        crate::generators::jp_events::additional_gacha_banner_events(&from_master, master_gachas)?;
     fillMasterPickups(
         master_gachas,
         &mut timeline_character_banners,
@@ -3951,10 +3951,8 @@ fn append_jp_master_banners(
     ids
 }
 
-/// Gives each JP banner that lists no pickups the cards JP's master features on it: its pickups,
-/// else the cards it recommends, which is how a Twinkle Collection names its featured cards, else
-/// the cards a select gacha lets the player pick from. A select step-up offers nearly the whole
-/// ★3 pool, which features nothing, so it stays empty.
+/// Gives each JP banner that lists no pickups the cards JP's master features on it. A select
+/// step-up features nothing, so it stays empty.
 #[allow(non_snake_case)]
 fn fillMasterPickups(
     master_gachas: &[crate::jp_names::JpGacha],
@@ -3965,19 +3963,8 @@ fn fillMasterPickups(
 ) {
     let featured: BTreeMap<i64, &[i64]> = master_gachas
         .iter()
-        .filter_map(|gacha| {
-            // Type 14 is the select step-up.
-            let selectable = (gacha.gacha_type != 14).then_some(&gacha.select_card_ids);
-            let cards = [
-                Some(&gacha.pickup_card_ids),
-                Some(&gacha.recommended_card_ids),
-                selectable,
-            ]
-            .into_iter()
-            .flatten()
-            .find(|cards| !cards.is_empty())?;
-            Some((gacha.gacha_id, cards.as_slice()))
-        })
+        .map(|gacha| (gacha.gacha_id, gacha.featuredCards()))
+        .filter(|(_, cards)| !cards.is_empty())
         .collect();
     let fill = |gacha_id: i64, pickups: &mut Vec<i64>| {
         if !pickups.is_empty() {
@@ -7028,7 +7015,8 @@ mod tests {
             .collect::<BTreeMap<_, _>>();
         let support_names = load_umapyoi_support_character_names(&character_names).unwrap();
         let banners =
-            crate::generators::jp_events::additional_gacha_banner_events(&BTreeSet::new()).unwrap();
+            crate::generators::jp_events::additional_gacha_banner_events(&BTreeSet::new(), &[])
+                .unwrap();
         for (id, expected, count) in [
             (50224, "Maruzensky + 85 more", 86),
             (50225, "Hokko Tarumae + 71 more", 72),
