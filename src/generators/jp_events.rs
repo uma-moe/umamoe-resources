@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 10;
+const ALGORITHM_VERSION: u8 = 11;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -83,7 +83,7 @@ pub fn generate() -> Result<Value> {
     let mut archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let known_ids = curated_timeline_gacha_ids()?;
-    let candidates = additional_gacha_banners(&archive, &known_ids)?;
+    let candidates = additional_gacha_banners(&archive, &known_ids, &[])?;
     archive
         .as_object_mut()
         .context("bundled umapyoi archive must be a JSON object")?
@@ -212,19 +212,24 @@ pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>
 }
 
 /// The news archive's gachas past the curated lists, apart from `from_master`, the ones the
-/// timeline takes from JP's master, which names their pickups exactly.
+/// timeline takes from JP's master, which names their pickups exactly. `master_gachas` are JP's
+/// master's gachas, which describe the paid ones the news lists.
 pub fn additional_gacha_banner_events(
     from_master: &BTreeSet<i64>,
+    master_gachas: &[crate::jp_names::JpGacha],
 ) -> Result<Vec<AdditionalGachaBanner>> {
     let mut known_ids = curated_timeline_gacha_ids()?;
     known_ids.extend(from_master);
-    gacha_banner_events_after(&known_ids)
+    gacha_banner_events_after(&known_ids, master_gachas)
 }
 
-fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<AdditionalGachaBanner>> {
+fn gacha_banner_events_after(
+    known_ids: &BTreeSet<i64>,
+    master_gachas: &[crate::jp_names::JpGacha],
+) -> Result<Vec<AdditionalGachaBanner>> {
     let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
-    let candidates = additional_gacha_banners(&archive, known_ids)?;
+    let candidates = additional_gacha_banners(&archive, known_ids, master_gachas)?;
     Ok(candidates
         .as_array()
         .into_iter()
@@ -775,9 +780,19 @@ fn curated_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
     Ok(ids)
 }
 
-fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Result<Value> {
+/// JP's master describes a paid banner's pool exactly. The store's catalogue stands in for the
+/// paid banners it does not know, or when there is no master.
+fn additional_gacha_banners(
+    archive: &Value,
+    known_ids: &BTreeSet<i64>,
+    master_gachas: &[crate::jp_names::JpGacha],
+) -> Result<Value> {
     let rates: Value = serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
         .context("failed to parse JP gacha pools")?;
+    let master: BTreeMap<i64, &crate::jp_names::JpGacha> = master_gachas
+        .iter()
+        .map(|gacha| (gacha.gacha_id, gacha))
+        .collect();
     let mut candidates = BTreeMap::<i64, Value>::new();
     let supports = archive
         .get("supports")
@@ -821,19 +836,20 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Resul
                 .unwrap_or_default();
             let section = gacha_section(post, gacha_id);
             let kind = inferred_gacha_kind(gacha_id, &title_lower, section.as_ref());
-            let pool = (kind == "paid_banner")
+            let master_gacha = master
+                .get(&gacha_id)
+                .copied()
+                .filter(|_| kind == "paid_banner");
+            let pool = (kind == "paid_banner" && master_gacha.is_none())
                 .then(|| rates.get(gacha_id.to_string()))
                 .flatten();
-            let card_type = inferred_card_type(kind, section.as_ref()).or_else(|| {
-                match pool?.get("card_type")?.as_i64()? {
-                    1 => Some("character"),
-                    2 => Some("support"),
-                    _ => None,
-                }
-            });
-            let gacha_type = pool
-                .and_then(|pool| pool.get("gacha_type"))
-                .and_then(Value::as_i64)
+            let card_type = master_gacha
+                .and_then(|gacha| cardTypeName(gacha.card_type))
+                .or_else(|| inferred_card_type(kind, section.as_ref()))
+                .or_else(|| cardTypeName(pool?.get("card_type")?.as_i64()?));
+            let gacha_type = master_gacha
+                .map(|gacha| gacha.gacha_type)
+                .or_else(|| pool?.get("gacha_type")?.as_i64())
                 .or_else(|| {
                     let inferred = inferred_gacha_type(&title_lower);
                     // Combined Twinkle notices describe a separate guaranteed paid gacha.
@@ -855,7 +871,10 @@ fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Resul
                 .as_ref()
                 .map(|section| names_from_gacha_section(&section.body, &section.card_type))
                 .unwrap_or_default();
-            if kind == "paid_banner" {
+            if let Some(gacha) = master_gacha {
+                // The master's pool is the whole truth, so a select step-up stays without pickups.
+                pickup_card_ids = gacha.featuredCards().to_vec();
+            } else if kind == "paid_banner" {
                 pickup_card_ids = pool
                     .and_then(|pool| pool.get("pickups"))
                     .and_then(Value::as_array)
@@ -987,6 +1006,16 @@ fn inferred_gacha_kind(gacha_id: i64, title: &str, section: Option<&GachaSection
             "character_banner"
         }
         _ => "unknown",
+    }
+}
+
+/// The name of a master's `card_type`.
+#[allow(non_snake_case)]
+fn cardTypeName(card_type: i64) -> Option<&'static str> {
+    match card_type {
+        1 => Some("character"),
+        2 => Some("support"),
+        _ => None,
     }
 }
 
@@ -1274,7 +1303,7 @@ mod tests {
     #[test]
     fn exposes_additional_banner_candidates_for_timeline_merge() {
         crate::store::requireStoreData!();
-        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new(), &[])
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
     }
@@ -1302,7 +1331,7 @@ mod tests {
             "support",
         );
         assert_eq!(names, ["Air Groove", "Tokai Teio"]);
-        let banners = super::additional_gacha_banner_events(&BTreeSet::new()).unwrap();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new(), &[]).unwrap();
         for (id, first) in [(50237, "Satono Diamond"), (50238, "Air Groove")] {
             let banner = banners.iter().find(|banner| banner.gacha_id == id).unwrap();
             assert_eq!(banner.related_support_names.len(), 8);
@@ -1368,7 +1397,7 @@ mod tests {
     #[test]
     fn splits_combined_character_and_support_gacha_content() {
         crate::store::requireStoreData!();
-        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new(), &[])
             .expect("additional gacha candidates should extract");
         let character = banners
             .iter()
@@ -1390,10 +1419,58 @@ mod tests {
     #[allow(non_snake_case)]
     fn leavesGachasWithMasterPickupsToTheMaster() {
         crate::store::requireStoreData!();
-        let banners = super::additional_gacha_banner_events(&BTreeSet::from([30_449])).unwrap();
+        let banners =
+            super::additional_gacha_banner_events(&BTreeSet::from([30_449]), &[]).unwrap();
         assert!(banners.iter().all(|banner| banner.gacha_id != 30_449));
         // A gacha the master lists without pickups still comes from the news.
         assert!(banners.iter().any(|banner| banner.gacha_id == 50_235));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn paidNewsBannersTakeTheMastersPoolOverTheCatalogue() {
+        crate::store::requireStoreData!();
+        let date = chrono::DateTime::from_timestamp(0, 0).unwrap();
+        let gacha = |gacha_id, gacha_type, card_type, pickup_card_ids, select_card_ids| {
+            crate::jp_names::JpGacha {
+                gacha_id,
+                gacha_type,
+                card_type,
+                start_date: date,
+                end_date: date,
+                pickup_card_ids,
+                recommended_card_ids: Vec::new(),
+                select_card_ids,
+            }
+        };
+        // The catalogue has 50224 as a type 5 character gacha and 50227 with placeholder pickups,
+        // and lacks 50254 and 50240, whose news posts read as a type 12 rerun and a support pool.
+        let master = [
+            gacha(50224, 10, 2, vec![30001], vec![]),
+            gacha(50227, 15, 2, vec![], vec![30264, 30289]),
+            gacha(50254, 15, 2, vec![], vec![30264, 30289]),
+            gacha(50240, 14, 2, vec![], vec![30001, 30002]),
+        ];
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new(), &master).unwrap();
+        let banner = |id| banners.iter().find(|banner| banner.gacha_id == id).unwrap();
+
+        for (id, gacha_type, pickups) in [
+            (50224, 10, vec![30001]),
+            (50227, 15, vec![30264, 30289]),
+            (50254, 15, vec![30264, 30289]),
+            (50240, 14, vec![]),
+        ] {
+            let banner = banner(id);
+            assert_eq!(banner.gacha_type, Some(gacha_type), "{id}");
+            assert_eq!(banner.card_type.as_deref(), Some("support"), "{id}");
+            assert_eq!(banner.pickup_card_ids, pickups, "{id}");
+            assert!(!banner.is_rerun, "{id}");
+        }
+
+        // Without the master the news names a pool for the select step-up.
+        let news = super::additional_gacha_banner_events(&BTreeSet::new(), &[]).unwrap();
+        let step_up = news.iter().find(|banner| banner.gacha_id == 50240).unwrap();
+        assert!(!step_up.pickup_card_ids.is_empty());
     }
 
     #[test]
@@ -1484,7 +1561,7 @@ mod tests {
     #[test]
     fn extracts_type_12_select_pickup_rerun_metadata() {
         crate::store::requireStoreData!();
-        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new(), &[])
             .expect("additional gacha candidates should extract");
         let banner = banners
             .iter()

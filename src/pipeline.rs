@@ -81,8 +81,8 @@ fn planner_jp_master() -> Result<Option<PathBuf>> {
     Ok(Some(path))
 }
 
-/// The JP master the Global set reads Japanese names and JP's newest banners from: the one the
-/// server keeps beside the Global master, or JP_MASTER_PATH when that is set.
+/// The JP master the Global set reads Japanese names and JP's banners from: the one the server
+/// keeps beside the Global master, or JP_MASTER_PATH when that is set.
 fn names_jp_master(master_path: &Path) -> Option<PathBuf> {
     std::env::var_os("JP_MASTER_PATH")
         .map(PathBuf::from)

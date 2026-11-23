@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-const ALGORITHM_VERSION: u8 = 40;
+const ALGORITHM_VERSION: u8 = 41;
 const STANDARD_PICKUP_RATE: f64 = 0.0075;
 const STANDARD_RARITY_RATES: [(i64, f64); 3] = [(3, 0.03), (2, 0.18), (1, 0.79)];
 const JEWEL_CATEGORY: i64 = 90;
@@ -314,6 +314,10 @@ pub struct PlannerGacha {
     pub ticket_currency: Option<&'static str>,
     pub provenance: &'static str,
     pub confidence: &'static str,
+    /// How many of a select gacha's pickups the player picks as its rate-ups. Its pickups list
+    /// every candidate, each at the rate a picked card has.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub select_count: Option<i64>,
     pub pickups: Vec<PlannerPickup>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub featured_pickups: Vec<PlannerPickup>,
@@ -405,6 +409,7 @@ struct GachaAccumulator {
     provenance: Option<&'static str>,
     #[serde(skip)]
     confidence: Option<&'static str>,
+    select_count: Option<i64>,
     pickups: Vec<PlannerPickup>,
     featured_pickups: Vec<PlannerPickup>,
     rarity_rates: Vec<PlannerRarityRate>,
@@ -591,7 +596,8 @@ pub fn jp_master_reward_catalog_version_hash() -> String {
 }
 
 /// `jp_connection` is the JP master given only to refresh the bundled reward catalogue;
-/// `jp_names` is the JP master the server keeps, which the walking campaigns are read from.
+/// `jp_names` is the JP master the server keeps, which JP's gachas and the walking campaigns are
+/// read from.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
@@ -605,7 +611,7 @@ pub fn generate(
     let global_news_archive = load_global_news_archive()?;
     let global_social_archive = load_global_social_archive()?;
     let timeline_links = timeline_gacha_links(timeline);
-    let mut gachas = load_gachas_with_jp(connection, jp_connection, &timeline_links)?;
+    let mut gachas = load_gachas_with_jp(connection, jp_names, &timeline_links)?;
     apply_free_pulls(connection, &mut gachas)?;
     let free_pull_campaigns = apply_news_free_pulls(&archive, &timeline_links, &mut gachas);
 
@@ -667,6 +673,7 @@ pub fn generate(
             ticket_currency,
             provenance: accumulator.provenance.unwrap_or("global_master"),
             confidence: accumulator.confidence.unwrap_or("exact"),
+            select_count: accumulator.select_count,
             pickups: accumulator.pickups,
             featured_pickups: accumulator.featured_pickups,
             rarity_rates: accumulator.rarity_rates,
@@ -1397,6 +1404,26 @@ fn load_gachas(
     } else {
         "SELECT NULL"
     };
+    // Both queries name the card's row `available`, so they share this.
+    let spark = format!(
+        r#"COALESCE((
+                   SELECT MIN(exchange.pay_item_num)
+                   FROM gacha_exchange AS exchange
+                   WHERE exchange.gacha_id = data.id
+                     AND exchange.card_id = available.card_id
+               ), ({selector_exchange}), 0)"#
+    );
+    // A gacha without pickups, such as a Twinkle Collection, features the cards it recommends.
+    // Older masters do not have the column.
+    let recommended = if sqlite_column_exists(connection, "gacha_available", "recommend_order")? {
+        r#"
+          OR (available.recommend_order > 0 AND NOT EXISTS (
+              SELECT 1 FROM gacha_available AS pickup
+              WHERE pickup.gacha_id = data.id AND pickup.is_pickup = 1))"#
+    } else {
+        ""
+    };
+    let mut selectable = loadSelectCandidates(connection, &spark)?;
     let mut statement = connection.prepare(&format!(
         r#"
         SELECT data.id,
@@ -1406,16 +1433,12 @@ fn load_gachas(
                available.card_id,
                available.rarity,
                available.odds,
-               COALESCE((
-                   SELECT MIN(exchange.pay_item_num)
-                   FROM gacha_exchange AS exchange
-                   WHERE exchange.gacha_id = data.id
-                     AND exchange.card_id = available.card_id
-               ), ({selector_exchange}), 0)
+               {spark},
+               available.is_pickup
         FROM gacha_data AS data
         JOIN gacha_available AS available
           ON available.gacha_id = data.id
-         AND (available.is_pickup = 1 OR (data.type IN (5, 10, 15) AND available.rarity = 3))
+         AND (available.is_pickup = 1 OR (data.type IN (5, 10, 15) AND available.rarity = 3){recommended})
         ORDER BY data.id, available.card_id
         "#,
     ))?;
@@ -1429,11 +1452,14 @@ fn load_gachas(
             row.get::<_, i64>(5)?,
             row.get::<_, i64>(6)?,
             row.get::<_, i64>(7)?,
+            row.get::<_, i64>(8)? == 1,
         ))
     })?;
     let mut gachas = BTreeMap::new();
+    // The odds of each select gacha's slots, which its candidates take.
+    let mut slot_odds = BTreeMap::new();
     for row in rows {
-        let (gacha_id, card_type, gacha_type, cost, card_id, rarity, odds, spark) = row?;
+        let (gacha_id, card_type, gacha_type, cost, card_id, rarity, odds, spark, is_pickup) = row?;
         if !timeline_links.contains_key(&gacha_id) {
             continue;
         }
@@ -1446,18 +1472,31 @@ fn load_gachas(
         gacha.spark_pulls = gacha.spark_pulls.max(spark);
         gacha.provenance = Some("global_master");
         gacha.confidence = Some("exact");
-        let pickup = PlannerPickup {
-            pickup_id: card_id,
-            label: if card_type == 1 {
-                format!("Umamusume {card_id}")
-            } else {
-                format!("Support Card {card_id}")
-            },
-            rate: odds as f64 / 1_000_000.0,
-            exchangeable: spark > 0,
-        };
+        // A select gacha's ★3 pickups are slots its candidates take below; its other ★3 rows are
+        // the rest of the pool.
+        if rarity == 3 && selectable.contains_key(&gacha_id) {
+            if is_pickup {
+                *gacha.select_count.get_or_insert(0) += 1;
+                slot_odds.insert(gacha_id, odds);
+            }
+            continue;
+        }
+        let pickup = plannerPickup(card_type, card_id, odds, spark);
         gacha.featured_pickups.push(pickup.clone());
         if rarity == 3 {
+            gacha.pickups.push(pickup);
+        }
+    }
+    for (gacha_id, odds) in slot_odds {
+        let (Some(gacha), Some(candidates)) =
+            (gachas.get_mut(&gacha_id), selectable.remove(&gacha_id))
+        else {
+            continue;
+        };
+        for (card_id, spark) in candidates {
+            gacha.spark_pulls = gacha.spark_pulls.max(spark);
+            let pickup = plannerPickup(gacha.card_type, card_id, odds, spark);
+            gacha.featured_pickups.push(pickup.clone());
             gacha.pickups.push(pickup);
         }
     }
@@ -1589,14 +1628,66 @@ fn load_gachas(
     Ok(gachas)
 }
 
+/// The cards each select gacha lets the player pick its rate-ups from, by gacha, with the pulls
+/// that exchange each. `spark` reads them from the row named `available`. A select step-up keeps
+/// its step-up model instead. Only JP's master has the table.
+#[allow(non_snake_case)]
+fn loadSelectCandidates(
+    connection: &Connection,
+    spark: &str,
+) -> Result<BTreeMap<i64, Vec<(i64, i64)>>> {
+    let mut candidates = BTreeMap::<i64, Vec<(i64, i64)>>::new();
+    if !sqlite_table_exists(connection, "select_pickup")? {
+        return Ok(candidates);
+    }
+
+    let mut statement = connection.prepare(&format!(
+        r#"
+        SELECT data.id, available.card_id, {spark}
+        FROM select_pickup AS available
+        JOIN gacha_data AS data ON data.id = available.gacha_id
+        WHERE data.type <> 14
+        ORDER BY data.id, available.card_id
+        "#
+    ))?;
+    let rows = statement.query_map([], |row| {
+        Ok((row.get::<_, i64>(0)?, row.get(1)?, row.get(2)?))
+    })?;
+    for row in rows {
+        let (gacha_id, card_id, spark) = row?;
+        candidates
+            .entry(gacha_id)
+            .or_default()
+            .push((card_id, spark));
+    }
+    Ok(candidates)
+}
+
+/// A card at `odds` in millionths, exchangeable when `spark` pulls exchange it.
+#[allow(non_snake_case)]
+fn plannerPickup(card_type: i64, card_id: i64, odds: i64, spark: i64) -> PlannerPickup {
+    PlannerPickup {
+        pickup_id: card_id,
+        label: if card_type == 1 {
+            format!("Umamusume {card_id}")
+        } else {
+            format!("Support Card {card_id}")
+        },
+        rate: odds as f64 / 1_000_000.0,
+        exchangeable: spark > 0,
+    }
+}
+
+/// The Global master's gachas, then JP's from `jp_master`, the JP master the server keeps. The
+/// store's catalogue stands in for JP's when there is no JP master.
 fn load_gachas_with_jp(
     connection: &Connection,
-    jp_connection: Option<&Connection>,
+    jp_master: Option<&Connection>,
     timeline_links: &BTreeMap<i64, TimelineLink>,
 ) -> Result<BTreeMap<i64, GachaAccumulator>> {
     let mut gachas = load_gachas(connection, timeline_links)?;
-    let mut jp_gachas = if let Some(jp_connection) = jp_connection {
-        load_gachas(jp_connection, timeline_links)?
+    let mut jp_gachas = if let Some(jp_master) = jp_master {
+        load_gachas(jp_master, timeline_links)?
     } else {
         let mut bundled: BTreeMap<i64, GachaAccumulator> =
             serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
@@ -8633,8 +8724,8 @@ mod tests {
         timeline_link_near_start, Archive, ArchiveNews, GachaAccumulator, GlobalNewsArchive,
         GlobalNewsPost, GlobalNewsSnapshot, GlobalSocialArchive, GlobalSocialPost,
         GlobalSocialSnapshot, NewsFreePullCampaignClaim, PlannerFreePullAllocation, PlannerGacha,
-        PlannerGachaShard, PlannerReward, PlannerRewardCatalogRow, PlannerSourceItem, TimelineLink,
-        TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
+        PlannerGachaShard, PlannerPickup, PlannerReward, PlannerRewardCatalogRow,
+        PlannerSourceItem, TimelineLink, TRAINER_SKILLS_TEST_CURRENCY_CATEGORY,
     };
     use chrono::{NaiveDate, TimeZone, Utc};
     use rusqlite::Connection;
@@ -10158,6 +10249,7 @@ mod tests {
                 ticket_currency: Some("support_ticket"),
                 provenance: "global_master",
                 confidence: "exact",
+                select_count: None,
                 pickups: Vec::new(),
                 featured_pickups: Vec::new(),
                 rarity_rates: Vec::new(),
@@ -10584,6 +10676,93 @@ mod tests {
                 .abs()
                 < 1e-12
         );
+    }
+
+    fn pickupSummary(pickups: &[PlannerPickup]) -> Vec<(i64, f64, bool)> {
+        pickups
+            .iter()
+            .map(|pickup| (pickup.pickup_id, pickup.rate, pickup.exchangeable))
+            .collect()
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn gachaWithoutPickupsTakesItsRecommendedCards() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(r#"
+            CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
+            CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER, recommend_order INTEGER);
+            CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);
+            INSERT INTO gacha_data VALUES (30480, 1, 11, 150), (30478, 1, 3, 150);
+            INSERT INTO gacha_available VALUES
+                (30480, 113501, 0, 3, 3750, 1), (30480, 101602, 0, 3, 3750, 2), (30480, 100201, 0, 2, 90000, 0),
+                (30478, 110101, 1, 3, 7500, 1), (30478, 100101, 0, 3, 7500, 2);
+            INSERT INTO gacha_exchange VALUES (30480, 113501, 200), (30480, 101602, 200), (30478, 110101, 200);
+        "#).unwrap();
+        let links = timeline_gacha_links(&json!({ "events": [
+            { "id": "twinkle", "gacha_id": 30480, "card_type": "character", "pickup_card_ids": [101602, 113501] },
+            { "id": "pickup", "gacha_id": 30478, "card_type": "character", "pickup_card_ids": [110101] }
+        ] }));
+
+        let gachas = load_gachas(&connection, &links).unwrap();
+        let twinkle = &gachas[&30480];
+        let expected = vec![(101602, 0.00375, true), (113501, 0.00375, true)];
+        assert_eq!(pickupSummary(&twinkle.pickups), expected);
+        assert_eq!(pickupSummary(&twinkle.featured_pickups), expected);
+        assert_eq!(twinkle.spark_pulls, 200);
+        assert_eq!(twinkle.confidence, Some("exact"));
+        assert_eq!(
+            pickupSummary(&gachas[&30478].featured_pickups),
+            [(110101, 0.0075, true)]
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn selectGachaListsItsCandidatesAtTheSlotRate() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(r#"
+            CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
+            CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, is_pickup INTEGER, rarity INTEGER, odds INTEGER, recommend_order INTEGER);
+            CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);
+            CREATE TABLE select_pickup (gacha_id INTEGER, card_id INTEGER);
+            INSERT INTO gacha_data VALUES (30277, 2, 12, 150), (50254, 2, 15, 150);
+            INSERT INTO gacha_available VALUES
+                (30277, 301, 1, 3, 7500, 3), (30277, 302, 1, 3, 7500, 2), (30277, 201, 0, 3, 7500, 0),
+                (30277, 10115, 1, 1, 37500, 1), (30277, 30001, 0, 3, 7500, 0), (30277, 10001, 0, 1, 752500, 0),
+                (50254, 301, 1, 3, 7500, 3), (50254, 302, 1, 3, 7500, 2), (50254, 303, 1, 3, 7500, 1),
+                (50254, 201, 0, 3, 3750, 0), (50254, 30001, 0, 3, 3750, 0), (50254, 10001, 0, 1, 970000, 0);
+            INSERT INTO gacha_exchange VALUES (30277, 30179, 200), (30277, 30130, 200);
+            INSERT INTO select_pickup VALUES (30277, 30179), (30277, 30134), (30277, 30130), (50254, 30311), (50254, 30264);
+        "#).unwrap();
+        let links = timeline_gacha_links(&json!({ "events": [
+            { "id": "pick-two", "gacha_id": 30277, "card_type": "support", "pickup_card_ids": [10115, 30130, 30134, 30179] },
+            { "id": "stamp-sheet", "gacha_id": 50254, "card_type": "support" }
+        ] }));
+
+        let gachas = load_gachas(&connection, &links).unwrap();
+        let pick_two = &gachas[&30277];
+        let candidates = vec![
+            (30130, 0.0075, true),
+            (30134, 0.0075, false),
+            (30179, 0.0075, true),
+        ];
+        assert_eq!(pick_two.select_count, Some(2));
+        assert_eq!(pickupSummary(&pick_two.pickups), candidates);
+        assert_eq!(
+            pickupSummary(&pick_two.featured_pickups),
+            [vec![(10115, 0.0375, false)], candidates].concat()
+        );
+        assert_eq!(pick_two.spark_pulls, 200);
+        assert_eq!(pick_two.pickups[0].label, "Support Card 30130");
+
+        let stamp_sheet = &gachas[&50254];
+        let candidates = vec![(30264, 0.0075, false), (30311, 0.0075, false)];
+        assert_eq!(stamp_sheet.select_count, Some(3));
+        assert_eq!(pickupSummary(&stamp_sheet.pickups), candidates);
+        assert_eq!(pickupSummary(&stamp_sheet.featured_pickups), candidates);
+        assert_eq!(stamp_sheet.rarity_rates[0].rarity, 3);
+        assert!((stamp_sheet.rarity_rates[0].rate - 0.03).abs() < 1e-12);
     }
 
     #[test]

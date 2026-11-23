@@ -48,6 +48,25 @@ pub fn masterGachas(jp: &Connection) -> Result<Vec<JpGacha>> {
     master::readGachas(jp)
 }
 
+impl JpGacha {
+    /// The cards the gacha features: its pickups, else the cards it recommends, which is how a
+    /// Twinkle Collection names its featured cards, else the cards a select gacha lets the player
+    /// pick from. A select step-up offers nearly the whole ★3 pool, which features nothing.
+    pub fn featuredCards(&self) -> &[i64] {
+        if !self.pickup_card_ids.is_empty() {
+            return &self.pickup_card_ids;
+        }
+        if !self.recommended_card_ids.is_empty() {
+            return &self.recommended_card_ids;
+        }
+        // Type 14 is the select step-up.
+        if self.gacha_type == 14 {
+            return &[];
+        }
+        &self.select_card_ids
+    }
+}
+
 /// The gachas with pickups that are newer than the newest of `known` in the same id range. Ids
 /// grow with time, so these are the gachas a curated list has not reached yet. A gacha without
 /// fixed pickups, such as a select or monthly one, is left to the news archive, which names what
@@ -381,6 +400,7 @@ mod tests {
             end_date: date,
             pickup_card_ids,
             recommended_card_ids: Vec::new(),
+            select_card_ids: Vec::new(),
         }
     }
 
