@@ -381,6 +381,7 @@ mod tests {
             end_date: date,
             pickup_card_ids,
             recommended_card_ids: Vec::new(),
+            select_card_ids: Vec::new(),
         }
     }
 

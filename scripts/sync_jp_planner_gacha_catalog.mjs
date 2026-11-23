@@ -6,26 +6,55 @@ const [masterPath, outputPath] = process.argv.slice(2);
 if (!masterPath || !outputPath) throw new Error('Usage: node scripts/sync_jp_planner_gacha_catalog.mjs <jp-master.mdb> <output.json> (Node 22+)');
 const db = new DatabaseSync(masterPath, { readOnly: true });
 const catalog = {};
-const rows = db.prepare(`SELECT d.id, d.card_type, d.type, d.cost_single,
-  a.card_id, a.rarity, a.odds,
-  COALESCE((SELECT MIN(e.pay_item_num) FROM gacha_exchange e
+// Both queries name the card's row `a`, so they share this.
+const spark = `COALESCE((SELECT MIN(e.pay_item_num) FROM gacha_exchange e
     WHERE e.gacha_id=d.id AND e.card_id=a.card_id),
     (SELECT MIN(ticket.pay_item_num) FROM gacha_item_exchange ticket
       JOIN item_exchange selection ON selection.pay_item_category=ticket.item_category AND selection.pay_item_id=ticket.item_id
       WHERE ticket.gacha_id=d.id AND ticket.item_category IN (41,42)
         AND ticket.item_num=1 AND ticket.pay_item_num>0 AND selection.pay_item_num=1 AND selection.change_item_num=1
         AND selection.change_item_category=CASE d.card_type WHEN 1 THEN 50 WHEN 2 THEN 51 END
-        AND selection.change_item_id=a.card_id), 0) AS spark
-  FROM gacha_data d JOIN gacha_available a ON a.gacha_id=d.id AND (a.is_pickup=1 OR (d.cost_type=92 AND d.type<>14 AND a.rarity=3))
+        AND selection.change_item_id=a.card_id), 0)`;
+const pickupOf = (cardType, cardId, odds, spark) => ({ pickup_id: cardId,
+  label: `${cardType === 1 ? 'Umamusume' : 'Support Card'} ${cardId}`, rate: odds / 1_000_000, exchangeable: spark > 0 });
+// The cards each select gacha lets the player pick its rate-ups from. A select step-up keeps its step-up model.
+const selectable = new Map();
+for (const row of db.prepare(`SELECT d.id, a.card_id, ${spark} AS spark FROM select_pickup a
+  JOIN gacha_data d ON d.id=a.gacha_id WHERE d.type<>14 ORDER BY d.id, a.card_id`).all()) {
+  if (!selectable.has(row.id)) selectable.set(row.id, []);
+  selectable.get(row.id).push(row);
+}
+// A gacha without pickups, such as a Twinkle Collection, features the cards it recommends.
+const rows = db.prepare(`SELECT d.id, d.card_type, d.type, d.cost_single,
+  a.card_id, a.rarity, a.odds, a.is_pickup, ${spark} AS spark
+  FROM gacha_data d JOIN gacha_available a ON a.gacha_id=d.id AND (a.is_pickup=1 OR (d.cost_type=92 AND d.type<>14 AND a.rarity=3)
+    OR (a.recommend_order>0 AND NOT EXISTS (SELECT 1 FROM gacha_available p WHERE p.gacha_id=d.id AND p.is_pickup=1)))
   ORDER BY d.id, a.card_id`).all();
+const slotOdds = new Map();
 for (const row of rows) {
   const gacha = catalog[row.id] ??= { card_type: row.card_type, gacha_type: row.type,
     cost: row.cost_single, spark_pulls: 0, pickups: [], featured_pickups: [], rarity_rates: [] };
   gacha.spark_pulls = Math.max(gacha.spark_pulls, row.spark);
-  const pickup = { pickup_id: row.card_id, label: `${row.card_type === 1 ? 'Umamusume' : 'Support Card'} ${row.card_id}`,
-    rate: row.odds / 1_000_000, exchangeable: row.spark > 0 };
+  // A select gacha's ★3 pickups are slots its candidates take; its other ★3 rows are the rest of the pool.
+  if (row.rarity === 3 && selectable.has(row.id)) {
+    if (row.is_pickup === 1) {
+      gacha.select_count = (gacha.select_count ?? 0) + 1;
+      slotOdds.set(row.id, row.odds);
+    }
+    continue;
+  }
+  const pickup = pickupOf(row.card_type, row.card_id, row.odds, row.spark);
   gacha.featured_pickups.push(pickup);
   if (row.rarity === 3) gacha.pickups.push(pickup);
+}
+for (const [id, odds] of slotOdds) {
+  const gacha = catalog[id];
+  for (const candidate of selectable.get(id)) {
+    gacha.spark_pulls = Math.max(gacha.spark_pulls, candidate.spark);
+    const pickup = pickupOf(gacha.card_type, candidate.card_id, odds, candidate.spark);
+    gacha.featured_pickups.push(pickup);
+    gacha.pickups.push(pickup);
+  }
 }
 for (const row of db.prepare('SELECT gacha_id, rarity, SUM(odds) AS odds FROM gacha_available GROUP BY gacha_id, rarity ORDER BY gacha_id, rarity DESC').all()) {
   catalog[row.gacha_id]?.rarity_rates.push({ rarity: row.rarity, rate: row.odds / 1_000_000 });

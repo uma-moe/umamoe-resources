@@ -32,7 +32,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 39;
+const TIMELINE_ALGORITHM_VERSION: u8 = 40;
 /// How much later in JP a banner Global confirmed must have come for Global to have skipped an
 /// unconfirmed one of its kind.
 const SKIPPED_BANNER_MARGIN_DAYS: i64 = 30;
@@ -3952,8 +3952,9 @@ fn append_jp_master_banners(
 }
 
 /// Gives each JP banner that lists no pickups the cards JP's master features on it: its pickups,
-/// or the cards it recommends, which is how a Twinkle Collection names its featured cards. A
-/// select gacha features none and stays empty.
+/// else the cards it recommends, which is how a Twinkle Collection names its featured cards, else
+/// the cards a select gacha lets the player pick from. A select step-up offers nearly the whole
+/// ★3 pool, which features nothing, so it stays empty.
 #[allow(non_snake_case)]
 fn fillMasterPickups(
     master_gachas: &[crate::jp_names::JpGacha],
@@ -3964,15 +3965,19 @@ fn fillMasterPickups(
 ) {
     let featured: BTreeMap<i64, &[i64]> = master_gachas
         .iter()
-        .map(|gacha| {
-            let cards = if gacha.pickup_card_ids.is_empty() {
-                &gacha.recommended_card_ids
-            } else {
-                &gacha.pickup_card_ids
-            };
-            (gacha.gacha_id, cards.as_slice())
+        .filter_map(|gacha| {
+            // Type 14 is the select step-up.
+            let selectable = (gacha.gacha_type != 14).then_some(&gacha.select_card_ids);
+            let cards = [
+                Some(&gacha.pickup_card_ids),
+                Some(&gacha.recommended_card_ids),
+                selectable,
+            ]
+            .into_iter()
+            .flatten()
+            .find(|cards| !cards.is_empty())?;
+            Some((gacha.gacha_id, cards.as_slice()))
         })
-        .filter(|(_, cards)| !cards.is_empty())
         .collect();
     let fill = |gacha_id: i64, pickups: &mut Vec<i64>| {
         if !pickups.is_empty() {
@@ -5224,8 +5229,8 @@ mod tests {
         CalendarLikelihoodModel, CalibrationAnchor, ConfirmedDateLookup, ConfirmedTimelineKind,
         DatePrediction, FamilyAdjustmentModel, FamilyAdjustmentModels, FamilyAdjustmentSample,
         PredictionInfo, PredictionKind, TimelineCampaign, TimelineChampionsMeeting,
-        TimelineCharacterBanner, TimelineLegendRace, TimelineStoryEvent, TimelineSupportBanner,
-        FALLBACK_ACCELERATION_RATE,
+        TimelineCharacterBanner, TimelineLegendRace, TimelinePaidBanner, TimelineStoryEvent,
+        TimelineSupportBanner, FALLBACK_ACCELERATION_RATE,
     };
     use crate::generators::banners::{CharacterBanner, SupportBanner};
     use crate::generators::jp_events::{
@@ -7151,22 +7156,29 @@ mod tests {
     #[allow(non_snake_case)]
     fn fillMasterPickupsPrefersPickupsThenRecommendationsAndKeepsListedCards() {
         let date = utc_date(2026, 11, 2, 3);
-        let gacha = |gacha_id, pickup_card_ids: Vec<i64>, recommended_card_ids: Vec<i64>| {
-            crate::jp_names::JpGacha {
-                gacha_id,
-                gacha_type: 11,
-                card_type: 1,
-                start_date: date,
-                end_date: date,
-                pickup_card_ids,
-                recommended_card_ids,
-            }
+        let gacha = |gacha_id,
+                     gacha_type,
+                     pickup_card_ids: Vec<i64>,
+                     recommended_card_ids: Vec<i64>,
+                     select_card_ids: Vec<i64>| crate::jp_names::JpGacha {
+            gacha_id,
+            gacha_type,
+            card_type: 1,
+            start_date: date,
+            end_date: date,
+            pickup_card_ids,
+            recommended_card_ids,
+            select_card_ids,
         };
         let master = [
-            gacha(30480, vec![], vec![101602, 113501]),
-            gacha(30478, vec![110101], vec![110101, 100101]),
-            gacha(30476, vec![], vec![]),
-            gacha(30479, vec![30300], vec![]),
+            gacha(30480, 11, vec![], vec![101602, 113501], vec![]),
+            gacha(30478, 3, vec![110101], vec![110101, 100101], vec![]),
+            gacha(30476, 3, vec![], vec![], vec![]),
+            gacha(30479, 3, vec![30300], vec![], vec![]),
+            gacha(30485, 12, vec![], vec![], vec![30275, 30282]),
+            gacha(30477, 12, vec![], vec![], vec![30275, 30282]),
+            gacha(50254, 15, vec![], vec![], vec![30264, 30289]),
+            gacha(50240, 14, vec![], vec![], vec![30001, 30002]),
         ];
         let mut characters = vec![
             test_timeline_character_banner(30480, vec![]),
@@ -7174,9 +7186,25 @@ mod tests {
             test_timeline_character_banner(30476, vec![]),
             test_timeline_character_banner(30474, vec![]),
         ];
-        let mut supports = vec![test_timeline_support_banner(30479, vec![30299])];
+        let mut supports = vec![
+            test_timeline_support_banner(30479, vec![30299]),
+            test_timeline_support_banner(30485, vec![]),
+            test_timeline_support_banner(30477, vec![30299]),
+        ];
+        let paid_banner = |gacha_id, gacha_type| TimelinePaidBanner {
+            gacha_id,
+            gacha_type,
+            card_type: "support".to_string(),
+            year: 2026,
+            image: String::new(),
+            image_path: String::new(),
+            start_at: date,
+            end_at: date,
+            pickup_card_ids: Vec::new(),
+        };
+        let mut paid = vec![paid_banner(50254, 15), paid_banner(50240, 14)];
 
-        fillMasterPickups(&master, &mut characters, &mut supports, &mut [], &mut []);
+        fillMasterPickups(&master, &mut characters, &mut supports, &mut paid, &mut []);
 
         let pickups: Vec<Vec<i64>> = characters
             .into_iter()
@@ -7186,7 +7214,13 @@ mod tests {
             pickups,
             [vec![101602, 113501], vec![110101], vec![], vec![]]
         );
-        assert_eq!(supports[0].pickup_card_ids, [30299]);
+        let pickups: Vec<Vec<i64>> = supports
+            .into_iter()
+            .map(|banner| banner.pickup_card_ids)
+            .collect();
+        assert_eq!(pickups, [vec![30299], vec![30275, 30282], vec![30299]]);
+        assert_eq!(paid[0].pickup_card_ids, [30264, 30289]);
+        assert!(paid[1].pickup_card_ids.is_empty());
     }
 
     fn test_timeline_character_banner(
