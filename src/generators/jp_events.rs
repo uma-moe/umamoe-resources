@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const ALGORITHM_VERSION: u8 = 9;
+const ALGORITHM_VERSION: u8 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum NewsTimelineKind {
@@ -442,10 +442,25 @@ fn is_promotional_campaign_post(title: &str) -> bool {
         || title.contains("autographed")
 }
 
+/// Posts that announce an event before it runs ("coming soon", "to be held") name the
+/// event but land days or weeks early, so their publish date can't become the start date.
+fn is_preview_announcement(title: &str) -> bool {
+    [
+        "coming soon",
+        "to be held",
+        "will be held",
+        "will begin",
+        "scheduled",
+    ]
+    .iter()
+    .any(|marker| title.contains(marker))
+}
+
 fn is_start_post(kind: NewsTimelineKind, title: &str) -> bool {
     match kind {
         NewsTimelineKind::ChampionsMeeting => {
-            (title.contains("champions meeting") || title.contains("meeting of champions"))
+            !is_preview_announcement(title)
+                && (title.contains("champions meeting") || title.contains("meeting of champions"))
                 && (title.contains("race event") || title.contains("racing event"))
                 && (title.contains("has begun")
                     || title.contains("was held")
@@ -1262,6 +1277,18 @@ mod tests {
         let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
+    }
+
+    #[test]
+    fn champions_meeting_announcements_are_not_starts() {
+        assert!(!super::is_start_post(
+            NewsTimelineKind::ChampionsMeeting,
+            "the \"champions meeting classic\" racing event is coming soon!"
+        ));
+        assert!(super::is_start_post(
+            NewsTimelineKind::ChampionsMeeting,
+            "the \"champions meeting mile\" racing event is here!"
+        ));
     }
 
     #[test]
