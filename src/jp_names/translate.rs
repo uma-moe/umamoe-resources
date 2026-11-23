@@ -1,9 +1,10 @@
-//! Asks Claude for the English names Global would ship, in batches, with Global's own names as
-//! examples. There is no official Rust SDK, so this calls the Messages API over HTTP.
+//! Asks Claude for the English names Global would ship, with Global's own names as examples, and
+//! for outfit labels, with the hand-kept ones as examples, in batches. There is no official Rust
+//! SDK, so this calls the Messages API over HTTP.
 
-use super::types::{TranslationExample, TranslationItem, TRANSLATION_MODEL};
+use super::types::TRANSLATION_MODEL;
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -19,7 +20,7 @@ pub(super) const BATCH_SIZE: usize = 80;
 const MAX_TOKENS: u32 = 16_000;
 const ATTEMPTS: u32 = 3;
 
-const INSTRUCTIONS: &str = r#"You are the English localizer for Umamusume: Pretty Derby's Global release. For each Japanese name you are given, write the English name the Global team would ship.
+pub(super) const NAME_INSTRUCTIONS: &str = r#"You are the English localizer for Umamusume: Pretty Derby's Global release. For each Japanese name you are given, write the English name the Global team would ship.
 
 The examples below are names Global has shipped. Before translating, study how Global localizes:
 - Global localizes, it does not translate. Titles are rewritten into short, idiomatic, punchy English that captures the feeling or joke, often dropping literal words or restructuring the phrase. A literal rendering is usually wrong.
@@ -35,6 +36,23 @@ Kinds:
 For each item, consider the meaning, the character and how the examples handle similar cases, then commit to one answer. Answer every id you are given, with the English name only.
 
 Shipped Global names:
+"#;
+
+pub(super) const THEME_INSTRUCTIONS: &str = r#"You write outfit labels for uma.moe, an Umamusume: Pretty Derby fan site. uma.moe names a character card by its character followed by a short outfit label in brackets, as in "Super Creek [Halloween]", so readers can tell a character's outfits apart at a glance. For each outfit you are given, write that label.
+
+Each outfit has:
+- `character`: the English name of the card's character.
+- `title_ja`: the outfit's Japanese title.
+- `title_en`: its English title, when it has one.
+- `debut`: the day the card first featured on a JP gacha banner (YYYY-MM-DD), when known.
+
+The examples below are labels uma.moe already uses, with the same fields. Study how they label outfits:
+- When an outfit clearly belongs to a season or event, the label names that theme in the examples' words, such as Halloween, Christmas, New Year, Valentine, Summer or Wedding. Judge it from the title, the character and the debut together: JP's Halloween outfits debut in mid to late October, Christmas ones in December, New Year ones in late December or January, Valentine ones in February, Wedding ones in June and Summer ones in July or August.
+- Otherwise the label is the outfit's English title, as some examples are: `title_en`, or your own English rendering of `title_ja` when it has none.
+
+For each outfit, weigh the title, the character and the debut against how the examples handle similar cases, then commit to one short label in the examples' style, without brackets. Answer every id you are given, with the label as `en`.
+
+uma.moe's labels:
 "#;
 
 pub(super) struct Translator {
@@ -55,11 +73,16 @@ struct AnswerItem {
 }
 
 impl Translator {
-    pub(super) fn new(api_key: String, examples: &[TranslationExample]) -> Result<Self> {
+    /// `instructions` end where the examples follow.
+    pub(super) fn new(
+        api_key: String,
+        instructions: &str,
+        examples: &[impl Serialize],
+    ) -> Result<Self> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(600))
             .build()?;
-        let system = format!("{INSTRUCTIONS}{}", serde_json::to_string(examples)?);
+        let system = format!("{instructions}{}", serde_json::to_string(examples)?);
         Ok(Self {
             client,
             api_key,
@@ -67,10 +90,11 @@ impl Translator {
         })
     }
 
-    /// The English name of each item by its id. An item the model leaves out is missing.
+    /// The model's answer for each item, by the item's `id`. An item the model leaves out is
+    /// missing.
     pub(super) async fn translate(
         &self,
-        items: &[TranslationItem],
+        items: &[impl Serialize],
     ) -> Result<BTreeMap<String, String>> {
         let body = json!({
             "model": TRANSLATION_MODEL,
@@ -102,10 +126,11 @@ impl Translator {
         let answer: Answer =
             serde_json::from_str(&text).context("translation answer is not the requested JSON")?;
 
+        // Callers read only the ids they asked about.
         let mut names = BTreeMap::new();
         for item in answer.translations {
             let en = item.en.trim();
-            if !en.is_empty() && items.iter().any(|asked| asked.id == item.id) {
+            if !en.is_empty() {
                 names.insert(item.id, en.to_string());
             }
         }

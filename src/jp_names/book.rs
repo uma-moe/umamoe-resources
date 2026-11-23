@@ -1,6 +1,6 @@
 //! The English and Japanese names of characters and cards that every resource reads.
 
-use super::types::{CardNames, MasterNames, NameBook, NameKind};
+use super::types::{BundledCharacter, CardNames, MasterNames, NameBook, NameKind};
 use super::{bundledNames, master, KINDS};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
@@ -9,8 +9,9 @@ use std::collections::BTreeMap;
 
 impl NameBook {
     /// English names: Global's master wins, then the hand-written overrides, then the bundled
-    /// character names, then the translations. Japanese names, and the characters of cards only
-    /// JP has, come from JP's master; without it there are none.
+    /// character names, then the translations. Outfit themes come from the overrides, then the
+    /// translations. Japanese names, and the characters of cards only JP has, come from JP's
+    /// master; without it there are none.
     pub fn load(global: &Connection, jp: Option<&Connection>) -> Result<Self> {
         let loc = bundledNames()?;
         let (japanese, mut card_characters) = match jp {
@@ -33,6 +34,7 @@ impl NameBook {
             }
             names.extend(master::readNames(global, kind)?);
         }
+        english.insert(NameKind::OutfitTheme, loc.outfitThemes());
 
         Ok(Self {
             english,
@@ -100,11 +102,20 @@ fn titleKind(card_id: i64) -> NameKind {
     }
 }
 
-fn stripBrackets(title: &str) -> String {
+pub(super) fn stripBrackets(title: &str) -> String {
     title.trim().trim_matches(['[', ']']).trim().to_string()
 }
 
 fn bundledCharacterNames() -> Result<BTreeMap<i64, String>> {
+    Ok(bundledCharacters()?
+        .into_iter()
+        .map(|(id, character)| (id, character.name))
+        .collect())
+}
+
+/// The characters the store's hand-kept `character_names.json` lists, by character id. Labels
+/// that are not text are left out.
+pub(super) fn bundledCharacters() -> Result<BTreeMap<i64, BundledCharacter>> {
     let names = crate::generators::common::read_character_names()?;
     let names = names
         .as_object()
@@ -112,8 +123,15 @@ fn bundledCharacterNames() -> Result<BTreeMap<i64, String>> {
     Ok(names
         .iter()
         .filter_map(|(id, entry)| {
-            let name = entry.get("name").and_then(Value::as_str)?;
-            Some((id.parse().ok()?, name.to_string()))
+            let name = entry.get("name").and_then(Value::as_str)?.to_string();
+            let skins = entry
+                .get("skins")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+                .filter_map(|(key, label)| Some((key.clone(), label.as_str()?.to_string())))
+                .collect();
+            Some((id.parse().ok()?, BundledCharacter { name, skins }))
         })
         .collect())
 }
