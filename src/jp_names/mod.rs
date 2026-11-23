@@ -10,6 +10,7 @@ mod types;
 
 mod book;
 mod master;
+mod themes;
 mod translate;
 
 use crate::store::StoreFile;
@@ -19,15 +20,16 @@ use serde::{de::DeserializeOwned, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+pub use themes::{awaitsTheme, skinKey};
 use tracing::{info, warn};
-use translate::{Translator, BATCH_SIZE};
+use translate::{Translator, BATCH_SIZE, NAME_INSTRUCTIONS};
 pub use types::{CardNames, JpGacha, NameBook, NameKind, NameLoc};
 use types::{
     MachineName, MasterNames, NameOverrides, NameTranslations, TranslationExample, TranslationItem,
     TRANSLATION_MODEL,
 };
 
-/// Uma names first, so titles can name their character in English.
+/// The kinds the masters name. Uma names first, so titles can name their character in English.
 const KINDS: [NameKind; 3] = [
     NameKind::UmaName,
     NameKind::OutfitTitle,
@@ -140,6 +142,14 @@ impl NameLoc {
             .flatten()
             .map(|(id, name)| (*id, name.as_str()))
     }
+
+    /// Outfit labels by card id: the hand-written ones, else the model's. No master has them.
+    fn outfitThemes(&self) -> BTreeMap<i64, String> {
+        self.translations(NameKind::OutfitTheme)
+            .chain(self.overrides(NameKind::OutfitTheme))
+            .map(|(id, label)| (id, label.to_string()))
+            .collect()
+    }
 }
 
 /// The Anthropic key names are translated with, when this server has one. An empty value counts
@@ -151,7 +161,8 @@ pub fn translationKey() -> Option<String> {
 }
 
 /// Translates the names only JP has released that the translations at `translations_path` do
-/// not cover and no override names, and writes the translations back.
+/// not cover and no override names, labels the JP outfits the hand-kept character list has no
+/// label for, and writes the translations back.
 pub async fn translateNames(
     global_master: &Path,
     jp_master: &Path,
@@ -165,13 +176,27 @@ pub async fn translateNames(
     let official = master::readAllNames(&global)?;
     let japanese = master::readAllNames(&jp)?;
     let card_characters = master::readCardCharacters(&jp)?;
-    let translations = updateTranslations(
+    let bundled = book::bundledCharacters()?;
+    let debuts = themes::debutDates(&master::readGachas(&jp)?);
+    let mut translations = updateTranslations(
         &official,
         &japanese,
         &card_characters,
-        previous,
+        &previous,
         &overrides,
-        api_key,
+        &api_key,
+    )
+    .await?;
+    themes::labelOutfits(
+        &mut translations,
+        &previous,
+        &official,
+        &japanese,
+        &card_characters,
+        &overrides,
+        &bundled,
+        &debuts,
+        &api_key,
     )
     .await?;
     writeJson(translations_path, &translations)
@@ -182,9 +207,9 @@ async fn updateTranslations(
     official: &MasterNames,
     japanese: &MasterNames,
     card_characters: &BTreeMap<i64, i64>,
-    previous: NameTranslations,
+    previous: &NameTranslations,
     overrides: &NameOverrides,
-    api_key: String,
+    api_key: &str,
 ) -> Result<NameTranslations> {
     let examples = examples(official, japanese, card_characters);
 
@@ -225,7 +250,7 @@ async fn updateTranslations(
         return Ok(translations);
     }
 
-    let translator = Translator::new(api_key, &examples)?;
+    let translator = Translator::new(api_key.to_string(), NAME_INSTRUCTIONS, &examples)?;
     for kind in KINDS {
         let Some(names) = pending.remove(&kind) else {
             continue;
@@ -333,21 +358,25 @@ fn characterOf(
     let [chara] = characters.into_iter().collect::<Vec<_>>()[..] else {
         return None;
     };
-    official[&NameKind::UmaName]
-        .get(&chara)
-        .or_else(|| {
-            overrides
-                .get(&NameKind::UmaName)
-                .and_then(|names| names.get(&chara))
-        })
-        .or_else(|| {
-            translations
-                .names
-                .get(&NameKind::UmaName)
-                .and_then(|names| names.get(&chara))
-                .map(|name| &name.en)
-        })
-        .cloned()
+    englishName(NameKind::UmaName, chara, official, overrides, translations).cloned()
+}
+
+/// An English name: Global's, else the hand-written one, else the translation.
+fn englishName<'a>(
+    kind: NameKind,
+    id: i64,
+    official: &'a MasterNames,
+    overrides: &'a NameOverrides,
+    translations: &'a NameTranslations,
+) -> Option<&'a String> {
+    let name = |names: &'a MasterNames| names.get(&kind).and_then(|names| names.get(&id));
+    name(official).or_else(|| name(overrides)).or_else(|| {
+        translations
+            .names
+            .get(&kind)
+            .and_then(|names| names.get(&id))
+            .map(|name| &name.en)
+    })
 }
 
 fn openMaster(path: &Path) -> Result<Connection> {
@@ -424,6 +453,30 @@ mod tests {
     #[test]
     fn gachasAfterSkipsRangesWithoutKnownIds() {
         assert!(gachasAfter(&[gacha(50001, vec![30001])], &BTreeSet::from([30001])).is_empty());
+    }
+
+    #[test]
+    fn outfitThemeOverridesBeatTranslations() {
+        let themes = |entries: &[(i64, &str)]| {
+            BTreeMap::from([(
+                NameKind::OutfitTheme,
+                entries
+                    .iter()
+                    .map(|(id, label)| (*id, label.to_string()))
+                    .collect(),
+            )])
+        };
+        let loc = NameLoc {
+            translations: themes(&[(109302, "Autumn Andante"), (110802, "Claret Nosferatu")]),
+            overrides: themes(&[(110802, "Halloween")]),
+        };
+        assert_eq!(
+            loc.outfitThemes(),
+            BTreeMap::from([
+                (109302, "Autumn Andante".to_string()),
+                (110802, "Halloween".to_string()),
+            ])
+        );
     }
 
     #[test]

@@ -8,6 +8,12 @@ use std::collections::BTreeMap;
 /// The model that translates names Global has not released.
 pub const TRANSLATION_MODEL: &str = "claude-opus-5-5";
 
+/// The hand-kept character list's label for each character's first outfit.
+pub(super) const ORIGINAL_SKIN: &str = "Original";
+
+/// The hand-kept character list's placeholder for an outfit it has no label for yet.
+pub(super) const ALT_VERSION_SKIN: &str = "Alt Version";
+
 /// A pickup gacha as JP's master describes it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JpGacha {
@@ -27,7 +33,8 @@ pub struct JpGacha {
     pub select_card_ids: Vec<i64>,
 }
 
-/// What a translated name names; each kind is one text category of the masters.
+/// What a translated name names; each kind but the outfit theme is one text category of the
+/// masters.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NameKind {
@@ -37,6 +44,9 @@ pub enum NameKind {
     OutfitTitle,
     /// A support card's title in brackets, by support card id.
     SupportTitle,
+    /// A character card's short outfit label, such as Halloween, which uma.moe shows after the
+    /// character's name, by card id. No master has it: Claude writes it from the outfit title.
+    OutfitTheme,
 }
 
 /// A translation, with the Japanese it was made from so a changed name is translated again.
@@ -103,4 +113,40 @@ pub(super) struct TranslationExample {
     pub(super) en: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) character: Option<String>,
+}
+
+/// A character as the store's hand-kept `character_names.json` lists it: its English name and
+/// its outfit labels, by the last two digits of the card id.
+#[derive(Debug)]
+pub(super) struct BundledCharacter {
+    pub(super) name: String,
+    pub(super) skins: BTreeMap<String, String>,
+}
+
+/// What the model reads about an outfit to label it. Titles have no brackets.
+#[derive(Debug, Serialize)]
+pub(super) struct ThemeOutfit {
+    pub(super) character: String,
+    pub(super) title_ja: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) title_en: Option<String>,
+    /// The day the card first featured on a JP gacha, as `YYYY-MM-DD`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) debut: Option<String>,
+}
+
+/// One outfit sent to the model, by its card id.
+#[derive(Debug, Serialize)]
+pub(super) struct ThemeItem {
+    pub(super) id: String,
+    #[serde(flatten)]
+    pub(super) outfit: ThemeOutfit,
+}
+
+/// A hand-kept outfit label the model copies the style of.
+#[derive(Debug, Serialize)]
+pub(super) struct ThemeExample {
+    #[serde(flatten)]
+    pub(super) outfit: ThemeOutfit,
+    pub(super) label: String,
 }

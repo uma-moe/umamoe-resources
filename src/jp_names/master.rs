@@ -10,12 +10,14 @@ use std::collections::BTreeMap;
 /// Permanent, debut and ticket gachas sit below.
 const PICKUP_GACHA_IDS: (i64, i64) = (30000, 59999);
 
-/// The `text_data` category that holds each kind of name, by its id.
-pub(super) fn textCategory(kind: NameKind) -> i64 {
+/// The `text_data` category that holds each kind of name, by its id. Outfit themes are in no
+/// master.
+fn textCategory(kind: NameKind) -> Option<i64> {
     match kind {
-        NameKind::UmaName => 6,
-        NameKind::OutfitTitle => 5,
-        NameKind::SupportTitle => 76,
+        NameKind::UmaName => Some(6),
+        NameKind::OutfitTitle => Some(5),
+        NameKind::SupportTitle => Some(76),
+        NameKind::OutfitTheme => None,
     }
 }
 
@@ -149,11 +151,14 @@ pub(super) fn readAllNames(master: &Connection) -> Result<MasterNames> {
     Ok(names)
 }
 
-/// Every name of one kind in a master, by id.
+/// Every name of one kind in a master, by id. A kind no master has reads as empty.
 pub(super) fn readNames(master: &Connection, kind: NameKind) -> Result<BTreeMap<i64, String>> {
+    let Some(category) = textCategory(kind) else {
+        return Ok(BTreeMap::new());
+    };
     let mut statement =
         master.prepare(r#"SELECT "index", text FROM text_data WHERE category = ?1"#)?;
-    let rows = statement.query_map([textCategory(kind)], |row| {
+    let rows = statement.query_map([category], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
     })?;
     let mut names = BTreeMap::new();
