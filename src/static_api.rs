@@ -1,5 +1,6 @@
 use crate::master_history::{self, sqliteValueToJson};
-use crate::pipeline::{read_manifest, read_version_manifest, ResourceManifest};
+use crate::pipeline::{jp_data_dir, read_manifest, read_version_manifest, ResourceManifest};
+use crate::resource_storage;
 use anyhow::{Context, Result};
 use axum::extract::{Path, Query, State};
 use axum::http::header::{
@@ -76,11 +77,30 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
         .route("/resources", get(get_manifest))
         .route("/resources/", get(get_manifest))
         .route("/resources/healthz", get(healthz))
+        .route("/resources/en/manifest.json", get(get_manifest))
+        .route(
+            "/resources/en/current/:file_name",
+            get(get_current_resource),
+        )
+        .route(
+            "/resources/en/:version/:file_name",
+            get(get_versioned_resource),
+        )
+        // Clients from before the region split read the Global set here.
         .route("/resources/manifest.json", get(get_manifest))
         .route("/resources/current/:file_name", get(get_current_resource))
         .route(
             "/resources/:version/:file_name",
             get(get_versioned_resource),
+        )
+        .route("/resources/jp/manifest.json", get(get_jp_manifest))
+        .route(
+            "/resources/jp/current/:file_name",
+            get(get_current_jp_resource),
+        )
+        .route(
+            "/resources/jp/:version/:file_name",
+            get(get_versioned_jp_resource),
         )
         .route(
             "/resources/masterdata/versions.json",
@@ -193,8 +213,26 @@ async fn get_manifest(
     State(state): State<AppState>,
     request: HeaderMap,
 ) -> Result<Response, ApiError> {
-    let manifest_path = state.data_dir.join("manifest.json");
-    let manifest_bytes = fs::read(&manifest_path).await.map_err(|error| {
+    manifest_response(&state.data_dir.join("manifest.json"), &request).await
+}
+
+/// The JP set's manifest. The set is public like the Global one and served the same way.
+async fn get_jp_manifest(
+    State(state): State<AppState>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    manifest_response(
+        &jp_data_dir(&state.data_dir).join("manifest.json"),
+        &request,
+    )
+    .await
+}
+
+async fn manifest_response(
+    manifest_path: &FsPath,
+    request: &HeaderMap,
+) -> Result<Response, ApiError> {
+    let manifest_bytes = fs::read(manifest_path).await.map_err(|error| {
         ApiError::new(
             StatusCode::NOT_FOUND,
             format!("failed to read {}: {}", manifest_path.display(), error),
@@ -245,9 +283,9 @@ async fn getSimulatorMaster(
     }
 
     let manifest = read_version_manifest(&state.data_dir, &version).map_err(internal_error)?;
-    let bytes = fs::read(state.data_dir.join(&version).join("master.mdb.gz"))
-        .await
-        .map_err(internal_error)?;
+    let path =
+        resource_storage::masterPath(&state.data_dir, &version, &manifest.master.sha256, true);
+    let bytes = fs::read(path).await.map_err(internal_error)?;
     let headers = [
         (
             CONTENT_TYPE,
@@ -331,10 +369,54 @@ async fn get_current_resource(
     let manifest = read_manifest(&state.data_dir).map_err(internal_error)?;
     resource_response(
         &state.data_dir,
+        &state.data_dir,
         &manifest,
         &manifest.version,
         &file_name,
         false,
+        false,
+        true,
+    )
+    .await
+}
+
+async fn get_current_jp_resource(
+    State(state): State<AppState>,
+    Path(file_name): Path<String>,
+) -> Result<Response, ApiError> {
+    let jp_dir = jp_data_dir(&state.data_dir);
+    let manifest = read_manifest(&jp_dir).map_err(internal_error)?;
+    resource_response(
+        &state.data_dir,
+        &jp_dir,
+        &manifest,
+        &manifest.version,
+        &file_name,
+        false,
+        false,
+        true,
+    )
+    .await
+}
+
+async fn get_versioned_jp_resource(
+    State(state): State<AppState>,
+    Path((version, file_name)): Path<(String, String)>,
+) -> Result<Response, ApiError> {
+    let jp_dir = jp_data_dir(&state.data_dir);
+    let current_manifest = read_manifest(&jp_dir).map_err(internal_error)?;
+    let manifest = if version == current_manifest.version {
+        current_manifest
+    } else {
+        read_version_manifest(&jp_dir, &version).map_err(internal_error)?
+    };
+    resource_response(
+        &state.data_dir,
+        &jp_dir,
+        &manifest,
+        &version,
+        &file_name,
+        true,
         false,
         true,
     )
@@ -373,6 +455,7 @@ async fn get_current_planner_resource(
     let planner_dir = state.data_dir.join("planner");
     let manifest = read_manifest(&planner_dir).map_err(internal_error)?;
     resource_response(
+        &state.data_dir,
         &planner_dir,
         &manifest,
         &manifest.version,
@@ -439,6 +522,7 @@ async fn get_versioned_resource(
     };
     resource_response(
         &state.data_dir,
+        &state.data_dir,
         &manifest,
         &version,
         &file_name,
@@ -461,6 +545,7 @@ async fn get_versioned_planner_resource(
         read_version_manifest(&planner_dir, &version).map_err(internal_error)?
     };
     resource_response(
+        &state.data_dir,
         &planner_dir,
         &manifest,
         &version,
@@ -472,8 +557,11 @@ async fn get_versioned_planner_resource(
     .await
 }
 
+/// `set_dir` is the folder of the set the manifest belongs to; its files may be stored in the data
+/// directory's blobs.
 async fn resource_response(
     data_dir: &FsPath,
+    set_dir: &FsPath,
     manifest: &ResourceManifest,
     version: &str,
     file_name: &str,
@@ -496,9 +584,7 @@ async fn resource_response(
             )
         })?;
 
-    let gzip_path = data_dir
-        .join(version)
-        .join(format!("{}.gz", logical_file_name));
+    let gzip_path = resource_storage::artifactPath(data_dir, set_dir, version, artifact);
     let gzip_bytes = fs::read(&gzip_path).await.map_err(|error| {
         ApiError::new(
             StatusCode::NOT_FOUND,
@@ -694,6 +780,111 @@ impl IntoResponse for ApiError {
 mod tests {
     #[tokio::test]
     #[allow(non_snake_case)]
+    async fn jpSetIsServedBelowItsOwnPathBesideTheGlobalOne() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "jp-resource-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let manifest = |route: &str, file: &str| ResourceManifest {
+            version: "v1".into(),
+            generated_at: "test".into(),
+            base_path: format!("{route}/v1"),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: "a".repeat(64),
+                path: None,
+                bytes: None,
+            },
+            inputs: Default::default(),
+            artifacts: vec![ResourceArtifact {
+                name: file.into(),
+                path: format!("{route}/v1/{file}.gz"),
+                current_path: format!("{route}/current/{file}.gz"),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: "\"sha256-test\"".into(),
+                sha256: "test".into(),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        // Each set has a file the other lacks, so a mixed-up folder would show.
+        for (folder, route, file, body) in [
+            (root.clone(), "/resources/en", "skills.json", "global"),
+            (root.join("jp"), "/resources/jp", "factors.json", "jp"),
+        ] {
+            std::fs::create_dir_all(folder.join("v1")).unwrap();
+            let bytes = serde_json::to_vec(&manifest(route, file)).unwrap();
+            std::fs::write(folder.join("manifest.json"), &bytes).unwrap();
+            std::fs::write(folder.join("v1/manifest.json"), &bytes).unwrap();
+            std::fs::write(folder.join(format!("v1/{file}.gz")), body).unwrap();
+        }
+
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: true,
+        };
+        let app = super::resource_router(state, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let get = |path: &str| client.get(format!("{origin}{path}")).send();
+
+        let response = get("/resources/jp/manifest.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let etag = response.headers()[super::ETAG].clone();
+        let served: ResourceManifest = response.json().await.unwrap();
+        assert_eq!(served.base_path, "/resources/jp/v1");
+        let response = client
+            .get(format!("{origin}/resources/jp/manifest.json"))
+            .header(super::IF_NONE_MATCH, etag)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_MODIFIED);
+
+        let response = get("/resources/jp/current/factors.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"jp");
+        let response = get("/resources/jp/v1/factors.json").await.unwrap();
+        assert_eq!(
+            response.headers()[super::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(response.bytes().await.unwrap().as_ref(), b"jp");
+
+        // Neither set answers for the other's file.
+        let response = get("/resources/jp/current/skills.json").await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        for global_path in ["/resources/en", "/resources"] {
+            let response = get(&format!("{global_path}/current/factors.json"))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{global_path}");
+            let response = get(&format!("{global_path}/current/skills.json"))
+                .await
+                .unwrap();
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                b"global",
+                "{global_path}"
+            );
+        }
+
+        task.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
     async fn masterDatabaseIsPublicAndManifestSupportsConditionalChecks() {
         use crate::pipeline::{MasterInfo, ResourceManifest};
         use axum::http::StatusCode;
@@ -716,6 +907,7 @@ mod tests {
                 path: Some("/resources/simulator/test-v1/master.mdb.gz".into()),
                 bytes: Some(3),
             },
+            inputs: Default::default(),
             artifacts: vec![],
         };
         let bytes = serde_json::to_vec(&manifest).unwrap();
@@ -763,6 +955,249 @@ mod tests {
             assert_eq!(response.bytes().await.unwrap().as_ref(), b"mdb");
             task.abort();
         }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn theGlobalSetIsServedBelowEnAndAtItsOldPaths() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "global-resource-paths-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("test-v1")).unwrap();
+        let manifest = ResourceManifest {
+            version: "test-v1".into(),
+            generated_at: "test".into(),
+            base_path: "/resources/en/test-v1".into(),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: "a".repeat(64),
+                path: None,
+                bytes: None,
+            },
+            inputs: Default::default(),
+            artifacts: vec![ResourceArtifact {
+                name: "factors.json".into(),
+                path: "/resources/en/test-v1/factors.json.gz".into(),
+                current_path: "/resources/en/current/factors.json.gz".into(),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: "\"sha256-test\"".into(),
+                sha256: "test".into(),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        std::fs::write(root.join("manifest.json"), &manifest_bytes).unwrap();
+        std::fs::write(root.join("test-v1/manifest.json"), &manifest_bytes).unwrap();
+        std::fs::write(root.join("test-v1/factors.json.gz"), b"gz").unwrap();
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: true,
+        };
+        let app = super::resource_router(state, true);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        let mut answers = Vec::new();
+        for path in [
+            "/resources/en/manifest.json",
+            "/resources/en/current/factors.json.gz",
+            "/resources/en/test-v1/factors.json.gz",
+            "/resources/manifest.json",
+            "/resources/current/factors.json.gz",
+            "/resources/test-v1/factors.json.gz",
+        ] {
+            let response = client.get(format!("{origin}{path}")).send().await.unwrap();
+            let status = response.status();
+            answers.push((path, status, response.bytes().await.unwrap().to_vec()));
+        }
+
+        for (path, status, body) in &answers {
+            assert_eq!(*status, StatusCode::OK, "{path}");
+            let expected = match path.ends_with("manifest.json") {
+                true => manifest_bytes.as_slice(),
+                false => b"gz".as_slice(),
+            };
+            assert_eq!(body.as_slice(), expected, "{path}");
+        }
+        task.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn filesAreServedFromBlobsAndFromVersionsInTheOldLayout() {
+        use crate::pipeline::{MasterInfo, ResourceArtifact, ResourceManifest};
+        use axum::http::StatusCode;
+        let root = std::env::temp_dir().join(format!(
+            "blob-resource-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let manifest = |route: &str, version: &str, file: &str, sha256: &str| ResourceManifest {
+            version: version.into(),
+            generated_at: "test".into(),
+            base_path: format!("{route}/{version}"),
+            master: MasterInfo {
+                marker: "test".into(),
+                sha256: sha256.repeat(64),
+                path: None,
+                bytes: None,
+            },
+            inputs: Default::default(),
+            artifacts: vec![ResourceArtifact {
+                name: file.into(),
+                path: format!("{route}/{version}/{file}.gz"),
+                current_path: format!("{route}/current/{file}.gz"),
+                content_type: "application/json; charset=utf-8".into(),
+                content_encoding: "gzip".into(),
+                etag: format!("\"sha256-{version}\""),
+                sha256: sha256.repeat(64),
+                json_bytes: 2,
+                gzip_bytes: 2,
+            }],
+        };
+        // v2 is in the blob layout, v1 keeps its files in its version folder.
+        let write = |folder: std::path::PathBuf,
+                     current: &ResourceManifest,
+                     older: &[&ResourceManifest]| {
+            for manifest in std::iter::once(current).chain(older.iter().copied()) {
+                std::fs::create_dir_all(folder.join(&manifest.version)).unwrap();
+                let bytes = serde_json::to_vec(manifest).unwrap();
+                std::fs::write(folder.join(&manifest.version).join("manifest.json"), bytes)
+                    .unwrap();
+            }
+            std::fs::write(
+                folder.join("manifest.json"),
+                serde_json::to_vec(current).unwrap(),
+            )
+            .unwrap();
+        };
+        write(
+            root.clone(),
+            &manifest("/resources/en", "v2", "skills.json", "b"),
+            &[&manifest("/resources/en", "v1", "skills.json", "a")],
+        );
+        write(
+            root.join("planner"),
+            &manifest("/resources/planner", "v2", "planner_core.json", "c"),
+            &[],
+        );
+        // The same JSON in two sets is one blob.
+        write(
+            root.join("jp"),
+            &manifest("/resources/jp", "j1", "factors.json", "b"),
+            &[],
+        );
+        std::fs::create_dir_all(root.join("blobs")).unwrap();
+        std::fs::create_dir_all(root.join("masters")).unwrap();
+        std::fs::write(
+            root.join("blobs")
+                .join(format!("{}.json.gz", "b".repeat(64))),
+            b"blob",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("blobs")
+                .join(format!("{}.json.gz", "c".repeat(64))),
+            b"plan",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("masters")
+                .join(format!("{}.mdb.gz", "b".repeat(64))),
+            b"new-mdb",
+        )
+        .unwrap();
+        std::fs::write(root.join("v1/skills.json.gz"), b"legacy").unwrap();
+        std::fs::write(root.join("v1/master.mdb.gz"), b"old-mdb").unwrap();
+
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: root.join("live.mdb"),
+            protected: false,
+        };
+        let app = super::resource_router(state, false);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        for (path, body, etag) in [
+            (
+                "/resources/en/current/skills.json.gz",
+                "blob",
+                "\"sha256-v2\"",
+            ),
+            ("/resources/en/v2/skills.json.gz", "blob", "\"sha256-v2\""),
+            ("/resources/en/v1/skills.json.gz", "legacy", "\"sha256-v1\""),
+            (
+                "/resources/jp/current/factors.json.gz",
+                "blob",
+                "\"sha256-j1\"",
+            ),
+            (
+                "/resources/planner/current/planner_core.json.gz",
+                "plan",
+                "\"sha256-v2\"",
+            ),
+            (
+                "/resources/planner/v2/planner_core.json.gz",
+                "plan",
+                "\"sha256-v2\"",
+            ),
+        ] {
+            let response = client.get(format!("{origin}{path}")).send().await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            assert_eq!(response.headers()[super::ETAG], etag, "{path}");
+            assert_eq!(
+                response.headers()[super::CONTENT_ENCODING],
+                "gzip",
+                "{path}"
+            );
+            assert_eq!(
+                response.headers()[super::CONTENT_LENGTH],
+                body.len().to_string().as_str(),
+                "{path}"
+            );
+            assert_eq!(
+                response.bytes().await.unwrap().as_ref(),
+                body.as_bytes(),
+                "{path}"
+            );
+        }
+        for (version, body, sha256) in [("v2", "new-mdb", "b"), ("v1", "old-mdb", "a")] {
+            let response = client
+                .get(format!(
+                    "{origin}/resources/simulator/{version}/master.mdb.gz"
+                ))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{version}");
+            assert_eq!(
+                response.headers()[super::ETAG],
+                format!("\"sha256-{}\"", sha256.repeat(64)).as_str()
+            );
+            assert_eq!(response.bytes().await.unwrap().as_ref(), body.as_bytes());
+        }
+
+        task.abort();
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 
 const SCRIPT_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_ROOT, '..');
-const ARCHIVE_PATH = path.join(REPO_ROOT, 'src', 'jp_data', 'umapyoi_archive.json');
+// The local store copy, as `store pull` writes it.
+const ARCHIVE_PATH = path.join(REPO_ROOT, 'generated-data', 'store', 'umapyoi_archive.json');
 const RECOVERED_CAMPAIGNS_PATH = path.join(
   REPO_ROOT,
-  'src',
-  'jp_data',
+  'generated-data',
+  'store',
   'english_mission_campaign_assets.json'
 );
 const EN_NEWS_API = 'https://umapyoi.net/api/v1/news/en';

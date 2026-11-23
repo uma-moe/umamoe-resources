@@ -8,6 +8,9 @@ use std::path::Path;
 use std::time::Duration;
 use tokio::time::{sleep, Instant};
 
+/// The umapyoi API the JP archive is collected from.
+pub const BASE_URL: &str = "https://umapyoi.net/api/v1";
+
 const ARCHIVE_VERSION: u8 = 1;
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]

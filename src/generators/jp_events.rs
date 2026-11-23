@@ -1,13 +1,10 @@
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-const UMAPYOI_ARCHIVE: &[u8] = include_bytes!("../jp_data/umapyoi_archive.json");
-const CHARACTER_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_character_banners.json");
-const SUPPORT_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_support_banners.json");
-const PAID_BANNERS: &[u8] = include_bytes!("../jp_data/timeline_paid_banners.json");
 const ALGORITHM_VERSION: u8 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -78,10 +75,14 @@ pub struct AdditionalGachaBanner {
     pub is_scenario: bool,
 }
 
+fn umapyoi_archive() -> crate::store::StoreBytes {
+    crate::store::bytes(crate::store::StoreFile::UmapyoiArchive)
+}
+
 pub fn generate() -> Result<Value> {
-    let mut archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let mut archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
-    let known_ids = known_timeline_gacha_ids()?;
+    let known_ids = curated_timeline_gacha_ids()?;
     let candidates = additional_gacha_banners(&archive, &known_ids)?;
     archive
         .as_object_mut()
@@ -91,7 +92,7 @@ pub fn generate() -> Result<Value> {
 }
 
 pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut posts = archive
         .get("news")
@@ -156,7 +157,7 @@ pub fn timeline_events() -> Result<Vec<NewsTimelineEvent>> {
 }
 
 pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut campaigns = archive
         .get("news")
@@ -188,7 +189,7 @@ pub fn campaign_timeline_metadata() -> Result<Vec<CampaignTimelineMetadata>> {
 }
 
 pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
     let mut races = archive
         .get("news")
@@ -210,11 +211,20 @@ pub fn legend_race_timeline_metadata() -> Result<Vec<LegendRaceTimelineMetadata>
     Ok(races)
 }
 
-pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
-    let archive: Value = serde_json::from_slice(UMAPYOI_ARCHIVE)
+/// The news archive's gachas past the curated lists, apart from `from_master`, the ones the
+/// timeline takes from JP's master, which names their pickups exactly.
+pub fn additional_gacha_banner_events(
+    from_master: &BTreeSet<i64>,
+) -> Result<Vec<AdditionalGachaBanner>> {
+    let mut known_ids = curated_timeline_gacha_ids()?;
+    known_ids.extend(from_master);
+    gacha_banner_events_after(&known_ids)
+}
+
+fn gacha_banner_events_after(known_ids: &BTreeSet<i64>) -> Result<Vec<AdditionalGachaBanner>> {
+    let archive: Value = serde_json::from_slice(&umapyoi_archive())
         .context("failed to parse bundled umapyoi archive")?;
-    let known_ids = known_timeline_gacha_ids()?;
-    let candidates = additional_gacha_banners(&archive, &known_ids)?;
+    let candidates = additional_gacha_banners(&archive, known_ids)?;
     Ok(candidates
         .as_array()
         .into_iter()
@@ -272,9 +282,10 @@ pub fn additional_gacha_banner_events() -> Result<Vec<AdditionalGachaBanner>> {
 
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
-    digest.update(UMAPYOI_ARCHIVE);
-    digest.update(include_bytes!("../jp_data/planner_gacha_rates.json"));
+    digest.update(umapyoi_archive());
+    digest.update(store::bytes(StoreFile::PlannerGachaRates));
     digest.update([ALGORITHM_VERSION]);
+    crate::jp_names::hashNames(&mut digest);
     hex::encode(digest.finalize())
 }
 
@@ -743,15 +754,18 @@ fn maximum_duration_days(kind: NewsTimelineKind) -> i64 {
     }
 }
 
-fn known_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
+fn curated_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
     let mut ids = BTreeSet::new();
     for (name, bytes) in [
-        ("character", CHARACTER_BANNERS),
-        ("support", SUPPORT_BANNERS),
-        ("paid", PAID_BANNERS),
+        (
+            "character",
+            store::bytes(StoreFile::TimelineCharacterBanners),
+        ),
+        ("support", store::bytes(StoreFile::TimelineSupportBanners)),
+        ("paid", store::bytes(StoreFile::TimelinePaidBanners)),
     ] {
-        let banners: Vec<Value> = serde_json::from_slice(bytes)
-            .with_context(|| format!("failed to parse bundled {name} timeline banners"))?;
+        let banners: Vec<Value> = serde_json::from_slice(&bytes)
+            .with_context(|| format!("failed to parse {name} timeline banners"))?;
         ids.extend(
             banners
                 .iter()
@@ -762,9 +776,8 @@ fn known_timeline_gacha_ids() -> Result<BTreeSet<i64>> {
 }
 
 fn additional_gacha_banners(archive: &Value, known_ids: &BTreeSet<i64>) -> Result<Value> {
-    let rates: Value =
-        serde_json::from_slice(include_bytes!("../jp_data/planner_gacha_rates.json"))
-            .context("failed to parse bundled JP gacha pools")?;
+    let rates: Value = serde_json::from_slice(&store::bytes(StoreFile::PlannerGachaRates))
+        .context("failed to parse JP gacha pools")?;
     let mut candidates = BTreeMap::<i64, Value>::new();
     let supports = archive
         .get("supports")
@@ -1176,9 +1189,11 @@ fn string_array(value: Option<&Value>) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{AdditionalGachaKind, NewsTimelineKind};
+    use std::collections::BTreeSet;
 
     #[test]
     fn bundled_archive_is_valid_json() {
+        crate::store::requireStoreData!();
         let archive = super::generate().expect("bundled umapyoi archive should parse");
         assert!(archive
             .get("news")
@@ -1200,6 +1215,7 @@ mod tests {
 
     #[test]
     fn extracts_only_reliable_recurring_timeline_families() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         assert!(
             events
@@ -1234,6 +1250,7 @@ mod tests {
 
     #[test]
     fn extracts_player_facing_campaign_families() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         let uma_sanpo = events
             .iter()
@@ -1256,7 +1273,8 @@ mod tests {
 
     #[test]
     fn exposes_additional_banner_candidates_for_timeline_merge() {
-        let banners = super::additional_gacha_banner_events()
+        crate::store::requireStoreData!();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         assert!(banners.len() >= 40);
     }
@@ -1276,6 +1294,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn extractsCardListsWithoutTreatingRestrictionsOrRewardsAsNames() {
+        crate::store::requireStoreData!();
         let names = super::names_from_gacha_section(
             "SSR support cards are only available for Wisdom-type cards.<br>\
              [Title One] Air Groove<br>SSR [Title Two] Tokai Teio<br>\
@@ -1283,7 +1302,7 @@ mod tests {
             "support",
         );
         assert_eq!(names, ["Air Groove", "Tokai Teio"]);
-        let banners = super::additional_gacha_banner_events().unwrap();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new()).unwrap();
         for (id, first) in [(50237, "Satono Diamond"), (50238, "Air Groove")] {
             let banner = banners.iter().find(|banner| banner.gacha_id == id).unwrap();
             assert_eq!(banner.related_support_names.len(), 8);
@@ -1323,6 +1342,7 @@ mod tests {
 
     #[test]
     fn uses_primary_event_thumbnails_and_concise_titles() {
+        crate::store::requireStoreData!();
         let events = super::timeline_events().expect("news timeline events should extract");
         let champions = events
             .iter()
@@ -1347,7 +1367,8 @@ mod tests {
 
     #[test]
     fn splits_combined_character_and_support_gacha_content() {
-        let banners = super::additional_gacha_banner_events()
+        crate::store::requireStoreData!();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let character = banners
             .iter()
@@ -1366,7 +1387,18 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
+    fn leavesGachasWithMasterPickupsToTheMaster() {
+        crate::store::requireStoreData!();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::from([30_449])).unwrap();
+        assert!(banners.iter().all(|banner| banner.gacha_id != 30_449));
+        // A gacha the master lists without pickups still comes from the news.
+        assert!(banners.iter().any(|banner| banner.gacha_id == 50_235));
+    }
+
+    #[test]
     fn extracts_campaign_banner_content() {
+        crate::store::requireStoreData!();
         let campaigns = super::campaign_timeline_metadata()
             .expect("campaign metadata should extract from news");
         let gi_campaign = campaigns
@@ -1437,6 +1469,7 @@ mod tests {
 
     #[test]
     fn extracts_only_event_specific_legend_race_banners() {
+        crate::store::requireStoreData!();
         let races = super::legend_race_timeline_metadata()
             .expect("legend race metadata should extract from live news posts");
         assert!(races.len() >= 43);
@@ -1450,7 +1483,8 @@ mod tests {
 
     #[test]
     fn extracts_type_12_select_pickup_rerun_metadata() {
-        let banners = super::additional_gacha_banner_events()
+        crate::store::requireStoreData!();
+        let banners = super::additional_gacha_banner_events(&BTreeSet::new())
             .expect("additional gacha candidates should extract");
         let banner = banners
             .iter()

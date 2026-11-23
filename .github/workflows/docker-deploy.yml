@@ -10,6 +10,19 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      asset_bucket:
+        description: "Asset bucket, on the beta host: inventory lists it and skips the deploy; clear empties it, then deploys"
+        type: choice
+        options:
+          - keep
+          - inventory
+          - clear
+        default: keep
+      expected_objects:
+        description: "With clear: the object count the last inventory reported"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -23,11 +36,10 @@ env:
   BETA_CONTAINER_NAME: umamoe-resources-beta
   PROD_ENV_FILE: /opt/umamoe-resources/env
   BETA_ENV_FILE: /opt/umamoe-resources-beta/env
-  PROD_CONFIG_DIR: /opt/umamoe-resources/config
-  BETA_CONFIG_DIR: /opt/umamoe-resources-beta/config
+  PROD_ASSETS_ENV_FILE: /opt/umamoe-resources/assets.env
+  BETA_ASSETS_ENV_FILE: /opt/umamoe-resources-beta/assets.env
   PROD_DATA_VOLUME: umamoe-resources-data
   BETA_DATA_VOLUME: umamoe-resources-beta-data
-  CONFIRMED_BANNER_DATES_CONTAINER_PATH: /config/confirmed_global_banner_dates.csv
   APP_PORT: '3000'
   INTERNAL_APP_PORT: '3204'
   BETA_HOST_PORT: '3104'
@@ -89,77 +101,13 @@ jobs:
           path: ${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}
           if-no-files-found: error
 
-  release:
-    name: Check Release Kind
-    # The sync bot commits archive data several times a day. A push to the default branch whose
-    # only changes since the last production deploy are that data deploys through beta-auto and
-    # production-auto, which need no approval and serve the default branch only. Everything else,
-    # including a sync on top of code that hasn't been released yet, waits in beta / production.
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      deployments: read
-    outputs:
-      data_only: ${{ steps.check.outputs.data_only }}
-    steps:
-      - name: Compare with the last production deploy
-        id: check
-        # If the check itself fails, the deploy falls back to the approval environments.
-        continue-on-error: true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          set -euo pipefail
-          # The files sync-umapyoi.yml commits.
-          data_paths='^(src/jp_data/umapyoi_archive\.json|src/global_data/official_(news|social)_archive\.json)$'
-
-          # Newest successful deployment to an environment, as "created_at sha".
-          latest_success() {
-            gh api "repos/$GITHUB_REPOSITORY/deployments?environment=$1&per_page=30" \
-              --jq '.[] | "\(.id) \(.sha) \(.created_at)"' |
-              while read -r id sha created; do
-                state=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses?per_page=1" --jq '.[0].state // ""')
-                if [[ "$state" == success || "$state" == inactive ]]; then
-                  echo "$created $sha"
-                  break
-                fi
-              done
-          }
-
-          data_only=false
-          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == "refs/heads/$DEFAULT_BRANCH" ]]; then
-            deployed=$({ latest_success production; latest_success production-auto; } | sort -r | head -1 | cut -d' ' -f2)
-            if [[ -z "$deployed" ]]; then
-              echo "No earlier production deploy found."
-            else
-              compare="repos/$GITHUB_REPOSITORY/compare/$deployed...$GITHUB_SHA"
-              read -r status count < <(gh api "$compare" --jq '"\(.status) \(.files | length)"')
-              changed=$(gh api "$compare" --jq '.files[] | .filename, (.previous_filename // empty)')
-              other=$(grep -vE "$data_paths" <<< "$changed" || true)
-              echo "Production runs ${deployed:0:7}. Compared with it, this push is '$status' with $count changed file(s)."
-              # The compare API lists at most 300 files; a longer list is never just sync data.
-              if [[ "$status" == ahead && "$count" -lt 300 && -n "$changed" && -z "$other" ]]; then
-                data_only=true
-              elif [[ -n "$other" ]]; then
-                echo "Changed besides sync data:"
-                head -20 <<< "$other" | sed 's/^/  /'
-              fi
-            fi
-          fi
-          echo "Sync data only: $data_only"
-          echo "data_only=$data_only" >> "$GITHUB_OUTPUT"
-
   deploy_beta:
     name: Deploy Beta
     if: github.event_name != 'pull_request'
     needs:
       - build
-      - release
     runs-on: ubuntu-latest
-    environment: ${{ needs.release.outputs.data_only == 'true' && 'beta-auto' || 'beta' }}
+    environment: beta
 
     steps:
       - name: Download resources image artifact
@@ -218,6 +166,137 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Write asset credentials
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          ASSETS_ENV_FILE: ${{ env.BETA_ASSETS_ENV_FILE }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
+          R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
+          GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          R2_CICD_ACCESS_KEY_ID: ${{ secrets.R2_CICD_ACCESS_KEY_ID }}
+          R2_CICD_SECRET_ACCESS_KEY: ${{ secrets.R2_CICD_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PUBLISHES_GAME_ART: ${{ vars.GAME_ART_PUBLISHER == 'beta' }}
+        run: |
+          set -euo pipefail
+
+          secret_names=(R2_ENDPOINT R2_ASSETS_ACCESS_KEY_ID R2_ASSETS_SECRET_ACCESS_KEY)
+          missing=()
+          for name in "${secret_names[@]}"; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              missing+=("$name")
+            elif [[ "$value" =~ [[:space:]] ]]; then
+              echo "$name must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+          done
+
+          # The file is rewritten on every deploy, so deleting the secrets also takes the key off the host.
+          if [ "${#missing[@]}" -eq "${#secret_names[@]}" ]; then
+            echo "::warning::R2 asset secrets are not set; the container starts without bucket access."
+            env_contents=""
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing R2 asset secrets: ${missing[*]}" >&2
+            exit 1
+          else
+            # A token's value is not its S3 secret: R2 shows a 32-character key ID and a 64-character secret.
+            if [[ ! "$R2_ASSETS_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_ASSETS_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ASSETS_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_ASSETS_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ENDPOINT" =~ ^https://[0-9A-Fa-f]{32}\.([a-z]+\.)?r2\.cloudflarestorage\.com/?$ ]]; then
+              echo "R2_ENDPOINT must be https://<account id>.r2.cloudflarestorage.com, without the bucket name." >&2
+              exit 1
+            fi
+            env_contents="$(printf '%s=%s\n' \
+              ASSETS_S3_ENDPOINT "$R2_ENDPOINT" \
+              ASSETS_S3_ACCESS_KEY_ID "$R2_ASSETS_ACCESS_KEY_ID" \
+              ASSETS_S3_SECRET_ACCESS_KEY "$R2_ASSETS_SECRET_ACCESS_KEY")"
+          fi
+
+          if [ -z "$GAME_ASSET_KEY" ]; then
+            echo "::warning::GAME_ASSET_KEY is not set; the container cannot build game art."
+          elif [[ ! "$GAME_ASSET_KEY" =~ ^[0-9A-Fa-f]+$ ]]; then
+            echo "GAME_ASSET_KEY must be hexadecimal without spaces." >&2
+            exit 1
+          else
+            env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # Written after the host's env file, so these replace a purge token kept there.
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+            if [[ "$CLOUDFLARE_API_TOKEN$CLOUDFLARE_ZONE_ID" =~ [[:space:]] ]]; then
+              echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
+            env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
+          fi
+
+          # Every server reads the shared store: the store/ folder of this bucket, or of the asset bucket when unset.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # The token the store is reached with; unset, the asset token.
+          if [ -n "$R2_CICD_ACCESS_KEY_ID" ] || [ -n "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+            if [ -z "$R2_CICD_ACCESS_KEY_ID" ] || [ -z "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+              echo "Set both R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY, or neither." >&2
+              exit 1
+            fi
+            if [[ "$R2_CICD_ACCESS_KEY_ID$R2_CICD_SECRET_ACCESS_KEY" =~ [[:space:]] ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_CICD_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_CICD_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_CICD_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_ACCESS_KEY_ID=$R2_CICD_ACCESS_KEY_ID"
+            env_contents+=$'\n'"STORE_S3_SECRET_ACCESS_KEY=$R2_CICD_SECRET_ACCESS_KEY"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
+          if [ "$PUBLISHES_GAME_ART" = "true" ]; then
+            env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            if [ -n "$GAME_ART_CONVERTERS" ]; then
+              env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+            fi
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
+          fi
+
+          printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "umask 077 && cat > '$ASSETS_ENV_FILE.tmp' && mv '$ASSETS_ENV_FILE.tmp' '$ASSETS_ENV_FILE'"
+
       - name: Deploy beta container
         shell: bash
         env:
@@ -230,15 +309,39 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.BETA_ENV_FILE }}
-          CONFIG_DIR: ${{ env.BETA_CONFIG_DIR }}
+          ASSETS_ENV_FILE: ${{ env.BETA_ASSETS_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.BETA_DATA_VOLUME }}
           HISTORY_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
-          CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.BETA_SHARED_SERVICE_ALIAS }}
           AUTH_INTERNAL_BASE_URL: ${{ env.BETA_AUTH_INTERNAL_BASE_URL }}
+          ASSET_BUCKET: ${{ github.event_name == 'workflow_dispatch' && inputs.asset_bucket || 'keep' }}
+          EXPECTED_OBJECTS: ${{ github.event_name == 'workflow_dispatch' && inputs.expected_objects || '' }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
         run: |
           set -euo pipefail
+
+          # Bucket errors can quote the endpoint, whose host names the account.
+          if [ -n "$R2_ENDPOINT" ]; then
+            r2_host="${R2_ENDPOINT#https://}"
+            r2_host="${r2_host%%/*}"
+            echo "::add-mask::$r2_host"
+            echo "::add-mask::${r2_host%%.*}"
+          fi
+
+          case "$ASSET_BUCKET" in
+            keep | inventory) ;;
+            clear)
+              if [[ ! "$EXPECTED_OBJECTS" =~ ^[0-9]+$ ]]; then
+                echo "Clearing the asset bucket needs expected_objects, the count an inventory reported." >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Unknown asset_bucket choice: $ASSET_BUCKET" >&2
+              exit 1
+              ;;
+          esac
 
           remote_archive="${REMOTE_IMAGE_DIR}/${ARCHIVE_NAME}"
 
@@ -246,7 +349,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$HISTORY_VOLUME_NAME" "$ASSETS_ENV_FILE" "$ASSET_BUCKET" "$EXPECTED_OBJECTS" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -256,22 +359,43 @@ jobs:
           internal_app_port="$5"
           host_port="$6"
           env_file="$7"
-          config_dir="$8"
-          data_volume_name="$9"
-          confirmed_banner_dates_container_path="${10}"
-          shared_network_name="${11}"
-          shared_service_alias="${12}"
-          auth_internal_base_url="${13}"
-          history_volume_name="${14}"
+          data_volume_name="$8"
+          shared_network_name="$9"
+          shared_service_alias="${10}"
+          auth_internal_base_url="${11}"
+          history_volume_name="${12}"
+          assets_env_file="${13}"
+          asset_bucket="${14}"
+          # ssh joins the arguments into one command line, so an empty count arrives as none.
+          expected_objects="${15:-}"
 
-          if [ ! -f "$env_file" ]; then
-            echo "Missing container env file: $env_file" >&2
-            exit 1
-          fi
+          for required_env_file in "$env_file" "$assets_env_file"; do
+            if [ ! -f "$required_env_file" ]; then
+              echo "Missing container env file: $required_env_file" >&2
+              exit 1
+            fi
+          done
 
           gzip -dc "$archive" | docker load
+
+          # The old container is stopped before the bucket is emptied, so no publish writes
+          # while it goes; the new container then builds every file again.
+          case "$asset_bucket" in
+            inventory)
+              docker run --rm --env-file "$assets_env_file" "$image_tag" asset-bucket inventory
+              rm -f "$archive"
+              exit 0
+              ;;
+            clear)
+              docker stop "$container_name" >/dev/null 2>&1 || true
+              if ! docker run --rm --env-file "$assets_env_file" "$image_tag" asset-bucket clear --expect "$expected_objects"; then
+                docker start "$container_name" >/dev/null 2>&1 || true
+                exit 1
+              fi
+              ;;
+          esac
+
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
-          mkdir -p "$config_dir"
 
           # Beta serves production's master release history read-only, so both show one
           # history and only production writes it. volume-subpath needs Docker Engine 26+.
@@ -283,13 +407,12 @@ jobs:
             --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            --env-file "$assets_env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
-            -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -p "192.168.100.2:${host_port}:${internal_app_port}" \
-            -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             --mount "type=volume,src=${history_volume_name},dst=/data/generated-data/masterdata,volume-subpath=generated-data/masterdata,readonly" \
             "$image_tag"
@@ -321,10 +444,9 @@ jobs:
     if: always() && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && needs.deploy_beta.result == 'success'
     needs:
       - build
-      - release
       - deploy_beta
     runs-on: ubuntu-latest
-    environment: ${{ needs.release.outputs.data_only == 'true' && 'production-auto' || 'production' }}
+    environment: production
 
     steps:
       - name: Download resources image artifact
@@ -383,6 +505,137 @@ jobs:
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+      - name: Write asset credentials
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+          ASSETS_ENV_FILE: ${{ env.PROD_ASSETS_ENV_FILE }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_ASSETS_ACCESS_KEY_ID: ${{ secrets.R2_ASSETS_ACCESS_KEY_ID }}
+          R2_ASSETS_SECRET_ACCESS_KEY: ${{ secrets.R2_ASSETS_SECRET_ACCESS_KEY }}
+          GAME_ASSET_KEY: ${{ vars.GAME_ASSET_KEY }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ZONE_ID: ${{ secrets.CLOUDFLARE_ZONE_ID }}
+          GAME_ART_CONVERTERS: ${{ vars.GAME_ART_CONVERTERS }}
+          STORE_S3_BUCKET: ${{ vars.STORE_S3_BUCKET }}
+          R2_CICD_ACCESS_KEY_ID: ${{ secrets.R2_CICD_ACCESS_KEY_ID }}
+          R2_CICD_SECRET_ACCESS_KEY: ${{ secrets.R2_CICD_SECRET_ACCESS_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PUBLISHES_GAME_ART: ${{ (vars.GAME_ART_PUBLISHER || 'production') == 'production' }}
+        run: |
+          set -euo pipefail
+
+          secret_names=(R2_ENDPOINT R2_ASSETS_ACCESS_KEY_ID R2_ASSETS_SECRET_ACCESS_KEY)
+          missing=()
+          for name in "${secret_names[@]}"; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              missing+=("$name")
+            elif [[ "$value" =~ [[:space:]] ]]; then
+              echo "$name must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+          done
+
+          # The file is rewritten on every deploy, so deleting the secrets also takes the key off the host.
+          if [ "${#missing[@]}" -eq "${#secret_names[@]}" ]; then
+            echo "::warning::R2 asset secrets are not set; the container starts without bucket access."
+            env_contents=""
+          elif [ "${#missing[@]}" -gt 0 ]; then
+            echo "Missing R2 asset secrets: ${missing[*]}" >&2
+            exit 1
+          else
+            # A token's value is not its S3 secret: R2 shows a 32-character key ID and a 64-character secret.
+            if [[ ! "$R2_ASSETS_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_ASSETS_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_ASSETS_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ASSETS_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_ASSETS_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_ASSETS_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_ENDPOINT" =~ ^https://[0-9A-Fa-f]{32}\.([a-z]+\.)?r2\.cloudflarestorage\.com/?$ ]]; then
+              echo "R2_ENDPOINT must be https://<account id>.r2.cloudflarestorage.com, without the bucket name." >&2
+              exit 1
+            fi
+            env_contents="$(printf '%s=%s\n' \
+              ASSETS_S3_ENDPOINT "$R2_ENDPOINT" \
+              ASSETS_S3_ACCESS_KEY_ID "$R2_ASSETS_ACCESS_KEY_ID" \
+              ASSETS_S3_SECRET_ACCESS_KEY "$R2_ASSETS_SECRET_ACCESS_KEY")"
+          fi
+
+          if [ -z "$GAME_ASSET_KEY" ]; then
+            echo "::warning::GAME_ASSET_KEY is not set; the container cannot build game art."
+          elif [[ ! "$GAME_ASSET_KEY" =~ ^[0-9A-Fa-f]+$ ]]; then
+            echo "GAME_ASSET_KEY must be hexadecimal without spaces." >&2
+            exit 1
+          else
+            env_contents+=$'\n'"GAME_ASSET_KEY=$GAME_ASSET_KEY"
+          fi
+
+          # Written after the host's env file, so these replace a purge token kept there.
+          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ZONE_ID" ]; then
+            if [[ "$CLOUDFLARE_API_TOKEN$CLOUDFLARE_ZONE_ID" =~ [[:space:]] ]]; then
+              echo "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ZONE_ID must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"CLOUDFLARE_API_TOKEN=$CLOUDFLARE_API_TOKEN"
+            env_contents+=$'\n'"CLOUDFLARE_ZONE_ID=$CLOUDFLARE_ZONE_ID"
+          fi
+
+          # Every server reads the shared store: the store/ folder of this bucket, or of the asset bucket when unset.
+          if [ -n "$STORE_S3_BUCKET" ]; then
+            if [[ "$STORE_S3_BUCKET" =~ [[:space:]] ]]; then
+              echo "STORE_S3_BUCKET must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_BUCKET=$STORE_S3_BUCKET"
+          fi
+
+          # The token the store is reached with; unset, the asset token.
+          if [ -n "$R2_CICD_ACCESS_KEY_ID" ] || [ -n "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+            if [ -z "$R2_CICD_ACCESS_KEY_ID" ] || [ -z "$R2_CICD_SECRET_ACCESS_KEY" ]; then
+              echo "Set both R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY, or neither." >&2
+              exit 1
+            fi
+            if [[ "$R2_CICD_ACCESS_KEY_ID$R2_CICD_SECRET_ACCESS_KEY" =~ [[:space:]] ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID and R2_CICD_SECRET_ACCESS_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_ACCESS_KEY_ID" =~ ^[0-9A-Fa-f]{32}$ ]]; then
+              echo "R2_CICD_ACCESS_KEY_ID must be the token's 32-character Access Key ID; it has ${#R2_CICD_ACCESS_KEY_ID} characters." >&2
+              exit 1
+            fi
+            if [[ ! "$R2_CICD_SECRET_ACCESS_KEY" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+              echo "R2_CICD_SECRET_ACCESS_KEY must be the token's 64-character Secret Access Key; it has ${#R2_CICD_SECRET_ACCESS_KEY} characters." >&2
+              exit 1
+            fi
+            env_contents+=$'\n'"STORE_S3_ACCESS_KEY_ID=$R2_CICD_ACCESS_KEY_ID"
+            env_contents+=$'\n'"STORE_S3_SECRET_ACCESS_KEY=$R2_CICD_SECRET_ACCESS_KEY"
+          fi
+
+          # One server writes game art and the shared store, so two never race on the bucket.
+          if [ "$PUBLISHES_GAME_ART" = "true" ]; then
+            env_contents+=$'\n'"GAME_ART_PUBLISH=true"
+            if [ -n "$GAME_ART_CONVERTERS" ]; then
+              env_contents+=$'\n'"GAME_ART_CONVERTERS=$GAME_ART_CONVERTERS"
+            fi
+            # The publisher translates the names only JP has released into the store.
+            if [ -z "$ANTHROPIC_API_KEY" ]; then
+              echo "::warning::ANTHROPIC_API_KEY is not set; names only JP has released stay untranslated."
+            elif [[ "$ANTHROPIC_API_KEY" =~ [[:space:]] ]]; then
+              echo "ANTHROPIC_API_KEY must not contain spaces or line breaks." >&2
+              exit 1
+            else
+              env_contents+=$'\n'"ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
+            fi
+            env_contents+=$'\n'"ASSETS_PURGE_ORIGINS=https://assets.uma.moe"
+          fi
+
+          printf '%s\n' "$env_contents" | ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" \
+            "umask 077 && cat > '$ASSETS_ENV_FILE.tmp' && mv '$ASSETS_ENV_FILE.tmp' '$ASSETS_ENV_FILE'"
+
       - name: Deploy production container
         shell: bash
         env:
@@ -395,9 +648,8 @@ jobs:
           APP_PORT: ${{ env.APP_PORT }}
           INTERNAL_APP_PORT: ${{ env.INTERNAL_APP_PORT }}
           ENV_FILE: ${{ env.PROD_ENV_FILE }}
-          CONFIG_DIR: ${{ env.PROD_CONFIG_DIR }}
+          ASSETS_ENV_FILE: ${{ env.PROD_ASSETS_ENV_FILE }}
           DATA_VOLUME_NAME: ${{ env.PROD_DATA_VOLUME }}
-          CONFIRMED_BANNER_DATES_CONTAINER_PATH: ${{ env.CONFIRMED_BANNER_DATES_CONTAINER_PATH }}
           SHARED_NETWORK_NAME: ${{ env.SHARED_NETWORK_NAME }}
           SHARED_SERVICE_ALIAS: ${{ env.PROD_SHARED_SERVICE_ALIAS }}
           AUTH_INTERNAL_BASE_URL: ${{ env.PROD_AUTH_INTERNAL_BASE_URL }}
@@ -410,7 +662,7 @@ jobs:
           rsync -az -e "ssh -o LogLevel=ERROR -p $DEPLOY_PORT" "${{ runner.temp }}/${ARCHIVE_NAME}" "$DEPLOY_USER@$DEPLOY_HOST:$remote_archive"
 
           ssh -o LogLevel=ERROR -p "$DEPLOY_PORT" "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' -- \
-            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$CONFIG_DIR" "$DATA_VOLUME_NAME" "$CONFIRMED_BANNER_DATES_CONTAINER_PATH" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" <<'REMOTE_SCRIPT'
+            "$remote_archive" "$IMAGE_TAG" "$CONTAINER_NAME" "$APP_PORT" "$INTERNAL_APP_PORT" "$HOST_PORT" "$ENV_FILE" "$DATA_VOLUME_NAME" "$SHARED_NETWORK_NAME" "$SHARED_SERVICE_ALIAS" "$AUTH_INTERNAL_BASE_URL" "$ASSETS_ENV_FILE" <<'REMOTE_SCRIPT'
           set -euo pipefail
 
           archive="$1"
@@ -420,21 +672,21 @@ jobs:
           internal_app_port="$5"
           host_port="$6"
           env_file="$7"
-          config_dir="$8"
-          data_volume_name="$9"
-          confirmed_banner_dates_container_path="${10}"
-          shared_network_name="${11}"
-          shared_service_alias="${12}"
-          auth_internal_base_url="${13}"
+          data_volume_name="$8"
+          shared_network_name="$9"
+          shared_service_alias="${10}"
+          auth_internal_base_url="${11}"
+          assets_env_file="${12}"
 
-          if [ ! -f "$env_file" ]; then
-            echo "Missing container env file: $env_file" >&2
-            exit 1
-          fi
+          for required_env_file in "$env_file" "$assets_env_file"; do
+            if [ ! -f "$required_env_file" ]; then
+              echo "Missing container env file: $required_env_file" >&2
+              exit 1
+            fi
+          done
 
           gzip -dc "$archive" | docker load
           docker network create "$shared_network_name" >/dev/null 2>&1 || true
-          mkdir -p "$config_dir"
 
           docker rm -f "$container_name" >/dev/null 2>&1 || true
           docker run -d \
@@ -444,13 +696,12 @@ jobs:
             --network-alias "$shared_service_alias" \
             --add-host host.docker.internal:host-gateway \
             --env-file "$env_file" \
+            --env-file "$assets_env_file" \
             -e RESOURCES_INTERNAL_HOST=0.0.0.0 \
             -e RESOURCES_INTERNAL_PORT="$internal_app_port" \
             -e AUTH_INTERNAL_BASE_URL="$auth_internal_base_url" \
-            -e CONFIRMED_BANNER_DATES_PATH="$confirmed_banner_dates_container_path" \
             -p "127.0.0.1:${host_port}:${app_port}" \
             -p "192.168.100.2:${host_port}:${internal_app_port}" \
-            -v "$config_dir:/config" \
             -v "$data_volume_name:/data" \
             "$image_tag"
 

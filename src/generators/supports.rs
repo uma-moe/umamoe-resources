@@ -1,4 +1,5 @@
 use crate::generators::common;
+use crate::jp_names::NameBook;
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -9,9 +10,23 @@ struct DbSupportListCard {
     release_timestamp: Option<i64>,
 }
 
-pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
+pub fn generate(connection: &Connection, card_names: &NameBook) -> Result<serde_json::Value> {
+    generate_for(
+        connection,
+        &common::CardReleases::global_master()?,
+        card_names,
+    )
+}
+
+/// The list as its master has it, each card marked with the regions that have released it.
+/// `name` is in the master's language; `name_en`, `name_jp`, `title_en` and `title_jp` name the
+/// character and outfit in both.
+pub fn generate_for(
+    connection: &Connection,
+    releases: &common::CardReleases,
+    card_names: &NameBook,
+) -> Result<serde_json::Value> {
     let names = common::load_character_name_map(connection)?;
-    let jp_character_ids = common::load_jp_character_ids()?;
     let cards = load_cards(connection)?;
     let mut entries = Vec::with_capacity(cards.len());
 
@@ -21,10 +36,15 @@ pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
             .get(&card.chara_id)
             .cloned()
             .unwrap_or_else(|| format!("Unknown_{}", card.chara_id));
+        let language_names = card_names.card(card.card_id);
 
         entries.push(serde_json::json!({
             "id": id,
             "name": name,
+            "name_en": language_names.name_en,
+            "name_jp": language_names.name_jp,
+            "title_en": language_names.title_en,
+            "title_jp": language_names.title_jp,
             "release_date": common::release_date(card.release_timestamp),
             "rarity": card.rarity,
             "href": format!("/umamusume/characters/{}-{}", card.card_id, common::slug(&name)),
@@ -32,10 +52,10 @@ pub fn generate(connection: &Connection) -> Result<serde_json::Value> {
             "full_image": format!("tex_support_card_{}.webp", card.card_id),
             "type_icon_url": serde_json::Value::Null,
             "type_icon_alt": serde_json::Value::Null,
-            "isReleased_en": true,
+            "isReleased_en": releases.in_global(card.card_id),
             "isReleased_tw": serde_json::Value::Null,
             "isReleased_cn": serde_json::Value::Null,
-            "isReleased_jp": jp_character_ids.contains(&card.chara_id),
+            "isReleased_jp": releases.in_jp(card.chara_id),
         }));
     }
 

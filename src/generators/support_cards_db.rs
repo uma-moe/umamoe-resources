@@ -1,11 +1,12 @@
 use crate::generators::common;
+use crate::jp_names::{CardNames, NameBook};
+use crate::store::{self, StoreFile};
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-const BUNDLED_JP_SUPPORT_CARDS_DB_JSON: &[u8] = include_bytes!("../jp_data/support-cards-db.json");
 const SUPPORT_CARD_FULL_NAME_CATEGORY: i64 = 75;
 const SUPPORT_CARD_TITLE_CATEGORY: i64 = 76;
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 77;
@@ -22,6 +23,9 @@ pub struct SupportCardDbEntry {
     card_title: Option<String>,
     #[serde(rename = "card_full_name", skip_serializing_if = "Option::is_none")]
     card_full_name: Option<String>,
+    /// The character and card title in both languages; the fields above are in the master's.
+    #[serde(flatten)]
+    language_names: CardNames,
     rarity: i64,
     #[serde(rename = "type")]
     card_type: String,
@@ -50,13 +54,48 @@ struct DbSupportCard {
     release_timestamp: i64,
 }
 
-pub fn generate(connection: &Connection) -> Result<Value> {
-    let names = common::load_character_name_map(connection)?;
-    let card_text = SupportCardTextData {
+pub fn generate(connection: &Connection, card_names: &NameBook) -> Result<Value> {
+    let card_text = load_card_text(connection)?;
+    // The bundled JP list says which of these JP has, so the master's own rows start without.
+    let entries = master_entries(connection, &card_text, card_names, |_| true, false)?;
+    merge_with_jp_support_cards_db(entries, &card_text, card_names)
+}
+
+/// Every support card of the JP master, marked as released in Global when Global has it too.
+/// Nothing bundled is merged in: a JP set is the JP master alone.
+pub fn generate_jp(
+    connection: &Connection,
+    releases: &common::CardReleases,
+    card_names: &NameBook,
+) -> Result<Value> {
+    let card_text = load_card_text(connection)?;
+    let entries = master_entries(
+        connection,
+        &card_text,
+        card_names,
+        |card_id| releases.in_global(card_id),
+        true,
+    )?;
+    Ok(serde_json::to_value(entries)?)
+}
+
+fn load_card_text(connection: &Connection) -> Result<SupportCardTextData> {
+    Ok(SupportCardTextData {
         card_names: load_text_data_by_category(connection, SUPPORT_CARD_NAME_CATEGORY)?,
         card_titles: load_text_data_by_category(connection, SUPPORT_CARD_TITLE_CATEGORY)?,
         card_full_names: load_text_data_by_category(connection, SUPPORT_CARD_FULL_NAME_CATEGORY)?,
-    };
+    })
+}
+
+/// The master's support cards, newest first.
+fn master_entries(
+    connection: &Connection,
+    card_text: &SupportCardTextData,
+    card_names: &NameBook,
+    is_released_en: impl Fn(i64) -> bool,
+    is_released_jp: bool,
+) -> Result<Vec<SupportCardDbEntry>> {
+    let names = common::load_character_name_map(connection)?;
     let mut entries = Vec::new();
 
     for card in load_support_cards(connection)? {
@@ -76,13 +115,14 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             card_name,
             card_title,
             card_full_name,
+            language_names: card_names.card(card.card_id),
             rarity: card.rarity,
             card_type: card.card_type,
             release_date: common::release_date(Some(card.release_timestamp)),
-            is_released_en: true,
+            is_released_en: is_released_en(card.card_id),
             is_released_tw: None,
             is_released_cn: None,
-            is_released_jp: false,
+            is_released_jp,
         });
     }
 
@@ -92,28 +132,29 @@ pub fn generate(connection: &Connection) -> Result<Value> {
             .then_with(|| common::numeric_id(&b.id).cmp(&common::numeric_id(&a.id)))
     });
 
-    merge_with_jp_support_cards_db(entries, &card_text)
+    Ok(entries)
 }
 
 fn merge_with_jp_support_cards_db(
     generated_entries: Vec<SupportCardDbEntry>,
     card_text: &SupportCardTextData,
+    card_names: &NameBook,
 ) -> Result<Value> {
-    let jp_entries: Value = serde_json::from_slice(BUNDLED_JP_SUPPORT_CARDS_DB_JSON)
-        .context("failed to parse bundled src/jp_data/support-cards-db.json")?;
+    let jp_entries: Value = serde_json::from_slice(&store::bytes(StoreFile::SupportCardsDb))
+        .context("failed to parse store file support-cards-db.json")?;
     let jp_entries = jp_entries
         .as_array()
-        .context("src/jp_data/support-cards-db.json must be a JSON array")?;
+        .context("the store's support-cards-db.json must be a JSON array")?;
 
     let mut merged_by_id = BTreeMap::new();
     for entry in jp_entries {
         let object = entry
             .as_object()
-            .context("src/jp_data/support-cards-db.json entries must be JSON objects")?;
+            .context("the store's support-cards-db.json entries must be JSON objects")?;
         let id = object
             .get("id")
             .and_then(Value::as_str)
-            .context("src/jp_data/support-cards-db.json entries must have string id")?;
+            .context("the store's support-cards-db.json entries must have string id")?;
         let mut object = object.clone();
         if !object.contains_key("character_name") {
             if let Some(name) = object.get("name").and_then(Value::as_str) {
@@ -132,6 +173,9 @@ fn merge_with_jp_support_cards_db(
                 &card_text.card_full_names,
                 card_id,
             );
+            if let Value::Object(language_names) = serde_json::to_value(card_names.card(card_id))? {
+                object.extend(language_names);
+            }
         }
         object.insert("isReleased_en".to_string(), Value::Bool(false));
         object.insert("isReleased_tw".to_string(), Value::Null);

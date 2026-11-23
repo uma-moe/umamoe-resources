@@ -1,3 +1,4 @@
+use crate::store::{self, StoreFile};
 use anyhow::{bail, Context, Result};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
@@ -10,8 +11,6 @@ use super::ResourceOutput;
 
 const SCHEMA_VERSION: u32 = 1;
 const KEYFRAME_COUNT: usize = 1_001;
-const SOURCE_BYTES: &[u8] = include_bytes!("../global_data/simulator_course_geometry.json.gz");
-const LANE_SOURCE_BYTES: &[u8] = include_bytes!("../global_data/simulator_course_lanes.json.gz");
 
 #[derive(Debug, Deserialize)]
 struct SourceGeometrySet {
@@ -52,7 +51,8 @@ pub fn generate(courses: &SimulatorCourseSet<'_>) -> Result<ResourceOutput> {
 }
 
 pub fn version_hash() -> Result<String> {
-    let mut decoder = GzDecoder::new(SOURCE_BYTES);
+    let source = store::bytes(StoreFile::SimulatorCourseGeometry);
+    let mut decoder = GzDecoder::new(&*source);
     let mut bytes = Vec::new();
     decoder
         .read_to_end(&mut bytes)
@@ -61,7 +61,7 @@ pub fn version_hash() -> Result<String> {
     digest.update(b"simulator_course_geometry.json\0");
     digest.update(SCHEMA_VERSION.to_le_bytes());
     digest.update(bytes);
-    digest.update(LANE_SOURCE_BYTES);
+    digest.update(store::bytes(StoreFile::SimulatorCourseLanes));
     Ok(hex::encode(digest.finalize()))
 }
 
@@ -69,7 +69,7 @@ pub fn version_hash() -> Result<String> {
 #[allow(non_snake_case)]
 pub fn generateLanes(courses: &SimulatorCourseSet<'_>) -> Result<ResourceOutput> {
     let mut bytes = Vec::new();
-    GzDecoder::new(LANE_SOURCE_BYTES).read_to_end(&mut bytes)?;
+    GzDecoder::new(&*store::bytes(StoreFile::SimulatorCourseLanes)).read_to_end(&mut bytes)?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)?;
     let lanes = value["courses"]
         .as_array()
@@ -100,7 +100,8 @@ pub fn generateLanes(courses: &SimulatorCourseSet<'_>) -> Result<ResourceOutput>
 }
 
 fn decode_bundled_source() -> Result<SourceGeometrySet> {
-    let mut decoder = GzDecoder::new(SOURCE_BYTES);
+    let source = store::bytes(StoreFile::SimulatorCourseGeometry);
+    let mut decoder = GzDecoder::new(&*source);
     let mut bytes = Vec::new();
     decoder
         .read_to_end(&mut bytes)
@@ -377,6 +378,7 @@ mod tests {
 
     #[test]
     fn bundled_source_decodes_all_current_keyframes() {
+        crate::store::requireStoreData!();
         let source = decode_bundled_source().unwrap();
 
         assert_eq!(source.schema_version, SCHEMA_VERSION);

@@ -1,3 +1,4 @@
+use crate::store::{self, StoreFile};
 use anyhow::{anyhow, bail, Context, Result};
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
@@ -358,930 +359,6 @@ const COMPETE_FIGHT_ACCELERATION_POWER: f64 = 0.59_f32 as f64;
 const COMPETE_FIGHT_ACCELERATION_SCALE: f64 = 0.0001_f32 as f64;
 const RACE_PARAMETERS_PROVENANCE: &str =
     "current JP ast_race_paramdefine startDelayMax, Speed.TargetSpeedMin/StartSpeed/MinSpeed*, declBase/declRate*, HpParam, last-spurt fields, turf/dirt ground multiHpSub, SlopeParam, Force In fields, PositionKeepParam, ConservePowerParam, CompeteFightParam, Block, Surrounded, CongestionLaneGapAbs, and CongestionHorseCntThreshold; current Global ast_race_paramdefine raceBaseSpeed*, BasetTargetSpeed.*, CourseSetAdjust.CoefAndThresholdArray, Global.SingleModeAdd*, _groundModifierParamTurf/_groundModifierParamDirt addSpeed/addPower, Skill.LaneMoveAddParam1/2, Skill.AbilityValueUsageTagGroup1Array, addSpeedParamCoef, accelPowCoef, accelPowCoefUpSlope, AccelPowCoefSqrt, StartAccelAdd, Speed.PhaseAccelCoefArray/ExArray, visibleDistance, overTakeDistPerSpeed, Skill.*HorseNearDistance, Skill.*HorseNearLaneDistance, Skill.BehindNearParamArray, SkillParam.AdditionalActivateAbilityMaxCountArray, RaceParam.AbilityTimeDivideDistance, RaceParam.CoolDownTimeDivideDistance, SkillParam.OrderUpAddAbilityTime, SkillParam.OrderUpAddAbilityTimeMaxCount, and the complete ability-value calculator block for scaling codes 2 through 23; Global 10006800 CompeteFightParam and HorseRaceAIBase.CheckCompeteFightNear source semantics; legacy extracted RaceParamDefine.Near, final-corner LastMoveOut, and overtake-lane coefficient numeric values with current Global _CheckNearHorse and HorseTargetLaneCalculatorRace source semantics; Global HorseRaceAIBase.UpdateAroundHorsesParam, HorseRaceAISimulate.UpdateSurrounded, HorseRaceInfoSimulate._UpdateCongestionTime, HorseRaceInfoSimulate.UpdateBehindHorseNearTimeParamSet, 10006800 Force In construction/live gate, slope check interval, and HorseRaceInfo.UpdateMinSpeed formula; replay-observed conserve-power release duration";
-const COURSE_EVENT_PARAMS: &[(&str, &str)] = &[
-    (
-        "10101",
-        include_str!("../jp_data/courseeventparams/10101.json"),
-    ),
-    (
-        "10102",
-        include_str!("../jp_data/courseeventparams/10102.json"),
-    ),
-    (
-        "10103",
-        include_str!("../jp_data/courseeventparams/10103.json"),
-    ),
-    (
-        "10104",
-        include_str!("../jp_data/courseeventparams/10104.json"),
-    ),
-    (
-        "10105",
-        include_str!("../jp_data/courseeventparams/10105.json"),
-    ),
-    (
-        "10106",
-        include_str!("../jp_data/courseeventparams/10106.json"),
-    ),
-    (
-        "10107",
-        include_str!("../jp_data/courseeventparams/10107.json"),
-    ),
-    (
-        "10108",
-        include_str!("../jp_data/courseeventparams/10108.json"),
-    ),
-    (
-        "10201",
-        include_str!("../jp_data/courseeventparams/10201.json"),
-    ),
-    (
-        "10202",
-        include_str!("../jp_data/courseeventparams/10202.json"),
-    ),
-    (
-        "10203",
-        include_str!("../jp_data/courseeventparams/10203.json"),
-    ),
-    (
-        "10204",
-        include_str!("../jp_data/courseeventparams/10204.json"),
-    ),
-    (
-        "10205",
-        include_str!("../jp_data/courseeventparams/10205.json"),
-    ),
-    (
-        "10206",
-        include_str!("../jp_data/courseeventparams/10206.json"),
-    ),
-    (
-        "10207",
-        include_str!("../jp_data/courseeventparams/10207.json"),
-    ),
-    (
-        "10208",
-        include_str!("../jp_data/courseeventparams/10208.json"),
-    ),
-    (
-        "10301",
-        include_str!("../jp_data/courseeventparams/10301.json"),
-    ),
-    (
-        "10302",
-        include_str!("../jp_data/courseeventparams/10302.json"),
-    ),
-    (
-        "10303",
-        include_str!("../jp_data/courseeventparams/10303.json"),
-    ),
-    (
-        "10304",
-        include_str!("../jp_data/courseeventparams/10304.json"),
-    ),
-    (
-        "10305",
-        include_str!("../jp_data/courseeventparams/10305.json"),
-    ),
-    (
-        "10306",
-        include_str!("../jp_data/courseeventparams/10306.json"),
-    ),
-    (
-        "10307",
-        include_str!("../jp_data/courseeventparams/10307.json"),
-    ),
-    (
-        "10308",
-        include_str!("../jp_data/courseeventparams/10308.json"),
-    ),
-    (
-        "10309",
-        include_str!("../jp_data/courseeventparams/10309.json"),
-    ),
-    (
-        "10310",
-        include_str!("../jp_data/courseeventparams/10310.json"),
-    ),
-    (
-        "10311",
-        include_str!("../jp_data/courseeventparams/10311.json"),
-    ),
-    (
-        "10312",
-        include_str!("../jp_data/courseeventparams/10312.json"),
-    ),
-    (
-        "10401",
-        include_str!("../jp_data/courseeventparams/10401.json"),
-    ),
-    (
-        "10402",
-        include_str!("../jp_data/courseeventparams/10402.json"),
-    ),
-    (
-        "10403",
-        include_str!("../jp_data/courseeventparams/10403.json"),
-    ),
-    (
-        "10404",
-        include_str!("../jp_data/courseeventparams/10404.json"),
-    ),
-    (
-        "10405",
-        include_str!("../jp_data/courseeventparams/10405.json"),
-    ),
-    (
-        "10406",
-        include_str!("../jp_data/courseeventparams/10406.json"),
-    ),
-    (
-        "10407",
-        include_str!("../jp_data/courseeventparams/10407.json"),
-    ),
-    (
-        "10501",
-        include_str!("../jp_data/courseeventparams/10501.json"),
-    ),
-    (
-        "10502",
-        include_str!("../jp_data/courseeventparams/10502.json"),
-    ),
-    (
-        "10503",
-        include_str!("../jp_data/courseeventparams/10503.json"),
-    ),
-    (
-        "10504",
-        include_str!("../jp_data/courseeventparams/10504.json"),
-    ),
-    (
-        "10505",
-        include_str!("../jp_data/courseeventparams/10505.json"),
-    ),
-    (
-        "10506",
-        include_str!("../jp_data/courseeventparams/10506.json"),
-    ),
-    (
-        "10507",
-        include_str!("../jp_data/courseeventparams/10507.json"),
-    ),
-    (
-        "10508",
-        include_str!("../jp_data/courseeventparams/10508.json"),
-    ),
-    (
-        "10509",
-        include_str!("../jp_data/courseeventparams/10509.json"),
-    ),
-    (
-        "10510",
-        include_str!("../jp_data/courseeventparams/10510.json"),
-    ),
-    (
-        "10511",
-        include_str!("../jp_data/courseeventparams/10511.json"),
-    ),
-    (
-        "10601",
-        include_str!("../jp_data/courseeventparams/10601.json"),
-    ),
-    (
-        "10602",
-        include_str!("../jp_data/courseeventparams/10602.json"),
-    ),
-    (
-        "10603",
-        include_str!("../jp_data/courseeventparams/10603.json"),
-    ),
-    (
-        "10604",
-        include_str!("../jp_data/courseeventparams/10604.json"),
-    ),
-    (
-        "10605",
-        include_str!("../jp_data/courseeventparams/10605.json"),
-    ),
-    (
-        "10606",
-        include_str!("../jp_data/courseeventparams/10606.json"),
-    ),
-    (
-        "10607",
-        include_str!("../jp_data/courseeventparams/10607.json"),
-    ),
-    (
-        "10608",
-        include_str!("../jp_data/courseeventparams/10608.json"),
-    ),
-    (
-        "10609",
-        include_str!("../jp_data/courseeventparams/10609.json"),
-    ),
-    (
-        "10610",
-        include_str!("../jp_data/courseeventparams/10610.json"),
-    ),
-    (
-        "10611",
-        include_str!("../jp_data/courseeventparams/10611.json"),
-    ),
-    (
-        "10612",
-        include_str!("../jp_data/courseeventparams/10612.json"),
-    ),
-    (
-        "10613",
-        include_str!("../jp_data/courseeventparams/10613.json"),
-    ),
-    (
-        "10614",
-        include_str!("../jp_data/courseeventparams/10614.json"),
-    ),
-    (
-        "10701",
-        include_str!("../jp_data/courseeventparams/10701.json"),
-    ),
-    (
-        "10702",
-        include_str!("../jp_data/courseeventparams/10702.json"),
-    ),
-    (
-        "10703",
-        include_str!("../jp_data/courseeventparams/10703.json"),
-    ),
-    (
-        "10704",
-        include_str!("../jp_data/courseeventparams/10704.json"),
-    ),
-    (
-        "10705",
-        include_str!("../jp_data/courseeventparams/10705.json"),
-    ),
-    (
-        "10706",
-        include_str!("../jp_data/courseeventparams/10706.json"),
-    ),
-    (
-        "10707",
-        include_str!("../jp_data/courseeventparams/10707.json"),
-    ),
-    (
-        "10708",
-        include_str!("../jp_data/courseeventparams/10708.json"),
-    ),
-    (
-        "10709",
-        include_str!("../jp_data/courseeventparams/10709.json"),
-    ),
-    (
-        "10801",
-        include_str!("../jp_data/courseeventparams/10801.json"),
-    ),
-    (
-        "10802",
-        include_str!("../jp_data/courseeventparams/10802.json"),
-    ),
-    (
-        "10803",
-        include_str!("../jp_data/courseeventparams/10803.json"),
-    ),
-    (
-        "10804",
-        include_str!("../jp_data/courseeventparams/10804.json"),
-    ),
-    (
-        "10805",
-        include_str!("../jp_data/courseeventparams/10805.json"),
-    ),
-    (
-        "10806",
-        include_str!("../jp_data/courseeventparams/10806.json"),
-    ),
-    (
-        "10807",
-        include_str!("../jp_data/courseeventparams/10807.json"),
-    ),
-    (
-        "10808",
-        include_str!("../jp_data/courseeventparams/10808.json"),
-    ),
-    (
-        "10809",
-        include_str!("../jp_data/courseeventparams/10809.json"),
-    ),
-    (
-        "10810",
-        include_str!("../jp_data/courseeventparams/10810.json"),
-    ),
-    (
-        "10811",
-        include_str!("../jp_data/courseeventparams/10811.json"),
-    ),
-    (
-        "10812",
-        include_str!("../jp_data/courseeventparams/10812.json"),
-    ),
-    (
-        "10813",
-        include_str!("../jp_data/courseeventparams/10813.json"),
-    ),
-    (
-        "10814",
-        include_str!("../jp_data/courseeventparams/10814.json"),
-    ),
-    (
-        "10815",
-        include_str!("../jp_data/courseeventparams/10815.json"),
-    ),
-    (
-        "10901",
-        include_str!("../jp_data/courseeventparams/10901.json"),
-    ),
-    (
-        "10902",
-        include_str!("../jp_data/courseeventparams/10902.json"),
-    ),
-    (
-        "10903",
-        include_str!("../jp_data/courseeventparams/10903.json"),
-    ),
-    (
-        "10904",
-        include_str!("../jp_data/courseeventparams/10904.json"),
-    ),
-    (
-        "10905",
-        include_str!("../jp_data/courseeventparams/10905.json"),
-    ),
-    (
-        "10906",
-        include_str!("../jp_data/courseeventparams/10906.json"),
-    ),
-    (
-        "10907",
-        include_str!("../jp_data/courseeventparams/10907.json"),
-    ),
-    (
-        "10908",
-        include_str!("../jp_data/courseeventparams/10908.json"),
-    ),
-    (
-        "10909",
-        include_str!("../jp_data/courseeventparams/10909.json"),
-    ),
-    (
-        "10910",
-        include_str!("../jp_data/courseeventparams/10910.json"),
-    ),
-    (
-        "10911",
-        include_str!("../jp_data/courseeventparams/10911.json"),
-    ),
-    (
-        "10912",
-        include_str!("../jp_data/courseeventparams/10912.json"),
-    ),
-    (
-        "10913",
-        include_str!("../jp_data/courseeventparams/10913.json"),
-    ),
-    (
-        "10914",
-        include_str!("../jp_data/courseeventparams/10914.json"),
-    ),
-    (
-        "11001",
-        include_str!("../jp_data/courseeventparams/11001.json"),
-    ),
-    (
-        "11002",
-        include_str!("../jp_data/courseeventparams/11002.json"),
-    ),
-    (
-        "11003",
-        include_str!("../jp_data/courseeventparams/11003.json"),
-    ),
-    (
-        "11004",
-        include_str!("../jp_data/courseeventparams/11004.json"),
-    ),
-    (
-        "11005",
-        include_str!("../jp_data/courseeventparams/11005.json"),
-    ),
-    (
-        "11006",
-        include_str!("../jp_data/courseeventparams/11006.json"),
-    ),
-    (
-        "11007",
-        include_str!("../jp_data/courseeventparams/11007.json"),
-    ),
-    (
-        "11101",
-        include_str!("../jp_data/courseeventparams/11101.json"),
-    ),
-    (
-        "11102",
-        include_str!("../jp_data/courseeventparams/11102.json"),
-    ),
-    (
-        "11103",
-        include_str!("../jp_data/courseeventparams/11103.json"),
-    ),
-    (
-        "11201",
-        include_str!("../jp_data/courseeventparams/11201.json"),
-    ),
-    (
-        "11203",
-        include_str!("../jp_data/courseeventparams/11203.json"),
-    ),
-];
-
-// Global course-event bundles are authoritative for Global race replay. Keep
-// JP as the complete fallback set and replace rows only after extracting the
-// corresponding current Global client asset.
-const GLOBAL_COURSE_EVENT_PARAM_OVERRIDES: &[(&str, &str)] = &[
-    (
-        "10101",
-        include_str!("../global_data/courseeventparams/10101.json"),
-    ),
-    (
-        "10102",
-        include_str!("../global_data/courseeventparams/10102.json"),
-    ),
-    (
-        "10103",
-        include_str!("../global_data/courseeventparams/10103.json"),
-    ),
-    (
-        "10104",
-        include_str!("../global_data/courseeventparams/10104.json"),
-    ),
-    (
-        "10105",
-        include_str!("../global_data/courseeventparams/10105.json"),
-    ),
-    (
-        "10106",
-        include_str!("../global_data/courseeventparams/10106.json"),
-    ),
-    (
-        "10107",
-        include_str!("../global_data/courseeventparams/10107.json"),
-    ),
-    (
-        "10108",
-        include_str!("../global_data/courseeventparams/10108.json"),
-    ),
-    (
-        "10201",
-        include_str!("../global_data/courseeventparams/10201.json"),
-    ),
-    (
-        "10202",
-        include_str!("../global_data/courseeventparams/10202.json"),
-    ),
-    (
-        "10203",
-        include_str!("../global_data/courseeventparams/10203.json"),
-    ),
-    (
-        "10204",
-        include_str!("../global_data/courseeventparams/10204.json"),
-    ),
-    (
-        "10205",
-        include_str!("../global_data/courseeventparams/10205.json"),
-    ),
-    (
-        "10206",
-        include_str!("../global_data/courseeventparams/10206.json"),
-    ),
-    (
-        "10207",
-        include_str!("../global_data/courseeventparams/10207.json"),
-    ),
-    (
-        "10208",
-        include_str!("../global_data/courseeventparams/10208.json"),
-    ),
-    (
-        "10301",
-        include_str!("../global_data/courseeventparams/10301.json"),
-    ),
-    (
-        "10302",
-        include_str!("../global_data/courseeventparams/10302.json"),
-    ),
-    (
-        "10303",
-        include_str!("../global_data/courseeventparams/10303.json"),
-    ),
-    (
-        "10304",
-        include_str!("../global_data/courseeventparams/10304.json"),
-    ),
-    (
-        "10305",
-        include_str!("../global_data/courseeventparams/10305.json"),
-    ),
-    (
-        "10306",
-        include_str!("../global_data/courseeventparams/10306.json"),
-    ),
-    (
-        "10307",
-        include_str!("../global_data/courseeventparams/10307.json"),
-    ),
-    (
-        "10308",
-        include_str!("../global_data/courseeventparams/10308.json"),
-    ),
-    (
-        "10309",
-        include_str!("../global_data/courseeventparams/10309.json"),
-    ),
-    (
-        "10310",
-        include_str!("../global_data/courseeventparams/10310.json"),
-    ),
-    (
-        "10311",
-        include_str!("../global_data/courseeventparams/10311.json"),
-    ),
-    (
-        "10312",
-        include_str!("../global_data/courseeventparams/10312.json"),
-    ),
-    (
-        "10401",
-        include_str!("../global_data/courseeventparams/10401.json"),
-    ),
-    (
-        "10402",
-        include_str!("../global_data/courseeventparams/10402.json"),
-    ),
-    (
-        "10403",
-        include_str!("../global_data/courseeventparams/10403.json"),
-    ),
-    (
-        "10404",
-        include_str!("../global_data/courseeventparams/10404.json"),
-    ),
-    (
-        "10405",
-        include_str!("../global_data/courseeventparams/10405.json"),
-    ),
-    (
-        "10406",
-        include_str!("../global_data/courseeventparams/10406.json"),
-    ),
-    (
-        "10407",
-        include_str!("../global_data/courseeventparams/10407.json"),
-    ),
-    (
-        "10501",
-        include_str!("../global_data/courseeventparams/10501.json"),
-    ),
-    (
-        "10502",
-        include_str!("../global_data/courseeventparams/10502.json"),
-    ),
-    (
-        "10503",
-        include_str!("../global_data/courseeventparams/10503.json"),
-    ),
-    (
-        "10504",
-        include_str!("../global_data/courseeventparams/10504.json"),
-    ),
-    (
-        "10505",
-        include_str!("../global_data/courseeventparams/10505.json"),
-    ),
-    (
-        "10506",
-        include_str!("../global_data/courseeventparams/10506.json"),
-    ),
-    (
-        "10507",
-        include_str!("../global_data/courseeventparams/10507.json"),
-    ),
-    (
-        "10508",
-        include_str!("../global_data/courseeventparams/10508.json"),
-    ),
-    (
-        "10509",
-        include_str!("../global_data/courseeventparams/10509.json"),
-    ),
-    (
-        "10510",
-        include_str!("../global_data/courseeventparams/10510.json"),
-    ),
-    (
-        "10511",
-        include_str!("../global_data/courseeventparams/10511.json"),
-    ),
-    (
-        "10601",
-        include_str!("../global_data/courseeventparams/10601.json"),
-    ),
-    (
-        "10602",
-        include_str!("../global_data/courseeventparams/10602.json"),
-    ),
-    (
-        "10603",
-        include_str!("../global_data/courseeventparams/10603.json"),
-    ),
-    (
-        "10604",
-        include_str!("../global_data/courseeventparams/10604.json"),
-    ),
-    (
-        "10605",
-        include_str!("../global_data/courseeventparams/10605.json"),
-    ),
-    (
-        "10606",
-        include_str!("../global_data/courseeventparams/10606.json"),
-    ),
-    (
-        "10607",
-        include_str!("../global_data/courseeventparams/10607.json"),
-    ),
-    (
-        "10608",
-        include_str!("../global_data/courseeventparams/10608.json"),
-    ),
-    (
-        "10609",
-        include_str!("../global_data/courseeventparams/10609.json"),
-    ),
-    (
-        "10610",
-        include_str!("../global_data/courseeventparams/10610.json"),
-    ),
-    (
-        "10611",
-        include_str!("../global_data/courseeventparams/10611.json"),
-    ),
-    (
-        "10612",
-        include_str!("../global_data/courseeventparams/10612.json"),
-    ),
-    (
-        "10613",
-        include_str!("../global_data/courseeventparams/10613.json"),
-    ),
-    (
-        "10701",
-        include_str!("../global_data/courseeventparams/10701.json"),
-    ),
-    (
-        "10702",
-        include_str!("../global_data/courseeventparams/10702.json"),
-    ),
-    (
-        "10703",
-        include_str!("../global_data/courseeventparams/10703.json"),
-    ),
-    (
-        "10704",
-        include_str!("../global_data/courseeventparams/10704.json"),
-    ),
-    (
-        "10705",
-        include_str!("../global_data/courseeventparams/10705.json"),
-    ),
-    (
-        "10706",
-        include_str!("../global_data/courseeventparams/10706.json"),
-    ),
-    (
-        "10707",
-        include_str!("../global_data/courseeventparams/10707.json"),
-    ),
-    (
-        "10708",
-        include_str!("../global_data/courseeventparams/10708.json"),
-    ),
-    (
-        "10709",
-        include_str!("../global_data/courseeventparams/10709.json"),
-    ),
-    (
-        "10801",
-        include_str!("../global_data/courseeventparams/10801.json"),
-    ),
-    (
-        "10802",
-        include_str!("../global_data/courseeventparams/10802.json"),
-    ),
-    (
-        "10803",
-        include_str!("../global_data/courseeventparams/10803.json"),
-    ),
-    (
-        "10804",
-        include_str!("../global_data/courseeventparams/10804.json"),
-    ),
-    (
-        "10805",
-        include_str!("../global_data/courseeventparams/10805.json"),
-    ),
-    (
-        "10806",
-        include_str!("../global_data/courseeventparams/10806.json"),
-    ),
-    (
-        "10807",
-        include_str!("../global_data/courseeventparams/10807.json"),
-    ),
-    (
-        "10808",
-        include_str!("../global_data/courseeventparams/10808.json"),
-    ),
-    (
-        "10809",
-        include_str!("../global_data/courseeventparams/10809.json"),
-    ),
-    (
-        "10810",
-        include_str!("../global_data/courseeventparams/10810.json"),
-    ),
-    (
-        "10811",
-        include_str!("../global_data/courseeventparams/10811.json"),
-    ),
-    (
-        "10812",
-        include_str!("../global_data/courseeventparams/10812.json"),
-    ),
-    (
-        "10813",
-        include_str!("../global_data/courseeventparams/10813.json"),
-    ),
-    (
-        "10814",
-        include_str!("../global_data/courseeventparams/10814.json"),
-    ),
-    (
-        "10815",
-        include_str!("../global_data/courseeventparams/10815.json"),
-    ),
-    (
-        "10901",
-        include_str!("../global_data/courseeventparams/10901.json"),
-    ),
-    (
-        "10902",
-        include_str!("../global_data/courseeventparams/10902.json"),
-    ),
-    (
-        "10903",
-        include_str!("../global_data/courseeventparams/10903.json"),
-    ),
-    (
-        "10904",
-        include_str!("../global_data/courseeventparams/10904.json"),
-    ),
-    (
-        "10905",
-        include_str!("../global_data/courseeventparams/10905.json"),
-    ),
-    (
-        "10906",
-        include_str!("../global_data/courseeventparams/10906.json"),
-    ),
-    (
-        "10907",
-        include_str!("../global_data/courseeventparams/10907.json"),
-    ),
-    (
-        "10908",
-        include_str!("../global_data/courseeventparams/10908.json"),
-    ),
-    (
-        "10909",
-        include_str!("../global_data/courseeventparams/10909.json"),
-    ),
-    (
-        "10910",
-        include_str!("../global_data/courseeventparams/10910.json"),
-    ),
-    (
-        "10911",
-        include_str!("../global_data/courseeventparams/10911.json"),
-    ),
-    (
-        "10912",
-        include_str!("../global_data/courseeventparams/10912.json"),
-    ),
-    (
-        "10913",
-        include_str!("../global_data/courseeventparams/10913.json"),
-    ),
-    (
-        "10914",
-        include_str!("../global_data/courseeventparams/10914.json"),
-    ),
-    (
-        "11001",
-        include_str!("../global_data/courseeventparams/11001.json"),
-    ),
-    (
-        "11002",
-        include_str!("../global_data/courseeventparams/11002.json"),
-    ),
-    (
-        "11003",
-        include_str!("../global_data/courseeventparams/11003.json"),
-    ),
-    (
-        "11004",
-        include_str!("../global_data/courseeventparams/11004.json"),
-    ),
-    (
-        "11005",
-        include_str!("../global_data/courseeventparams/11005.json"),
-    ),
-    (
-        "11006",
-        include_str!("../global_data/courseeventparams/11006.json"),
-    ),
-    (
-        "11007",
-        include_str!("../global_data/courseeventparams/11007.json"),
-    ),
-    (
-        "11101",
-        include_str!("../global_data/courseeventparams/11101.json"),
-    ),
-    (
-        "11102",
-        include_str!("../global_data/courseeventparams/11102.json"),
-    ),
-    (
-        "11103",
-        include_str!("../global_data/courseeventparams/11103.json"),
-    ),
-    (
-        "11203",
-        include_str!("../global_data/courseeventparams/11203.json"),
-    ),
-    (
-        "11301",
-        include_str!("../global_data/courseeventparams/11301.json"),
-    ),
-    (
-        "11302",
-        include_str!("../global_data/courseeventparams/11302.json"),
-    ),
-    (
-        "11303",
-        include_str!("../global_data/courseeventparams/11303.json"),
-    ),
-    (
-        "11401",
-        include_str!("../global_data/courseeventparams/11401.json"),
-    ),
-    (
-        "11402",
-        include_str!("../global_data/courseeventparams/11402.json"),
-    ),
-    (
-        "11403",
-        include_str!("../global_data/courseeventparams/11403.json"),
-    ),
-    (
-        "11404",
-        include_str!("../global_data/courseeventparams/11404.json"),
-    ),
-    (
-        "11501",
-        include_str!("../global_data/courseeventparams/11501.json"),
-    ),
-    (
-        "11502",
-        include_str!("../global_data/courseeventparams/11502.json"),
-    ),
-    (
-        "11503",
-        include_str!("../global_data/courseeventparams/11503.json"),
-    ),
-    (
-        "11504",
-        include_str!("../global_data/courseeventparams/11504.json"),
-    ),
-];
 
 pub fn version_hash() -> String {
     let mut digest = Sha256::new();
@@ -1290,14 +367,9 @@ pub fn version_hash() -> String {
         serde_json::to_vec(&SimulatorRaceParameters::current())
             .expect("simulator race parameters must serialize"),
     );
-    for (course_id, json) in COURSE_EVENT_PARAMS
-        .iter()
-        .chain(GLOBAL_COURSE_EVENT_PARAM_OVERRIDES)
-    {
-        digest.update(course_id.as_bytes());
-        digest.update([0]);
-        digest.update(json.as_bytes());
-    }
+    digest.update(store::bytes(StoreFile::CourseEventParamsJp));
+    digest.update([0]);
+    digest.update(store::bytes(StoreFile::CourseEventParamsGlobal));
     hex::encode(digest.finalize())
 }
 
@@ -2322,28 +1394,35 @@ fn load_course_set_statuses(connection: &Connection) -> Result<BTreeMap<i64, Vec
     Ok(statuses)
 }
 
+// Global course-event tables are authoritative for Global race replay. JP's
+// are the complete fallback set; a Global table replaces JP's for its course.
 fn load_course_event_params() -> Result<BTreeMap<i64, CourseGeometry>> {
     let mut courses = BTreeMap::new();
-    for (course_id, json) in COURSE_EVENT_PARAMS {
+    for (course_id, table) in read_course_event_tables(StoreFile::CourseEventParamsJp)? {
         let id = course_id
             .parse::<i64>()
-            .with_context(|| format!("invalid bundled course event param id {course_id}"))?;
+            .with_context(|| format!("invalid course event param id {course_id}"))?;
         if id == 11201 || id == 11202 {
             continue;
         }
-        courses.insert(id, parse_course_event_params(id, json)?);
+        courses.insert(id, parse_course_event_params(id, table)?);
     }
-    for (course_id, json) in GLOBAL_COURSE_EVENT_PARAM_OVERRIDES {
+    for (course_id, table) in read_course_event_tables(StoreFile::CourseEventParamsGlobal)? {
         let id = course_id
             .parse::<i64>()
-            .with_context(|| format!("invalid bundled Global course event param id {course_id}"))?;
-        courses.insert(id, parse_course_event_params(id, json)?);
+            .with_context(|| format!("invalid Global course event param id {course_id}"))?;
+        courses.insert(id, parse_course_event_params(id, table)?);
     }
     Ok(courses)
 }
 
-fn parse_course_event_params(course_id: i64, json: &str) -> Result<CourseGeometry> {
-    let file: CourseEventFile = serde_json::from_str(json)
+fn read_course_event_tables(file: StoreFile) -> Result<BTreeMap<String, serde_json::Value>> {
+    serde_json::from_slice(&store::bytes(file))
+        .with_context(|| format!("failed to parse store file {}", file.fileName()))
+}
+
+fn parse_course_event_params(course_id: i64, table: serde_json::Value) -> Result<CourseGeometry> {
+    let file: CourseEventFile = serde_json::from_value(table)
         .with_context(|| format!("failed to parse course event params for {course_id}"))?;
     let mut corners = Vec::new();
     let mut lane_max_events = Vec::new();
@@ -2513,8 +1592,9 @@ mod tests {
 
     #[test]
     fn simulator_initialization_fields_match_global_source() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let parameters = SimulatorRaceParameters::current();
         for (actual, source) in parameters
             .course_set_adjust
@@ -2578,8 +1658,9 @@ mod tests {
 
     #[test]
     fn compete_fight_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
         let compete_fight = &asset["CompeteFight"];
 
         for (field, expected) in [
@@ -2615,8 +1696,9 @@ mod tests {
 
     #[test]
     fn base_motion_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
         for (field, expected) in [
             ("raceBaseSpeedBaseSpeed", RACE_BASE_SPEED),
@@ -2680,8 +1762,9 @@ mod tests {
 
     #[test]
     fn acceleration_constants_match_decoded_global_asset() {
+        crate::store::requireStoreData!();
         let asset: serde_json::Value =
-            serde_json::from_str(include_str!("../global_data/raceparams/10006800.json")).unwrap();
+            serde_json::from_slice(&store::bytes(StoreFile::RaceParamsGlobal)).unwrap();
 
         assert_eq!(
             asset["accelPowCoef"].as_f64().map(|value| value as f32),
@@ -2725,13 +1808,16 @@ mod tests {
     fn parses_and_sorts_lane_max_events() {
         let geometry = parse_course_event_params(
             99999,
-            r#"{
+            serde_json::from_str(
+                r#"{
                 "courseParams": [
                     { "_paramType": 3, "_values": [7000], "_distance": 875.0 },
                     { "_paramType": 0, "_values": [1, 275], "_distance": 400.0 },
                     { "_paramType": 3, "_values": [10000], "_distance": 500.0 }
                 ]
             }"#,
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -2756,12 +1842,15 @@ mod tests {
     fn explicit_move_lane_point_overrides_corner_fallback_and_keeps_direction() {
         let geometry = parse_course_event_params(
             99999,
-            r#"{
+            serde_json::from_str(
+                r#"{
                 "courseParams": [
                     { "_paramType": 0, "_values": [1, 275], "_distance": 400.0 },
                     { "_paramType": 7, "_values": [2], "_distance": 30.0 }
                 ]
             }"#,
+            )
+            .unwrap(),
         )
         .unwrap();
 
@@ -2771,6 +1860,7 @@ mod tests {
 
     #[test]
     fn global_course_event_override_replaces_jp_geometry() {
+        crate::store::requireStoreData!();
         let courses = load_course_event_params().unwrap();
         let geometry = courses.get(&10501).unwrap();
 
@@ -2786,6 +1876,7 @@ mod tests {
 
     #[test]
     fn emits_initial_lane_master_data() {
+        crate::store::requireStoreData!();
         let connection = Connection::open_in_memory().unwrap();
         connection
             .execute_batch(
@@ -3364,6 +2455,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn exportsNewGlobalDirtCoursesWithGeometryAndOverrunLanes() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection
             .execute_batch(
@@ -3416,6 +2508,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn rejectsUnbundledMasterCoursesInsteadOfDroppingThem() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection.execute_batch("INSERT INTO race_course_set VALUES (99999, 10001, 2000, 1, 1, 1, 12000, 0, 1, 0, 2, 0, 0);").unwrap();
         assert!(generate(&connection, "test")
@@ -3427,6 +2520,7 @@ mod tests {
     #[test]
     #[allow(non_snake_case)]
     fn excludesUnusedLongchampPlaceholdersButRejectsThemIfTheyBecomePlayable() {
+        crate::store::requireStoreData!();
         let connection = courseConnection();
         connection
             .execute_batch(
