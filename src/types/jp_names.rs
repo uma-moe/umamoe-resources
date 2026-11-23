@@ -19,6 +19,9 @@ pub struct JpGacha {
     pub end_date: DateTime<Utc>,
     /// Rarest first, then by card id.
     pub pickup_card_ids: Vec<i64>,
+    /// The cards the gacha recommends (`recommend_order`), in the same order. A Twinkle
+    /// Collection names its featured cards only this way, without pickups.
+    pub recommended_card_ids: Vec<i64>,
 }
 
 /// What a translated name names; each kind is one text category of the masters.
