@@ -49,9 +49,6 @@ pub(super) enum Variant {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Attempt {
     English(EnglishSource),
-    /// In-game Global CDN texture extracted via `game_cdn` + `game_art_convert.py`, used until
-    /// the official webview announcement picture is uploaded.
-    CdnEnglish(Vec<i64>),
     Japanese(String),
     /// The file the site serves at `path`.
     SiteCopy {
@@ -59,6 +56,12 @@ pub(super) enum Attempt {
         variant: Variant,
         planned: String,
     },
+}
+
+/// Earlier runs briefly published in-game `gachaselect` CDN textures under `planned: "cdn:..."`;
+/// ignore those records so they are replaced by official webview art (English or Japanese).
+pub(super) fn isLegacyCdnRecord(record: &BannerRecord) -> bool {
+    record.planned.starts_with("cdn:")
 }
 
 /// A banner as a run finds it.
@@ -73,14 +76,15 @@ pub(super) struct BannerState<'a> {
 /// English art is never traded back for Japanese, and the site's copies are only asked for a
 /// banner that has no picture yet.
 pub(super) fn attempts(banner: &BannerState, retired: &BTreeSet<String>) -> Vec<Attempt> {
+    let record = banner.record.filter(|record| !isLegacyCdnRecord(record));
     let is_current = |variant: Variant, planned: &str| {
-        banner.record.is_some_and(|record| {
+        record.is_some_and(|record| {
             record.variant == variant
                 && record.planned == planned
                 && record.revision == FIT_REVISION
         })
     };
-    let first_picture = banner.record.is_none();
+    let first_picture = record.is_none();
     let mut attempts = Vec::new();
 
     let english = banner
@@ -93,12 +97,6 @@ pub(super) fn attempts(banner: &BannerState, retired: &BTreeSet<String>) -> Vec<
             return Vec::new();
         }
         attempts.push(Attempt::English(english.clone()));
-    }
-    let shows_non_cdn_english = banner.record.is_some_and(|record| {
-        record.variant == Variant::English && !record.planned.starts_with("cdn:")
-    });
-    if !banner.planned.cdn_gacha_ids.is_empty() && !shows_non_cdn_english {
-        attempts.push(Attempt::CdnEnglish(banner.planned.cdn_gacha_ids.clone()));
     }
     let site_english = banner
         .site
@@ -113,9 +111,7 @@ pub(super) fn attempts(banner: &BannerState, retired: &BTreeSet<String>) -> Vec<
         });
     }
 
-    let shows_english = banner
-        .record
-        .is_some_and(|record| record.variant == Variant::English);
+    let shows_english = record.is_some_and(|record| record.variant == Variant::English);
     if shows_english {
         return attempts;
     }
@@ -188,9 +184,9 @@ mod tests {
             japanese: japanese.map(str::to_string),
             english: english.map(|url| EnglishSource {
                 url: url.to_string(),
+                fallback_urls: Vec::new(),
                 campaign: true,
             }),
-            cdn_gacha_ids: Vec::new(),
             prefers_english: true,
         }
     }
@@ -376,54 +372,38 @@ mod tests {
     }
 
     #[test]
-    fn aPreliminaryGachaTriesWebviewThenGameCdnThenJapanese() {
-        let mut banner = planned(Some("https://jp/30151.png"), Some("https://en/30151.png"));
-        banner.cdn_gacha_ids = vec![30151];
-
-        let tried = attemptsFor(&banner, None, SiteOverlays::default(), &BTreeSet::new());
+    fn aLegacyCdnRecordIsReplacedByOfficialEnglishOrJapaneseArt() {
+        let with_english = planned(Some("https://jp/30151.png"), Some("https://en/30151.png"));
+        let jp_only = planned(Some("https://jp/30152.png"), None);
+        let legacy_cdn = record(
+            Variant::English,
+            "cdn:gachaselect/30151/img_bnr_gacha_30151@111",
+        );
 
         assert_eq!(
-            tried,
+            attemptsFor(
+                &with_english,
+                Some(&legacy_cdn),
+                SiteOverlays::default(),
+                &BTreeSet::new(),
+            ),
             vec![
-                Attempt::English(banner.english.clone().unwrap()),
-                Attempt::CdnEnglish(vec![30151]),
+                Attempt::English(with_english.english.clone().unwrap()),
                 Attempt::Japanese("https://jp/30151.png".to_string()),
                 siteCopy(IMAGE_PATH, Variant::Original, IMAGE_PATH),
             ]
         );
-    }
-
-    #[test]
-    fn cdnEnglishArtUpgradesToWebviewArtOnceAvailableAndNeverDowngradesToJapanese() {
-        let mut banner = planned(Some("https://jp/30151.png"), Some("https://en/30151.png"));
-        banner.cdn_gacha_ids = vec![30151];
-        let shown = record(
-            Variant::English,
-            "cdn:outgame/banner/img_bnr_home_130151@111",
-        );
-
-        let tried = attemptsFor(
-            &banner,
-            Some(&shown),
-            SiteOverlays::default(),
-            &BTreeSet::new(),
-        );
-
         assert_eq!(
-            tried,
+            attemptsFor(
+                &jp_only,
+                Some(&legacy_cdn),
+                SiteOverlays::default(),
+                &BTreeSet::new(),
+            ),
             vec![
-                Attempt::English(banner.english.clone().unwrap()),
-                Attempt::CdnEnglish(vec![30151]),
+                Attempt::Japanese("https://jp/30152.png".to_string()),
+                siteCopy(IMAGE_PATH, Variant::Original, IMAGE_PATH),
             ]
         );
-
-        let official = record(Variant::English, "https://en/30151.png");
-        assert!(attemptsFor(
-            &banner,
-            Some(&official),
-            SiteOverlays::default(),
-            &BTreeSet::new()
-        )
-        .is_empty());
     }
 }

@@ -186,9 +186,6 @@ pub struct BannerImagePlan {
 pub struct PlannedBanner {
     pub japanese: Option<String>,
     pub english: Option<EnglishSource>,
-    /// Gacha IDs eligible for early/fallback English banner art from the Global game CDN when the
-    /// official announcement header has not been uploaded yet.
-    pub cdn_gacha_ids: Vec<i64>,
     /// Whether the site shows English art for the banner when it has any. A Champions Meeting
     /// keeps its Japanese art until it is confirmed.
     pub prefers_english: bool,
@@ -197,6 +194,9 @@ pub struct PlannedBanner {
 #[derive(Clone, Debug, PartialEq)]
 pub struct EnglishSource {
     pub url: String,
+    /// Alternate official webview URLs tried if `url` returns 403/404 (for example, Cygames
+    /// usually stamps Global webview headers at `start_date - 24h` instead of `start_date`).
+    pub fallback_urls: Vec<String>,
     /// Campaign posts also carry a thumbnail banner, which is preferred over their header.
     pub campaign: bool,
 }
@@ -212,18 +212,8 @@ pub fn plan_from_news(events: &[TimelineEvent], news: &BannerNews) -> BannerImag
     let mut plan = BannerImagePlan::default();
     for event in events {
         if let Some(image_path) = banner_image_path(event) {
-            let banner = plan.banners.entry(image_path).or_default();
-            banner.prefers_english |= site_prefers_english(event);
-            if matches!(
-                event.event_type.as_str(),
-                "character_banner" | "support_card_banner" | "paid_banner"
-            ) {
-                for id in event.gacha_ids() {
-                    if !banner.cdn_gacha_ids.contains(&id) {
-                        banner.cdn_gacha_ids.push(id);
-                    }
-                }
-            }
+            plan.banners.entry(image_path).or_default().prefers_english |=
+                site_prefers_english(event);
         }
     }
 
