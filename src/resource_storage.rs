@@ -148,6 +148,10 @@ fn pruneUnreferencedFiles(data_dir: &Path, now: SystemTime) -> Result<()> {
             );
             masters.insert(format!("{}.mdb", manifest.master.sha256));
             masters.insert(format!("{}.mdb.gz", manifest.master.sha256));
+            if let Some(preliminary) = &manifest.preliminary_master {
+                masters.insert(format!("{}.mdb", preliminary.sha256));
+                masters.insert(format!("{}.mdb.gz", preliminary.sha256));
+            }
         }
     }
 

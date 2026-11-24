@@ -323,6 +323,40 @@ async fn download(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
     Ok(resp.bytes().await?.to_vec())
 }
 
+/// Checks whether a root manifest URL exists on the CDN.
+/// Returns `Ok(Some(last_modified))` on 2xx, `Ok(None)` on 403/404, and `Err` on other errors.
+pub(crate) async fn probeRootManifestUrl(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<Option<Option<String>>> {
+    let resp = client
+        .head(url)
+        .header("User-Agent", USER_AGENT)
+        .header("Accept", "*/*")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await
+        .with_context(|| format!("HTTP HEAD failed for {}", url))?;
+
+    if resp.status().is_success() {
+        let last_modified = resp
+            .headers()
+            .get(reqwest::header::LAST_MODIFIED)
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        return Ok(Some(last_modified));
+    }
+    if matches!(
+        resp.status(),
+        reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::FORBIDDEN
+    ) {
+        return Ok(None);
+    }
+    bail!("HTTP {}: {}", resp.status(), url);
+}
+
 /// The entries a manifest lists, of the same platform as the manifest.
 async fn fetchManifest(
     client: &reqwest::Client,

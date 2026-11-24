@@ -38,6 +38,9 @@ pub struct ResourceManifest {
     pub generated_at: String,
     pub base_path: String,
     pub master: MasterInfo,
+    /// Present when an unreleased Global CDN master is staged ahead of the live app version.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preliminary_master: Option<PreliminaryMasterInfo>,
     /// The hash of each input the version is named after.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub inputs: BTreeMap<String, String>,
@@ -52,6 +55,21 @@ pub struct MasterInfo {
     pub path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreliminaryMasterInfo {
+    pub marker: String,
+    pub resource_version: String,
+    pub live_resource_version: String,
+    pub detected_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdn_last_modified: Option<String>,
+    pub sha256: String,
+    pub short_hash: String,
+    pub path: String,
+    pub current_path: String,
+    pub bytes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -161,6 +179,16 @@ fn global_version(
         ),
     };
     inputs.insert("master".to_string(), master_sha256.to_string());
+    if let Some(early) = crate::master_fetch::localEarlyMaster(master_path) {
+        inputs.insert(
+            "early_master".to_string(),
+            format!(
+                "{}:{}",
+                early.meta.resource_version,
+                file_sha256(&early.path)?
+            ),
+        );
+    }
     Ok((versionName(marker, &inputs), inputs))
 }
 
@@ -189,6 +217,11 @@ pub fn generate_resources(
     let jp_names_connection = names_jp_master(master_path)
         .as_deref()
         .map(open_jp_master)
+        .transpose()?;
+    let early_master = crate::master_fetch::localEarlyMaster(master_path);
+    let early_connection = early_master
+        .as_ref()
+        .map(|early| open_jp_master(&early.path))
         .transpose()?;
     let master_bytes = fs::read(master_path)
         .with_context(|| format!("failed to read master at {}", master_path.display()))?;
@@ -222,10 +255,14 @@ pub fn generate_resources(
         writeAtomic(&compressed_master, &gzip(&master_bytes)?)?;
     }
 
+    let early_input = early_connection
+        .as_ref()
+        .zip(early_master.as_ref().map(|early| &early.meta));
     let generated = generators::generate_all(
         &connection,
         jp_connection.as_ref(),
         jp_names_connection.as_ref(),
+        early_input,
         &marker,
     )?;
     let artifacts = write_outputs(
@@ -243,6 +280,34 @@ pub fn generate_resources(
     )?;
 
     let generated_at = Utc::now();
+    let mut preliminary_snapshot_info: Option<(PathBuf, String, PreliminaryMasterInfo)> = None;
+    if let Some(early) = &early_master {
+        let early_bytes = fs::read(&early.path)
+            .with_context(|| format!("failed to read early master at {}", early.path.display()))?;
+        let early_sha256 = sha256_hex(&early_bytes);
+        let early_snapshot = resource_storage::masterFile(out_dir, &early_sha256, false);
+        if !early_snapshot.exists() {
+            writeAtomic(&early_snapshot, &early_bytes)?;
+        }
+        let compressed_early = resource_storage::masterFile(out_dir, &early_sha256, true);
+        if !compressed_early.exists() {
+            writeAtomic(&compressed_early, &gzip(&early_bytes)?)?;
+        }
+        let info = PreliminaryMasterInfo {
+            marker: format!("preliminary:{}", early.meta.resource_version),
+            resource_version: early.meta.resource_version.clone(),
+            live_resource_version: early.meta.live_resource_version.clone(),
+            detected_at: early.meta.detected_at.clone(),
+            cdn_last_modified: early.meta.last_modified.clone(),
+            short_hash: early_sha256[..master_history::SHORT_HASH_LENGTH].to_string(),
+            sha256: early_sha256.clone(),
+            path: format!("/resources/masterdata/preliminary/{version}/master.mdb.gz"),
+            current_path: "/resources/masterdata/preliminary/master.mdb.gz".to_string(),
+            bytes: early_bytes.len() as u64,
+        };
+        preliminary_snapshot_info = Some((early_snapshot, early_sha256, info));
+    }
+
     let manifest = ResourceManifest {
         version: version.clone(),
         generated_at: generated_at.to_rfc3339(),
@@ -253,6 +318,9 @@ pub fn generate_resources(
             path: Some(format!("/resources/simulator/{version}/master.mdb.gz")),
             bytes: Some(master_bytes.len() as u64),
         },
+        preliminary_master: preliminary_snapshot_info
+            .as_ref()
+            .map(|(_, _, info)| info.clone()),
         inputs,
         artifacts,
     };
@@ -268,12 +336,52 @@ pub fn generate_resources(
         sha256: &manifest.master.sha256,
         path: &snapshot,
     };
+    let live_resource_version = crate::master_fetch::localResourceVersion(master_path);
+    let release_date = generated_at.format("%Y-%m-%d").to_string();
     recordMasterRelease(
         out_dir,
         &current_master,
         previous_manifest.as_ref(),
-        &generated_at.format("%Y-%m-%d").to_string(),
+        &release_date,
+        live_resource_version.as_deref(),
     );
+    if let Some(live_version) = live_resource_version.as_deref() {
+        if let Err(error) = master_history::markPromotedPreliminaryVersions(
+            out_dir,
+            live_version,
+            &manifest.generated_at,
+        ) {
+            warn!(error = %error, "failed to update promoted preliminary resource versions");
+        }
+    }
+    if let (Some(early), Some((early_snapshot_path, early_sha256, _))) =
+        (&early_master, &preliminary_snapshot_info)
+    {
+        let master_changed = early_sha256 != &manifest.master.sha256;
+        if let Err(error) = master_history::recordPreliminaryVersion(
+            out_dir,
+            &early.meta,
+            early_sha256,
+            master_changed,
+        ) {
+            warn!(error = %error, "failed to record preliminary CDN resource version");
+        }
+        if master_changed {
+            let early_snapshot = MasterSnapshot {
+                sha256: early_sha256,
+                path: early_snapshot_path,
+            };
+            if let Err(error) = master_history::recordPreliminaryRelease(
+                out_dir,
+                &early_snapshot,
+                &current_master,
+                &early.meta,
+                &release_date,
+            ) {
+                warn!(error = %error, "failed to record preliminary master release history");
+            }
+        }
+    }
 
     let planner_root = out_dir.join("planner");
     let planner_version_dir = planner_root.join(&version);
@@ -293,6 +401,7 @@ pub fn generate_resources(
         generated_at: manifest.generated_at.clone(),
         base_path: format!("/resources/planner/{}", version),
         master: manifest.master.clone(),
+        preliminary_master: manifest.preliminary_master.clone(),
         inputs: manifest.inputs.clone(),
         artifacts: planner_artifacts,
     };
@@ -383,6 +492,7 @@ pub fn generate_jp_resources(
             path: None,
             bytes: Some(master_bytes.len() as u64),
         },
+        preliminary_master: None,
         inputs,
         artifacts,
     };
@@ -476,6 +586,7 @@ fn recordMasterRelease(
     current: &MasterSnapshot,
     previous_manifest: Option<&ResourceManifest>,
     date: &str,
+    resource_version: Option<&str>,
 ) {
     let previous_path = previous_manifest.map(|manifest| {
         resource_storage::masterPath(out_dir, &manifest.version, &manifest.master.sha256, false)
@@ -486,7 +597,9 @@ fn recordMasterRelease(
             sha256: &manifest.master.sha256,
             path,
         });
-    if let Err(error) = master_history::recordRelease(out_dir, current, previous.as_ref(), date) {
+    if let Err(error) =
+        master_history::recordRelease(out_dir, current, previous.as_ref(), date, resource_version)
+    {
         warn!(error = %error, "failed to record the master release history");
     }
 }

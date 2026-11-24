@@ -81,7 +81,7 @@ fn announced_sources(
         else {
             continue;
         };
-        if !event.is_confirmed {
+        if !event.has_global_schedule() {
             continue;
         }
 
@@ -186,7 +186,8 @@ fn story_launch_picture(event: &TimelineEvent, posts: &[EnglishPost]) -> Option<
 fn champions_meeting_picture(event: &TimelineEvent, posts: &[EnglishPost]) -> Option<String> {
     let event_title = normalized_timeline_title(&event.title);
     let release = instant_ms(&event.global_release_date)?;
-    if !event.is_confirmed || event_title.is_empty() || event_title == "champions meeting" {
+    if !event.has_global_schedule() || event_title.is_empty() || event_title == "champions meeting"
+    {
         return None;
     }
 
@@ -355,7 +356,7 @@ fn predicted_header_sources(
         let Some(banner_id) = story_ids.get(date_prefix(&event.jp_release_date)) else {
             continue;
         };
-        if event.is_confirmed {
+        if event.has_global_schedule() {
             let url = header_url(&format!("banner_{banner_id}"), release);
             sources.insert(
                 image_path.to_string(),
@@ -367,7 +368,7 @@ fn predicted_header_sources(
         }
     }
 
-    for event in events.iter().filter(|event| event.is_confirmed) {
+    for event in events.iter().filter(|event| event.has_global_schedule()) {
         let Some(image_path) = event.image_path.as_deref() else {
             continue;
         };
@@ -577,5 +578,24 @@ mod tests {
         let source = &sources["assets/images/campaign/90.webp"];
         assert!(source.url.ends_with("header_21000001_L1753135200.png"));
         assert!(source.campaign);
+    }
+
+    #[test]
+    fn preliminary_gacha_gets_english_header_and_cdn_fallback() {
+        let mut banner = confirmed(
+            "support_card_banner",
+            "assets/images/support/banner/2023_30151.webp",
+        );
+        banner.gacha_id = Some(30151);
+        banner.is_confirmed = false;
+        banner.is_preliminary = true;
+
+        let plan = super::super::plan_from_news(&[banner], &BannerNews::default());
+        let planned = &plan.banners["assets/images/support/banner/2023_30151.webp"];
+        assert_eq!(planned.cdn_gacha_ids, vec![30151]);
+        assert_eq!(
+            planned.english.as_ref().map(|e| e.url.as_str()),
+            Some(format!("{ENGLISH_HEADER_ROOT}/gacha_banner_30151_L1753135200.png").as_str())
+        );
     }
 }

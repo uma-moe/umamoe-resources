@@ -119,6 +119,10 @@ enum Command {
         /// The timeline to picture, `.json` or `.json.gz`; the current one in --data-dir if unset.
         #[arg(long)]
         timeline: Option<PathBuf>,
+        /// The Global master whose resource version (or staged early version) provides CDN banner
+        /// art fallback before official webview announcements are posted.
+        #[arg(long, default_value = "master.mdb")]
+        master: PathBuf,
         #[arg(long, default_value = "generated-data")]
         data_dir: PathBuf,
         /// Report how many banners have an English, a Japanese or no source, and download nothing.
@@ -292,6 +296,9 @@ struct ServeArgs {
     /// How often the server checks the current Global game version.
     #[arg(long, env = "MASTER_REFRESH_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(1..), default_value_t = 300)]
     refresh_interval_seconds: u64,
+    /// How often the server probes the Global CDN ahead of live for unreleased preliminary patches.
+    #[arg(long, env = "EARLY_PROBE_INTERVAL_SECONDS", value_parser = clap::value_parser!(u64).range(60..), default_value_t = 3600)]
+    early_probe_interval_seconds: u64,
     /// Purge manifest/current CDN URLs after an automatic refresh.
     #[arg(long, env = "PURGE_ON_REFRESH")]
     purge_on_refresh: bool,
@@ -332,6 +339,7 @@ impl Default for ServeArgs {
             master: PathBuf::from("master.mdb"),
             database_url: None,
             refresh_interval_seconds: 300,
+            early_probe_interval_seconds: 3600,
             purge_on_refresh: false,
             publish_game_art: false,
             publish_jp_game_art: true,
@@ -360,6 +368,16 @@ async fn main() -> Result<()> {
         Command::Serve(args) => serve(args).await?,
         Command::FetchMaster { master, region } => {
             master_fetch::maybeUpdateMasterMdb(region.cdn(), &region.master(&master)).await?;
+            if region == Region::Global {
+                if let Err(error) =
+                    master_fetch::maybeUpdateEarlyMasterMdb(&GLOBAL_CDN, &master).await
+                {
+                    warn!(
+                        error = format!("{error:#}"),
+                        "early Global CDN master probe failed"
+                    );
+                }
+            }
         }
         Command::Generate {
             master,
@@ -369,6 +387,16 @@ async fn main() -> Result<()> {
         } => {
             openLocalStore(&out).await;
             master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, &master).await?;
+            if region == Region::Global {
+                if let Err(error) =
+                    master_fetch::maybeUpdateEarlyMasterMdb(&GLOBAL_CDN, &master).await
+                {
+                    warn!(
+                        error = format!("{error:#}"),
+                        "early Global CDN master probe failed"
+                    );
+                }
+            }
             let manifest = match region {
                 Region::Global => pipeline::generate_resources(&master, &out, write_json)?,
                 Region::Jp => {
@@ -450,6 +478,7 @@ async fn main() -> Result<()> {
         }
         Command::TimelineArt {
             timeline,
+            master,
             data_dir,
             dry_run,
             out_dir,
@@ -462,7 +491,9 @@ async fn main() -> Result<()> {
                 None => assets::currentTimelinePath(&data_dir)?,
             };
             let timeline_json = assets::readTimeline(&timeline_path)?;
-            let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
+            let options = assets::TimelineArtOptions::fromEnv()
+                .inFolder(GLOBAL_ART_FOLDER)
+                .withCdnVersion(master_fetch::latestGlobalResourceVersion(&master));
 
             if let Some(sync_dir) = compare_frontend {
                 let report = assets::compareTimelineArtWithFrontend(&timeline_json, &sync_dir)?;
@@ -485,7 +516,7 @@ async fn main() -> Result<()> {
             purge,
         } => {
             openLocalStore(&out).await;
-            if refreshFromGameVersion(&master, &out, write_json, purge).await? {
+            if refreshFromGameVersion(&master, &out, write_json, purge, true).await? {
                 info!("master.mdb refresh completed");
             } else {
                 info!("master.mdb did not change; skipping regeneration");
@@ -610,6 +641,7 @@ async fn serve(args: ServeArgs) -> Result<()> {
             &args.data_dir,
             args.write_json,
             args.purge_on_refresh,
+            true,
         )
         .await?;
 
@@ -664,9 +696,24 @@ async fn refreshFromGameVersion(
     out: &PathBuf,
     write_json: bool,
     purge: bool,
+    probe_early: bool,
 ) -> Result<bool> {
     let master_updated = master_fetch::maybeUpdateMasterMdb(&GLOBAL_CDN, master).await?;
-    // The version covers everything the set reads, including the JP master the JP refresh keeps.
+    let early_updated = if probe_early || master_updated {
+        match master_fetch::maybeUpdateEarlyMasterMdb(&GLOBAL_CDN, master).await {
+            Ok(updated) => updated,
+            Err(error) => {
+                warn!(
+                    error = format!("{error:#}"),
+                    "early Global CDN master probe failed; continuing with live master"
+                );
+                false
+            }
+        }
+    } else {
+        false
+    };
+    // The version covers everything the set reads, including the JP master and any early CDN master.
     let version = pipeline::resources_version(master)?;
     let resources_match = pipeline::read_manifest(out).is_ok_and(|manifest| {
         let served_from_global_path = manifest
@@ -674,7 +721,7 @@ async fn refreshFromGameVersion(
             .starts_with(&format!("{}/", pipeline::GLOBAL_RESOURCE_PATH));
         manifest.version == version && served_from_global_path
     });
-    if !master_updated && resources_match {
+    if !master_updated && !early_updated && resources_match {
         return Ok(false);
     }
 
@@ -732,6 +779,7 @@ async fn refreshJpFromGameVersion(args: &ServeArgs) -> Result<bool> {
 /// check; a reading server also takes the collected files, which the publisher writes itself.
 fn spawnRefreshLoop(args: ServeArgs, store_bucket: Option<assets::Bucket>) {
     let interval_seconds = args.refresh_interval_seconds;
+    let early_probe_interval = Duration::from_secs(args.early_probe_interval_seconds);
     let store_dir = args.data_dir.join(store::LOCAL_FOLDER);
     let publishes = args.publish_game_art;
     let jp_args = args.clone();
@@ -742,10 +790,15 @@ fn spawnRefreshLoop(args: ServeArgs, store_bucket: Option<assets::Bucket>) {
 
     info!(
         interval_seconds,
-        purge_on_refresh, "automatic master refresh enabled"
+        early_probe_interval_seconds = args.early_probe_interval_seconds,
+        purge_on_refresh,
+        "automatic master refresh enabled"
     );
 
     tokio::spawn(async move {
+        // Startup already ran an initial early CDN probe; space out subsequent 100-step scans.
+        let mut last_early_probe = tokio::time::Instant::now();
+
         // JP is an addition: the Global set is served without waiting for JP's first check.
         if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
             warn!(error = format!("{error:#}"), "first JP refresh failed");
@@ -770,8 +823,18 @@ fn spawnRefreshLoop(args: ServeArgs, store_bucket: Option<assets::Bucket>) {
             if let Err(error) = refreshJpFromGameVersion(&jp_args).await {
                 warn!(error = format!("{error:#}"), "automatic JP refresh failed");
             }
-            if let Err(error) =
-                refreshFromGameVersion(&master, &data_dir, write_json, purge_on_refresh).await
+            let probe_early = last_early_probe.elapsed() >= early_probe_interval;
+            if probe_early {
+                last_early_probe = tokio::time::Instant::now();
+            }
+            if let Err(error) = refreshFromGameVersion(
+                &master,
+                &data_dir,
+                write_json,
+                purge_on_refresh,
+                probe_early,
+            )
+            .await
             {
                 warn!(error = %error, "automatic master refresh failed");
             }
@@ -809,8 +872,8 @@ fn spawnArtPublishing(args: &ServeArgs) {
             tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
         }
 
-        spawnGameArtLoop(retry_seconds, master, root, regions);
-        spawnTimelineArtLoop(timeline_interval_seconds, data_dir, tree);
+        spawnGameArtLoop(retry_seconds, master.clone(), root, regions);
+        spawnTimelineArtLoop(timeline_interval_seconds, data_dir, master, tree);
     });
 }
 
@@ -892,9 +955,15 @@ async fn publishRegionArt(
 
 #[allow(non_snake_case)]
 /// Publishes the current timeline's banners at start and then on every interval, which catches
-/// new timelines, new news archives and English art uploaded around a release.
-fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf, bucket: assets::Bucket) {
-    let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
+/// new timelines, new news archives, early CDN banner textures and English art uploaded around a
+/// release.
+fn spawnTimelineArtLoop(
+    interval_seconds: u64,
+    data_dir: PathBuf,
+    master: PathBuf,
+    bucket: assets::Bucket,
+) {
+    let base_options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
 
     info!(
         interval_seconds,
@@ -919,6 +988,9 @@ fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf, bucket: assets
                     continue;
                 }
             };
+            let options = base_options
+                .clone()
+                .withCdnVersion(master_fetch::latestGlobalResourceVersion(&master));
             if let Err(error) = assets::publishTimelineArt(&bucket, &options, &timeline_json).await
             {
                 warn!(

@@ -9,9 +9,10 @@ mod types;
 
 pub use backfill::backfillMasterHistory;
 pub(crate) use diff::sqliteValueToJson;
-pub use types::MasterSnapshot;
-use types::{DiffSummary, MasterDiff, MasterRelease, SHORT_HASH_LENGTH};
+use types::{DiffSummary, MasterDiff, MasterRelease};
+pub use types::{MasterSnapshot, PreliminaryResourceVersion, SHORT_HASH_LENGTH};
 
+use crate::master_fetch::EarlyMasterMeta;
 use crate::pipeline::{gzip, writeAtomic};
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OpenFlags};
@@ -21,6 +22,12 @@ use tracing::{info, warn};
 
 pub fn versionsPath(data_dir: &Path) -> PathBuf {
     data_dir.join("masterdata").join("versions.json")
+}
+
+pub fn preliminaryVersionsPath(data_dir: &Path) -> PathBuf {
+    data_dir
+        .join("masterdata")
+        .join("preliminary_versions.json")
 }
 
 pub fn diffPath(data_dir: &Path, short_hash: &str) -> PathBuf {
@@ -37,26 +44,63 @@ pub fn isShortHash(value: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-/// Appends `current` to the release history unless it is already listed. `previous` is the
-/// master of the export being replaced; the diff is written when it is the latest release.
+/// Appends `current` to the release history unless it is already listed as a live release. If it
+/// was previously recorded as preliminary, promotes it in place to live. `previous` is the live
+/// master being replaced; the diff is written against the latest live release.
 pub fn recordRelease(
     data_dir: &Path,
     current: &MasterSnapshot,
     previous: Option<&MasterSnapshot>,
     date: &str,
+    resource_version: Option<&str>,
 ) -> Result<()> {
     let versions_path = versionsPath(data_dir);
     let mut releases = readReleases(&versions_path)?;
-    // Each short hash names one immutable diff, so a master that returns is not listed again.
-    if releases
+    let last_live_hash = releases
         .iter()
-        .any(|release| release.hash == current.sha256)
+        .rev()
+        .find(|release| !release.is_preliminary)
+        .map(|release| release.hash.clone());
+
+    if let Some(existing) = releases
+        .iter_mut()
+        .find(|release| release.hash == current.sha256)
     {
+        if !existing.is_preliminary {
+            if existing.resource_version.is_none() && resource_version.is_some() {
+                existing.resource_version = resource_version.map(str::to_string);
+                writeReleases(&versions_path, &releases)?;
+            }
+            return Ok(());
+        }
+
+        // Promote a previously preliminary entry to an official live release.
+        let needs_rediff = existing.previous_hash != last_live_hash
+            || (last_live_hash.is_some() && existing.summary.is_none());
+        if needs_rediff {
+            existing.previous_hash = last_live_hash.clone();
+            existing.summary = match last_live_hash.as_deref() {
+                Some(previous_hash) => writeDiff(data_dir, previous_hash, previous, current, date)?,
+                None => None,
+            };
+        }
+        existing.is_preliminary = false;
+        existing.date = date.to_string();
+        if resource_version.is_some() {
+            existing.resource_version = resource_version.map(str::to_string);
+        }
+        let short_hash = existing.short_hash.clone();
+        let summary = existing.summary;
+        writeReleases(&versions_path, &releases)?;
+        info!(
+            short_hash,
+            ?summary,
+            "promoted preliminary master release to live"
+        );
         return Ok(());
     }
 
-    let previous_hash = releases.last().map(|release| release.hash.clone());
-    let summary = match previous_hash.as_deref() {
+    let summary = match last_live_hash.as_deref() {
         Some(previous_hash) => writeDiff(data_dir, previous_hash, previous, current, date)?,
         None => None,
     };
@@ -65,13 +109,152 @@ pub fn recordRelease(
         hash: current.sha256.to_string(),
         short_hash: short_hash.to_string(),
         date: date.to_string(),
-        previous_hash,
+        previous_hash: last_live_hash,
         summary,
+        resource_version: resource_version.map(str::to_string),
+        is_preliminary: false,
+        detected_at: None,
+        cdn_last_modified: None,
     });
 
     // The diff is written first, so the history never lists a diff that is not there yet.
     writeReleases(&versions_path, &releases)?;
     info!(short_hash, ?summary, "recorded master release");
+    Ok(())
+}
+
+/// Records an unreleased early CDN master in `masterdata/versions.json` with `is_preliminary: true`
+/// and writes its diff relative to the live master. Skips when the early master has identical bytes
+/// to live or is already recorded as a live release.
+pub fn recordPreliminaryRelease(
+    data_dir: &Path,
+    early: &MasterSnapshot,
+    live: &MasterSnapshot,
+    meta: &EarlyMasterMeta,
+    date: &str,
+) -> Result<()> {
+    if early.sha256 == live.sha256 {
+        return Ok(());
+    }
+
+    let versions_path = versionsPath(data_dir);
+    let mut releases = readReleases(&versions_path)?;
+    if let Some(existing) = releases
+        .iter_mut()
+        .find(|release| release.hash == early.sha256)
+    {
+        if !existing.is_preliminary {
+            return Ok(());
+        }
+        let mut changed = false;
+        if existing.resource_version.as_deref() != Some(meta.resource_version.as_str()) {
+            existing.resource_version = Some(meta.resource_version.clone());
+            changed = true;
+        }
+        if existing.cdn_last_modified != meta.last_modified {
+            existing.cdn_last_modified = meta.last_modified.clone();
+            changed = true;
+        }
+        if changed {
+            writeReleases(&versions_path, &releases)?;
+        }
+        return Ok(());
+    }
+
+    let summary = writeDiff(data_dir, live.sha256, Some(live), early, date)?;
+    let short_hash = &early.sha256[..SHORT_HASH_LENGTH];
+    releases.push(MasterRelease {
+        hash: early.sha256.to_string(),
+        short_hash: short_hash.to_string(),
+        date: date.to_string(),
+        previous_hash: Some(live.sha256.to_string()),
+        summary,
+        resource_version: Some(meta.resource_version.clone()),
+        is_preliminary: true,
+        detected_at: Some(meta.detected_at.clone()),
+        cdn_last_modified: meta.last_modified.clone(),
+    });
+    writeReleases(&versions_path, &releases)?;
+    info!(
+        short_hash,
+        resource_version = meta.resource_version,
+        ?summary,
+        "recorded preliminary master release"
+    );
+    Ok(())
+}
+
+/// Appends or updates an entry in `masterdata/preliminary_versions.json` tracking every unreleased
+/// Global CDN resource version observed ahead of live (even if `master.mdb` bytes were unchanged).
+pub fn recordPreliminaryVersion(
+    data_dir: &Path,
+    meta: &EarlyMasterMeta,
+    master_sha256: &str,
+    master_changed_from_live: bool,
+) -> Result<()> {
+    let path = preliminaryVersionsPath(data_dir);
+    let mut versions = readPreliminaryVersions(&path)?;
+    if let Some(existing) = versions.iter_mut().find(|entry| {
+        entry.resource_version == meta.resource_version && entry.master_sha256 == master_sha256
+    }) {
+        let mut changed = false;
+        if existing.cdn_last_modified != meta.last_modified {
+            existing.cdn_last_modified = meta.last_modified.clone();
+            changed = true;
+        }
+        if changed {
+            writePreliminaryVersions(&path, &versions)?;
+        }
+        return Ok(());
+    }
+
+    versions.push(PreliminaryResourceVersion {
+        resource_version: meta.resource_version.clone(),
+        live_resource_version: meta.live_resource_version.clone(),
+        master_sha256: master_sha256.to_string(),
+        master_short_hash: master_sha256[..SHORT_HASH_LENGTH].to_string(),
+        master_changed_from_live,
+        detected_at: meta.detected_at.clone(),
+        cdn_last_modified: meta.last_modified.clone(),
+        promoted_at: None,
+    });
+    writePreliminaryVersions(&path, &versions)?;
+    Ok(())
+}
+
+/// Marks tracked preliminary CDN resource versions as promoted once the live version reaches or
+/// passes them.
+pub fn markPromotedPreliminaryVersions(
+    data_dir: &Path,
+    live_resource_version: &str,
+    promoted_at: &str,
+) -> Result<()> {
+    let Ok(live_number) = live_resource_version.trim().parse::<u64>() else {
+        return Ok(());
+    };
+    let path = preliminaryVersionsPath(data_dir);
+    if !path.is_file() {
+        return Ok(());
+    }
+    let mut versions = readPreliminaryVersions(&path)?;
+    let mut changed = false;
+    for entry in &mut versions {
+        if entry.promoted_at.is_some() {
+            continue;
+        }
+        if entry
+            .resource_version
+            .trim()
+            .parse::<u64>()
+            .is_ok_and(|version| version <= live_number)
+        {
+            entry.promoted_at = Some(promoted_at.to_string());
+            changed = true;
+        }
+    }
+    if changed {
+        writePreliminaryVersions(&path, &versions)?;
+    }
     Ok(())
 }
 
@@ -156,16 +339,42 @@ fn readReleases(path: &Path) -> Result<Vec<MasterRelease>> {
     serde_json::from_slice(&bytes).with_context(|| format!("failed to parse {}", path.display()))
 }
 
+fn writePreliminaryVersions(path: &Path, versions: &[PreliminaryResourceVersion]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    writeAtomic(path, &serde_json::to_vec_pretty(versions)?)
+        .with_context(|| format!("failed to write {}", path.display()))
+}
+
+fn readPreliminaryVersions(path: &Path) -> Result<Vec<PreliminaryResourceVersion>> {
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to read {}", path.display()))
+        }
+    };
+    serde_json::from_slice(&bytes).with_context(|| format!("failed to parse {}", path.display()))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::types::{DiffSummary, MasterDiff, MasterRelease};
-    use super::{diffPath, recordRelease, versionsPath, MasterSnapshot};
+    use super::types::{DiffSummary, MasterDiff, MasterRelease, PreliminaryResourceVersion};
+    use super::{
+        diffPath, markPromotedPreliminaryVersions, preliminaryVersionsPath,
+        recordPreliminaryRelease, recordPreliminaryVersion, recordRelease, versionsPath,
+        MasterSnapshot,
+    };
+    use crate::master_fetch::EarlyMasterMeta;
     use flate2::read::GzDecoder;
     use rusqlite::Connection;
     use std::path::{Path, PathBuf};
 
     const FIRST_HASH: &str = "1111111111111111111111111111111111111111111111111111111111111111";
     const SECOND_HASH: &str = "2222222222222222222222222222222222222222222222222222222222222222";
+    const THIRD_HASH: &str = "3333333333333333333333333333333333333333333333333333333333333333";
 
     fn temporaryDirectory(name: &str) -> PathBuf {
         let directory = std::env::temp_dir().join(format!(
@@ -210,9 +419,23 @@ mod tests {
             path: &second_path,
         };
 
-        recordRelease(&data_dir, &first, None, "2026-10-01").unwrap();
-        recordRelease(&data_dir, &second, Some(&first), "2026-10-08").unwrap();
-        recordRelease(&data_dir, &second, Some(&second), "2026-10-09").unwrap();
+        recordRelease(&data_dir, &first, None, "2026-10-01", Some("10008780")).unwrap();
+        recordRelease(
+            &data_dir,
+            &second,
+            Some(&first),
+            "2026-10-08",
+            Some("10008790"),
+        )
+        .unwrap();
+        recordRelease(
+            &data_dir,
+            &second,
+            Some(&second),
+            "2026-10-09",
+            Some("10008790"),
+        )
+        .unwrap();
 
         let releases = readReleases(&data_dir);
         let expected_summary = DiffSummary {
@@ -230,6 +453,10 @@ mod tests {
                     date: "2026-10-01".into(),
                     previous_hash: None,
                     summary: None,
+                    resource_version: Some("10008780".into()),
+                    is_preliminary: false,
+                    detected_at: None,
+                    cdn_last_modified: None,
                 },
                 MasterRelease {
                     hash: SECOND_HASH.into(),
@@ -237,6 +464,10 @@ mod tests {
                     date: "2026-10-08".into(),
                     previous_hash: Some(FIRST_HASH.into()),
                     summary: Some(expected_summary),
+                    resource_version: Some("10008790".into()),
+                    is_preliminary: false,
+                    detected_at: None,
+                    cdn_last_modified: None,
                 },
             ]
         );
@@ -268,13 +499,108 @@ mod tests {
             path: &missing_path,
         };
 
-        recordRelease(&data_dir, &first, None, "2026-10-01").unwrap();
-        recordRelease(&data_dir, &second, Some(&missing_first), "2026-10-08").unwrap();
+        recordRelease(&data_dir, &first, None, "2026-10-01", None).unwrap();
+        recordRelease(&data_dir, &second, Some(&missing_first), "2026-10-08", None).unwrap();
 
         let latest = readReleases(&data_dir).pop().unwrap();
         assert_eq!(latest.previous_hash.as_deref(), Some(FIRST_HASH));
         assert_eq!(latest.summary, None);
         assert!(!diffPath(&data_dir, "222222222222").exists());
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn preliminaryReleaseDiffsAgainstLiveAndPromotesCleanlyWhenLiveCatchesUp() {
+        let data_dir = temporaryDirectory("preliminary");
+        let live_path = data_dir.join("live.mdb");
+        let early_path = data_dir.join("early.mdb");
+        let next_live_path = data_dir.join("next_live.mdb");
+        writeMaster(
+            &live_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'live');",
+        );
+        writeMaster(
+            &early_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'live'), (2, 'early');",
+        );
+        writeMaster(
+            &next_live_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'live'), (2, 'final');",
+        );
+        let live = MasterSnapshot {
+            sha256: FIRST_HASH,
+            path: &live_path,
+        };
+        let early = MasterSnapshot {
+            sha256: SECOND_HASH,
+            path: &early_path,
+        };
+        let next_live = MasterSnapshot {
+            sha256: THIRD_HASH,
+            path: &next_live_path,
+        };
+        let meta = EarlyMasterMeta {
+            resource_version: "10008800".into(),
+            live_resource_version: "10008790".into(),
+            detected_at: "2026-11-24T12:00:00Z".into(),
+            last_modified: Some("Tue, 24 Nov 2026 11:14:05 GMT".into()),
+        };
+
+        recordRelease(&data_dir, &live, None, "2026-11-20", Some("10008790")).unwrap();
+        recordPreliminaryRelease(&data_dir, &early, &live, &meta, "2026-11-24").unwrap();
+        recordPreliminaryVersion(&data_dir, &meta, SECOND_HASH, true).unwrap();
+
+        let releases = readReleases(&data_dir);
+        assert_eq!(releases.len(), 2);
+        assert!(releases[1].is_preliminary);
+        assert_eq!(releases[1].resource_version.as_deref(), Some("10008800"));
+        assert_eq!(releases[1].previous_hash.as_deref(), Some(FIRST_HASH));
+        assert_eq!(releases[1].summary.unwrap().added, 1);
+        assert!(diffPath(&data_dir, "222222222222").is_file());
+
+        // If a different final master goes live, live chains from live (FIRST_HASH -> THIRD_HASH)
+        // while keeping the preliminary release entry intact.
+        recordRelease(
+            &data_dir,
+            &next_live,
+            Some(&live),
+            "2026-12-01",
+            Some("10008800"),
+        )
+        .unwrap();
+        markPromotedPreliminaryVersions(&data_dir, "10008800", "2026-12-01T22:00:00Z").unwrap();
+
+        let releases = readReleases(&data_dir);
+        assert_eq!(releases.len(), 3);
+        assert!(releases[1].is_preliminary);
+        assert!(!releases[2].is_preliminary);
+        assert_eq!(releases[2].previous_hash.as_deref(), Some(FIRST_HASH));
+
+        // If the exact same preliminary master goes live instead, it promotes in place.
+        recordRelease(
+            &data_dir,
+            &early,
+            Some(&live),
+            "2026-12-02",
+            Some("10008800"),
+        )
+        .unwrap();
+        let promoted = readReleases(&data_dir)
+            .into_iter()
+            .find(|r| r.hash == SECOND_HASH)
+            .unwrap();
+        assert!(!promoted.is_preliminary);
+        assert_eq!(promoted.date, "2026-12-02");
+
+        let prelim_versions: Vec<PreliminaryResourceVersion> =
+            serde_json::from_slice(&std::fs::read(preliminaryVersionsPath(&data_dir)).unwrap())
+                .unwrap();
+        assert_eq!(prelim_versions.len(), 1);
+        assert_eq!(prelim_versions[0].resource_version, "10008800");
+        assert_eq!(
+            prelim_versions[0].promoted_at.as_deref(),
+            Some("2026-12-01T22:00:00Z")
+        );
         std::fs::remove_dir_all(data_dir).unwrap();
     }
 }

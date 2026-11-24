@@ -36,11 +36,13 @@ pub struct GeneratedResources {
 /// `jp_connection` is the JP master the planner reads its rewards from, given only when the
 /// bundled reward catalogue is refreshed. `jp_names` is the JP master the server keeps, for
 /// Japanese names, JP's banners and their pools, the planner's walking campaigns and tying the
-/// Global master's schedules to JP events.
+/// Global master's schedules to JP events. `early_master`, when present, overlays unreleased
+/// Global CDN schedule data onto the timeline and planner as preliminary entries.
 pub fn generate_all(
     connection: &Connection,
     jp_connection: Option<&Connection>,
     jp_names: Option<&Connection>,
+    early_master: Option<(&Connection, &crate::master_fetch::EarlyMasterMeta)>,
     master_version: &str,
 ) -> Result<GeneratedResources> {
     let character_banners = banners::generate_character_banners(connection)?;
@@ -61,12 +63,14 @@ pub fn generate_all(
         &character_banners,
         &support_banners,
         &paid_banners,
+        early_master,
     )?;
     let mut timeline = serde_json::to_value(&banner_timeline)?;
     let planner = planner::generate(
         connection,
         jp_connection,
         jp_names,
+        early_master.map(|(early_connection, _)| early_connection),
         &character_banners,
         &support_banners,
         &paid_banners,

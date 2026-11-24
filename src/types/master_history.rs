@@ -14,6 +14,35 @@ pub struct MasterRelease {
     pub previous_hash: Option<String>,
     /// Absent for the first release, and when the previous database was unavailable.
     pub summary: Option<DiffSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_version: Option<String>,
+    /// True while this master has only been seen on an unreleased CDN version ahead of live.
+    #[serde(default, skip_serializing_if = "isFalse")]
+    pub is_preliminary: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detected_at: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdn_last_modified: Option<String>,
+}
+
+fn isFalse(value: &bool) -> bool {
+    !*value
+}
+
+/// One entry of `masterdata/preliminary_versions.json`: every unreleased Global CDN resource
+/// version detected ahead of `uma.moe/api/ver`, oldest first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PreliminaryResourceVersion {
+    pub resource_version: String,
+    pub live_resource_version: String,
+    pub master_sha256: String,
+    pub master_short_hash: String,
+    pub master_changed_from_live: bool,
+    pub detected_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cdn_last_modified: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub promoted_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

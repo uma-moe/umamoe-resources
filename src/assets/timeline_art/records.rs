@@ -49,6 +49,9 @@ pub(super) enum Variant {
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Attempt {
     English(EnglishSource),
+    /// In-game Global CDN texture extracted via `game_cdn` + `game_art_convert.py`, used until
+    /// the official webview announcement picture is uploaded.
+    CdnEnglish(Vec<i64>),
     Japanese(String),
     /// The file the site serves at `path`.
     SiteCopy {
@@ -90,6 +93,12 @@ pub(super) fn attempts(banner: &BannerState, retired: &BTreeSet<String>) -> Vec<
             return Vec::new();
         }
         attempts.push(Attempt::English(english.clone()));
+    }
+    let shows_non_cdn_english = banner.record.is_some_and(|record| {
+        record.variant == Variant::English && !record.planned.starts_with("cdn:")
+    });
+    if !banner.planned.cdn_gacha_ids.is_empty() && !shows_non_cdn_english {
+        attempts.push(Attempt::CdnEnglish(banner.planned.cdn_gacha_ids.clone()));
     }
     let site_english = banner
         .site
@@ -181,6 +190,7 @@ mod tests {
                 url: url.to_string(),
                 campaign: true,
             }),
+            cdn_gacha_ids: Vec::new(),
             prefers_english: true,
         }
     }
@@ -363,5 +373,57 @@ mod tests {
             tried,
             vec![Attempt::Japanese("https://jp/a.png".to_string())]
         );
+    }
+
+    #[test]
+    fn aPreliminaryGachaTriesWebviewThenGameCdnThenJapanese() {
+        let mut banner = planned(Some("https://jp/30151.png"), Some("https://en/30151.png"));
+        banner.cdn_gacha_ids = vec![30151];
+
+        let tried = attemptsFor(&banner, None, SiteOverlays::default(), &BTreeSet::new());
+
+        assert_eq!(
+            tried,
+            vec![
+                Attempt::English(banner.english.clone().unwrap()),
+                Attempt::CdnEnglish(vec![30151]),
+                Attempt::Japanese("https://jp/30151.png".to_string()),
+                siteCopy(IMAGE_PATH, Variant::Original, IMAGE_PATH),
+            ]
+        );
+    }
+
+    #[test]
+    fn cdnEnglishArtUpgradesToWebviewArtOnceAvailableAndNeverDowngradesToJapanese() {
+        let mut banner = planned(Some("https://jp/30151.png"), Some("https://en/30151.png"));
+        banner.cdn_gacha_ids = vec![30151];
+        let shown = record(
+            Variant::English,
+            "cdn:outgame/banner/img_bnr_home_130151@111",
+        );
+
+        let tried = attemptsFor(
+            &banner,
+            Some(&shown),
+            SiteOverlays::default(),
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(
+            tried,
+            vec![
+                Attempt::English(banner.english.clone().unwrap()),
+                Attempt::CdnEnglish(vec![30151]),
+            ]
+        );
+
+        let official = record(Variant::English, "https://en/30151.png");
+        assert!(attemptsFor(
+            &banner,
+            Some(&official),
+            SiteOverlays::default(),
+            &BTreeSet::new()
+        )
+        .is_empty());
     }
 }

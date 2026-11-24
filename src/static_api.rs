@@ -106,7 +106,19 @@ fn resource_router(mut state: AppState, protected: bool) -> Router {
             "/resources/masterdata/versions.json",
             get(getMasterVersions),
         )
+        .route(
+            "/resources/masterdata/preliminary-versions.json",
+            get(getPreliminaryVersions),
+        )
         .route("/resources/masterdata/diffs/:file_name", get(getMasterDiff))
+        .route(
+            "/resources/masterdata/preliminary/master.mdb.gz",
+            get(getCurrentPreliminaryMaster),
+        )
+        .route(
+            "/resources/masterdata/preliminary/:version/master.mdb.gz",
+            get(getPreliminaryVersionMaster),
+        )
         .route(
             "/resources/simulator/:version/master.mdb.gz",
             get(getSimulatorMaster),
@@ -304,6 +316,108 @@ async fn getSimulatorMaster(
     Ok((headers, bytes).into_response())
 }
 
+/// Serves the unreleased early Global CDN database for the frontend Master Data browser when one
+/// is staged ahead of live. Versioned paths are immutable and CDN-cacheable.
+#[allow(non_snake_case)]
+async fn getPreliminaryVersionMaster(
+    State(state): State<AppState>,
+    Path(version): Path<String>,
+) -> Result<Response, ApiError> {
+    if version.is_empty()
+        || version.len() > 240
+        || matches!(version.as_str(), "." | "..")
+        || !version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        return Err(ApiError::new(
+            StatusCode::BAD_REQUEST,
+            "invalid resource version",
+        ));
+    }
+
+    let manifest = read_version_manifest(&state.data_dir, &version).map_err(internal_error)?;
+    let preliminary = manifest.preliminary_master.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "no preliminary master is available for this version",
+        )
+    })?;
+    serveMasterSnapshot(&state.data_dir, &version, &preliminary.sha256, true).await
+}
+
+/// Serves the currently active unreleased early Global CDN database, or 404 when none is staged.
+#[allow(non_snake_case)]
+async fn getCurrentPreliminaryMaster(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let manifest = read_manifest(&state.data_dir).map_err(internal_error)?;
+    let preliminary = manifest.preliminary_master.ok_or_else(|| {
+        ApiError::new(
+            StatusCode::NOT_FOUND,
+            "no preliminary master is currently available",
+        )
+    })?;
+    serveMasterSnapshot(
+        &state.data_dir,
+        &manifest.version,
+        &preliminary.sha256,
+        false,
+    )
+    .await
+}
+
+#[allow(non_snake_case)]
+async fn serveMasterSnapshot(
+    data_dir: &FsPath,
+    version: &str,
+    sha256: &str,
+    immutable: bool,
+) -> Result<Response, ApiError> {
+    let path = resource_storage::masterPath(data_dir, version, sha256, true);
+    let bytes = fs::read(path).await.map_err(internal_error)?;
+    let headers = [
+        (
+            CONTENT_TYPE,
+            HeaderValue::from_static("application/vnd.sqlite3"),
+        ),
+        (CONTENT_ENCODING, HeaderValue::from_static("gzip")),
+        (
+            CACHE_CONTROL,
+            HeaderValue::from_static(resource_cache_control(false, immutable)),
+        ),
+        (ETAG, header_value(format!("\"sha256-{sha256}\""))?),
+    ];
+    Ok((headers, bytes).into_response())
+}
+
+/// Tracks every unreleased Global CDN resource version observed ahead of live, oldest first.
+#[allow(non_snake_case)]
+async fn getPreliminaryVersions(State(state): State<AppState>) -> Result<Response, ApiError> {
+    let path = master_history::preliminaryVersionsPath(&state.data_dir);
+    let bytes = match fs::read(&path).await {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => b"[]".to_vec(),
+        Err(error) => {
+            return Err(ApiError::new(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("failed to read {}: {}", path.display(), error),
+            ));
+        }
+    };
+
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    headers.insert(
+        CACHE_CONTROL,
+        HeaderValue::from_static(resource_cache_control(false, false)),
+    );
+    headers.insert(VARY, HeaderValue::from_static(resource_vary_header(false)));
+    headers.insert(CONTENT_LENGTH, header_value(bytes.len())?);
+    Ok((headers, bytes).into_response())
+}
+
 /// The release list grows with each master, so it uses the short mutable-resource cache.
 #[allow(non_snake_case)]
 async fn getMasterVersions(State(state): State<AppState>) -> Result<Response, ApiError> {
@@ -470,6 +584,8 @@ async fn get_current_planner_resource(
 #[derive(Deserialize)]
 struct SqlQueryRequest {
     sql: String,
+    #[serde(default)]
+    master: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -490,7 +606,23 @@ async fn get_current_sql(
 ) -> Result<Response, ApiError> {
     validate_read_only_sql(&query.sql)?;
 
-    let master_path = state.master_path.clone();
+    let master_path = match query.master.as_deref() {
+        None | Some("") | Some("live") => state.master_path.clone(),
+        Some("preliminary") => crate::master_fetch::localEarlyMaster(&state.master_path)
+            .map(|early| early.path)
+            .ok_or_else(|| {
+                ApiError::new(
+                    StatusCode::NOT_FOUND,
+                    "no preliminary master is currently available",
+                )
+            })?,
+        Some(_) => {
+            return Err(ApiError::new(
+                StatusCode::BAD_REQUEST,
+                "invalid master selector; expected live or preliminary",
+            ));
+        }
+    };
     let sql = query.sql;
     let response = tokio::task::spawn_blocking(move || execute_sql_query(&master_path, &sql))
         .await
@@ -801,6 +933,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            preliminary_master: None,
             inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: file.into(),
@@ -907,6 +1040,7 @@ mod tests {
                 path: Some("/resources/simulator/test-v1/master.mdb.gz".into()),
                 bytes: Some(3),
             },
+            preliminary_master: None,
             inputs: Default::default(),
             artifacts: vec![],
         };
@@ -982,6 +1116,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            preliminary_master: None,
             inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: "factors.json".into(),
@@ -1059,6 +1194,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            preliminary_master: None,
             inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: file.into(),
@@ -1268,6 +1404,204 @@ mod tests {
         assert_eq!(diff.headers()[super::CONTENT_ENCODING], "gzip");
         assert_eq!(invalid_diff.status(), StatusCode::BAD_REQUEST);
         assert_eq!(missing_diff.status(), StatusCode::NOT_FOUND);
+        task.abort();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[allow(non_snake_case)]
+    async fn preliminaryMasterEndpointsServeSnapshotVersionsAndSql() {
+        use crate::master_fetch::EarlyMasterMeta;
+        use crate::pipeline::{MasterInfo, PreliminaryMasterInfo, ResourceManifest};
+        use axum::http::StatusCode;
+        use rusqlite::Connection;
+
+        let root = std::env::temp_dir().join(format!(
+            "preliminary-master-api-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(root.join("v1")).unwrap();
+        std::fs::create_dir_all(root.join("masters")).unwrap();
+        std::fs::create_dir_all(root.join("masterdata")).unwrap();
+
+        let live_path = root.join("master.mdb");
+        let early_path = crate::master_fetch::earlyMasterPath(&live_path);
+        let create_db = |path: &std::path::Path, tag: &str| {
+            let conn = Connection::open(path).unwrap();
+            conn.execute_batch(&format!(
+                "CREATE TABLE probe (tag TEXT); INSERT INTO probe VALUES ('{tag}');"
+            ))
+            .unwrap();
+        };
+        create_db(&live_path, "live-10008790");
+        create_db(&early_path, "early-10008800");
+        std::fs::write(root.join("master.mdb.version"), "1.35.5:10008790").unwrap();
+        let early_meta = EarlyMasterMeta {
+            resource_version: "10008800".into(),
+            live_resource_version: "10008790".into(),
+            detected_at: "2026-11-24T19:35:00Z".into(),
+            last_modified: Some("Tue, 24 Nov 2026 19:00:00 GMT".into()),
+        };
+        std::fs::write(
+            early_path.with_extension("mdb.version"),
+            serde_json::to_vec(&early_meta).unwrap(),
+        )
+        .unwrap();
+
+        let early_sha = "e".repeat(64);
+        std::fs::write(
+            root.join("masters").join(format!("{early_sha}.mdb.gz")),
+            b"early-gz",
+        )
+        .unwrap();
+        let manifest = ResourceManifest {
+            version: "v1".into(),
+            generated_at: "test".into(),
+            base_path: "/resources/en/v1".into(),
+            master: MasterInfo {
+                marker: "1.35.5:10008790".into(),
+                sha256: "a".repeat(64),
+                path: None,
+                bytes: None,
+            },
+            preliminary_master: Some(PreliminaryMasterInfo {
+                marker: "cdn:10008800".into(),
+                resource_version: "10008800".into(),
+                live_resource_version: "10008790".into(),
+                detected_at: "2026-11-24T19:35:00Z".into(),
+                cdn_last_modified: Some("Tue, 24 Nov 2026 19:00:00 GMT".into()),
+                sha256: early_sha.clone(),
+                short_hash: early_sha[..12].into(),
+                path: "/resources/masterdata/preliminary/v1/master.mdb.gz".into(),
+                current_path: "/resources/masterdata/preliminary/master.mdb.gz".into(),
+                bytes: 8,
+            }),
+            inputs: Default::default(),
+            artifacts: vec![],
+        };
+        let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
+        std::fs::write(root.join("manifest.json"), &manifest_bytes).unwrap();
+        std::fs::write(root.join("v1/manifest.json"), &manifest_bytes).unwrap();
+
+        let state = super::AppState {
+            data_dir: root.clone(),
+            master_path: live_path.clone(),
+            protected: false,
+        };
+        let app = super::resource_router(state, false);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+
+        // Missing preliminary-versions.json defaults cleanly to an empty array.
+        let empty_versions = client
+            .get(format!(
+                "{origin}/resources/masterdata/preliminary-versions.json"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(empty_versions.status(), StatusCode::OK);
+        assert_eq!(empty_versions.bytes().await.unwrap().as_ref(), b"[]");
+
+        // Writing the history file exposes it immediately.
+        let versions_payload = br#"[{"resource_version":"10008800"}]"#;
+        std::fs::write(
+            root.join("masterdata/preliminary_versions.json"),
+            versions_payload,
+        )
+        .unwrap();
+        let versions = client
+            .get(format!(
+                "{origin}/resources/masterdata/preliminary-versions.json"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(versions.status(), StatusCode::OK);
+        assert_eq!(
+            versions.headers()[super::CACHE_CONTROL],
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+        );
+        assert_eq!(versions.bytes().await.unwrap().as_ref(), versions_payload);
+
+        // Current and versioned preliminary master snapshots serve with expected cache rules.
+        let current_mdb = client
+            .get(format!(
+                "{origin}/resources/masterdata/preliminary/master.mdb.gz"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(current_mdb.status(), StatusCode::OK);
+        assert_eq!(
+            current_mdb.headers()[super::CONTENT_TYPE],
+            "application/vnd.sqlite3"
+        );
+        assert_eq!(current_mdb.headers()[super::CONTENT_ENCODING], "gzip");
+        assert_eq!(
+            current_mdb.headers()[super::CACHE_CONTROL],
+            "public, max-age=60, s-maxage=300, stale-while-revalidate=86400"
+        );
+        assert_eq!(
+            current_mdb.headers()[super::ETAG],
+            format!("\"sha256-{early_sha}\"").as_str()
+        );
+        assert_eq!(current_mdb.bytes().await.unwrap().as_ref(), b"early-gz");
+
+        let versioned_mdb = client
+            .get(format!(
+                "{origin}/resources/masterdata/preliminary/v1/master.mdb.gz"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(versioned_mdb.status(), StatusCode::OK);
+        assert_eq!(
+            versioned_mdb.headers()[super::CACHE_CONTROL],
+            "public, max-age=31536000, immutable"
+        );
+        assert_eq!(versioned_mdb.bytes().await.unwrap().as_ref(), b"early-gz");
+
+        // SQL queries default to live, switch to early-master.mdb on master=preliminary, and reject unknown selectors.
+        let live_sql: serde_json::Value = client
+            .get(format!(
+                "{origin}/resources/current/sql?sql=SELECT%20tag%20FROM%20probe"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(live_sql["rows"][0][0], "live-10008790");
+
+        let prelim_sql: serde_json::Value = client
+            .get(format!(
+                "{origin}/resources/current/sql?master=preliminary&sql=SELECT%20tag%20FROM%20probe"
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        assert_eq!(prelim_sql["rows"][0][0], "early-10008800");
+
+        let bad_selector = client
+            .get(format!(
+                "{origin}/resources/current/sql?master=bogus&sql=SELECT%201"
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(bad_selector.status(), StatusCode::BAD_REQUEST);
+
         task.abort();
         std::fs::remove_dir_all(root).unwrap();
     }
