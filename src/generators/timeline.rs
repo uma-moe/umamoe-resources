@@ -34,7 +34,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 45;
+const TIMELINE_ALGORITHM_VERSION: u8 = 46;
 /// How much later in JP a banner Global confirmed must have come for Global to have skipped an
 /// unconfirmed one of its kind.
 const SKIPPED_BANNER_MARGIN_DAYS: i64 = 30;
@@ -971,9 +971,9 @@ fn generateTimelinePass(
 
     attach_umapyoi_urls(&mut events, &confirmed_dates)?;
     annotate_rerun_banners(&mut events);
+    align_paid_banners_with_releases(&mut events, observed_rate);
     apply_closed_schedule_adjustment(&mut events, &confirmed_dates);
     apply_grouped_event_adjustment(&mut events);
-    align_paid_banners_with_releases(&mut events, observed_rate);
     let calendar_likelihood_model = CalendarLikelihoodModel::from_events(&events);
     annotate_calendar_likelihoods(&mut events, &calendar_likelihood_model);
     let anniversaries = timeline_anniversaries(
@@ -6008,9 +6008,10 @@ fn normalize_to_release_hour(date: DateTime<Utc>) -> DateTime<Utc> {
     utc_date(date.year(), date.month(), date.day(), 22)
 }
 
-/// The latest month whose character and support banners are all known: the month before the
-/// newest one the live Global master confirms, as the master holds a month's banners before any
-/// later one. Preliminary early-CDN banners do not close a month before official release.
+/// The latest month whose character and support banners are all known: the newest month the live
+/// Global master confirms a character or support banner in, as Global publishes a full monthly
+/// schedule at once and unconfirmed banners cannot land inside that month. Preliminary early-CDN
+/// banners do not close a month before official release.
 fn latest_closed_global_month(confirmed_dates: &ConfirmedDateLookup) -> Option<(i32, u32)> {
     let latest = confirmed_dates
         .character
@@ -6025,10 +6026,7 @@ fn latest_closed_global_month(confirmed_dates: &ConfirmedDateLookup) -> Option<(
                 .map(|(_, date)| date),
         )
         .max()?;
-    Some(match latest.month() {
-        1 => (latest.year() - 1, 12),
-        month => (latest.year(), month - 1),
-    })
+    Some((latest.year(), latest.month()))
 }
 
 fn first_release_after_global_month(year: i32, month: u32) -> DateTime<Utc> {
@@ -6595,22 +6593,26 @@ mod tests {
 
     #[allow(non_snake_case)]
     #[test]
-    fn bannerMonthsCloseOnceTheMasterConfirmsALaterBanner() {
+    fn bannerMonthsCloseForConfirmedCharacterAndSupportMonths() {
         let mut lookup = empty_confirmed_date_lookup();
         assert_eq!(latest_closed_global_month(&lookup), None);
 
-        // Only character and support banners close months.
+        // Only live confirmed character and support banners close their month.
         lookup.character.insert(30140, utc_date(2026, 10, 24, 22));
-        lookup.support.insert(30141, utc_date(2026, 11, 21, 22));
+        lookup.support.insert(30149, utc_date(2026, 11, 21, 22));
         lookup.paid.insert(50015, utc_date(2027, 1, 1, 22));
         lookup
             .story
             .insert("story-banner".to_string(), utc_date(2026, 12, 1, 22));
         lookup.anniversary.insert(4, utc_date(2026, 12, 21, 22));
-        assert_eq!(latest_closed_global_month(&lookup), Some((2026, 10)));
+        assert_eq!(latest_closed_global_month(&lookup), Some((2026, 11)));
+        assert_eq!(
+            first_release_after_global_month(2026, 11),
+            utc_date(2026, 12, 1, 22)
+        );
 
         lookup.support.insert(30151, utc_date(2027, 1, 5, 22));
-        assert_eq!(latest_closed_global_month(&lookup), Some((2026, 12)));
+        assert_eq!(latest_closed_global_month(&lookup), Some((2027, 1)));
     }
 
     #[test]
@@ -7166,8 +7168,8 @@ mod tests {
     fn closed_schedule_month_shifts_future_unconfirmed_anniversary_markers() {
         let mut lookup = empty_confirmed_date_lookup();
         lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
-        // A July banner closes June.
-        lookup.character.insert(1, utc_date(2026, 7, 2, 22));
+        // A June banner closes June.
+        lookup.character.insert(1, utc_date(2026, 6, 25, 22));
         let anchors = vec![CalibrationAnchor {
             jp: utc_date(2022, 2, 24, 0),
             global: utc_date(2026, 6, 26, 22),
@@ -7194,8 +7196,8 @@ mod tests {
     fn closed_schedule_month_does_not_drag_past_anniversary_markers_forward() {
         let mut lookup = empty_confirmed_date_lookup();
         lookup.anniversary.insert(1, utc_date(2025, 10, 26, 22));
-        // A July banner closes June.
-        lookup.character.insert(1, utc_date(2026, 7, 2, 22));
+        // A June banner closes June.
+        lookup.character.insert(1, utc_date(2026, 6, 25, 22));
         let anchors = anniversary_schedule_anchors(&lookup);
         let rate = calculate_recent_acceleration_rate(&anchors);
 
@@ -7280,7 +7282,7 @@ mod tests {
             ),
         ];
         let mut lookup = empty_confirmed_date_lookup();
-        lookup.character.insert(1, utc_date(2026, 7, 2, 22));
+        lookup.character.insert(1, utc_date(2026, 6, 25, 22));
 
         assert_eq!(latest_closed_global_month(&lookup), Some((2026, 6)));
         assert_eq!(
@@ -7288,10 +7290,22 @@ mod tests {
             utc_date(2026, 7, 1, 22)
         );
 
+        let mut paid = test_timeline_event_with_type(
+            "paid-unconfirmed",
+            BannerTimelineEventType::PaidBanner,
+            utc_date(2022, 7, 29, 0),
+            utc_date(2026, 6, 29, 22),
+            false,
+        );
+        paid.card_type = Some("character".to_string());
+        events.push(paid);
+
+        align_paid_banners_with_releases(&mut events, 2.25);
         apply_closed_schedule_adjustment(&mut events, &lookup);
 
         assert_eq!(events[1].global_release_date, utc_date(2026, 7, 1, 22));
         assert_eq!(events[2].global_release_date, utc_date(2026, 7, 8, 22));
+        assert_eq!(events[3].global_release_date, utc_date(2026, 7, 1, 22));
         assert_eq!(events[1].prediction.schedule_adjustment_days, Some(2));
         assert_eq!(events[2].prediction.schedule_adjustment_days, Some(2));
     }
@@ -7373,8 +7387,8 @@ mod tests {
             ),
         ];
         let mut lookup = empty_confirmed_date_lookup();
-        // A November banner closes October.
-        lookup.support.insert(1, utc_date(2026, 11, 1, 22));
+        // An October banner closes October.
+        lookup.support.insert(1, utc_date(2026, 10, 27, 22));
         let before = events.clone();
 
         apply_closed_schedule_adjustment(&mut events, &lookup);
@@ -7402,8 +7416,6 @@ mod tests {
         let mut lookup = empty_confirmed_date_lookup();
         lookup.character.insert(90002, utc_date(2026, 10, 24, 22));
         lookup.support.insert(90003, utc_date(2026, 10, 27, 22));
-        // A November banner closes October.
-        lookup.character.insert(90004, utc_date(2026, 11, 3, 22));
         let character = test_timeline_character_banner(90002, vec![100101]);
         let support = test_timeline_support_banner(90003, vec![30001]);
         let anchors = monotonic_schedule_anchors(&build_banner_confirmed_anchors(
