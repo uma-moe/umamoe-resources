@@ -119,7 +119,14 @@ fn announced_sources(
 
         if let Some(url) = source.filter(|url| !url.is_empty()) {
             let campaign = event.event_type == "campaign";
-            sources.insert(image_path.to_string(), EnglishSource { url, campaign });
+            sources.insert(
+                image_path.to_string(),
+                EnglishSource {
+                    url,
+                    fallback_urls: Vec::new(),
+                    campaign,
+                },
+            );
         }
     }
 
@@ -306,6 +313,7 @@ fn add_campaign_phase_sources(
                 .entry(campaign.image_path.to_string())
                 .or_insert_with(|| EnglishSource {
                     url: announcement.picture.clone(),
+                    fallback_urls: Vec::new(),
                     campaign: true,
                 });
         }
@@ -357,13 +365,10 @@ fn predicted_header_sources(
             continue;
         };
         if event.has_global_schedule() {
-            let url = header_url(&format!("banner_{banner_id}"), release);
+            let identity = format!("banner_{banner_id}");
             sources.insert(
                 image_path.to_string(),
-                EnglishSource {
-                    url,
-                    campaign: false,
-                },
+                predicted_header_source(&identity, release, false),
             );
         }
     }
@@ -386,12 +391,25 @@ fn predicted_header_sources(
             _ => None,
         };
         if let Some(identity) = identity {
-            let url = header_url(&identity, release);
             let campaign = event_type == "campaign";
-            sources.insert(image_path.to_string(), EnglishSource { url, campaign });
+            sources.insert(
+                image_path.to_string(),
+                predicted_header_source(&identity, release, campaign),
+            );
         }
     }
     sources
+}
+
+fn predicted_header_source(identity: &str, release_ms: i64, campaign: bool) -> EnglishSource {
+    // Cygames uploads Global webview headers at `start_date - 24h` for most releases since 2025,
+    // and at `start_date` for earlier ones; keep `start_date` as the canonical planned URL for
+    // parity with existing records and fall back to `-24h` when fetching.
+    EnglishSource {
+        url: header_url(identity, release_ms),
+        fallback_urls: vec![header_url(identity, release_ms - DAY_MS)],
+        campaign,
+    }
 }
 
 fn header_url(identity: &str, release_ms: i64) -> String {
@@ -581,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn preliminary_gacha_gets_english_header_and_cdn_fallback() {
+    fn preliminary_gacha_gets_english_header_with_day_before_fallback() {
         let mut banner = confirmed(
             "support_card_banner",
             "assets/images/support/banner/2023_30151.webp",
@@ -591,11 +609,19 @@ mod tests {
         banner.is_preliminary = true;
 
         let plan = super::super::plan_from_news(&[banner], &BannerNews::default());
-        let planned = &plan.banners["assets/images/support/banner/2023_30151.webp"];
-        assert_eq!(planned.cdn_gacha_ids, vec![30151]);
+        let english = plan.banners["assets/images/support/banner/2023_30151.webp"]
+            .english
+            .as_ref()
+            .expect("preliminary gacha should plan an official English header");
         assert_eq!(
-            planned.english.as_ref().map(|e| e.url.as_str()),
-            Some(format!("{ENGLISH_HEADER_ROOT}/gacha_banner_30151_L1753135200.png").as_str())
+            english.url,
+            format!("{ENGLISH_HEADER_ROOT}/gacha_banner_30151_L1753135200.png")
+        );
+        assert_eq!(
+            english.fallback_urls,
+            vec![format!(
+                "{ENGLISH_HEADER_ROOT}/gacha_banner_30151_L1753048800.png"
+            )]
         );
     }
 }

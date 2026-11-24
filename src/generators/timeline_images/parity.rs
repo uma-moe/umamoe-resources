@@ -110,9 +110,9 @@ mod tests {
                 japanese: Some("https://jp/100.png".to_string()),
                 english: Some(EnglishSource {
                     url: "https://en/Header/header_1.png".to_string(),
+                    fallback_urls: Vec::new(),
                     campaign: true,
                 }),
-                cdn_gacha_ids: Vec::new(),
                 prefers_english: true,
             },
         );
