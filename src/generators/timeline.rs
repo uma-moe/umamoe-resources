@@ -34,7 +34,7 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 44;
+const TIMELINE_ALGORITHM_VERSION: u8 = 45;
 /// How much later in JP a banner Global confirmed must have come for Global to have skipped an
 /// unconfirmed one of its kind.
 const SKIPPED_BANNER_MARGIN_DAYS: i64 = 30;
@@ -1156,37 +1156,32 @@ fn annotatePreliminaryChanges(
             })
             .unwrap_or_default();
 
-        // Only surface banners that actually changed (merged banners, pickup changes, or a new
-        // banner not in the baseline timeline); routine unchanged banners stay normal predicted
-        // cards without preliminary badges or popup clutter.
-        let has_banner_changes = base.is_none()
-            || !merged_events.is_empty()
-            || !added_pickup_card_ids.is_empty()
-            || !removed_pickup_card_ids.is_empty();
-        if !has_banner_changes {
-            event.is_preliminary = false;
-            if let Some(base) = base {
-                event.prediction = base.prediction.clone();
-            }
-            continue;
-        }
-
         let preliminary_free_pulls = event
             .gacha_id
             .and_then(|gacha_id| early.free_pulls.get(&gacha_id).copied())
             .filter(|&pulls| pulls > 0);
 
         preliminary_event_ids.push(event.id.clone());
-        event.preliminary_changes = Some(PreliminaryEventChanges {
-            estimated_release_date,
-            estimated_end_date,
-            release_date_shift_days,
-            estimated_duration_days,
-            added_pickup_card_ids,
-            removed_pickup_card_ids,
-            merged_events,
-            preliminary_free_pulls,
-        });
+        let has_changes = estimated_release_date.is_some()
+            || estimated_end_date.is_some()
+            || release_date_shift_days.is_some()
+            || estimated_duration_days.is_some()
+            || !added_pickup_card_ids.is_empty()
+            || !removed_pickup_card_ids.is_empty()
+            || !merged_events.is_empty()
+            || preliminary_free_pulls.is_some();
+        if has_changes {
+            event.preliminary_changes = Some(PreliminaryEventChanges {
+                estimated_release_date,
+                estimated_end_date,
+                release_date_shift_days,
+                estimated_duration_days,
+                added_pickup_card_ids,
+                removed_pickup_card_ids,
+                merged_events,
+                preliminary_free_pulls,
+            });
+        }
     }
 
     preliminary.preliminary =
@@ -8368,7 +8363,7 @@ mod tests {
 
     #[test]
     #[allow(non_snake_case)]
-    fn annotatePreliminaryChangesOnlyFlagsBannersWithActualChanges() {
+    fn annotatePreliminaryChangesKeepsEveryPreliminaryBannerAndRecordsDiffs() {
         let mut base_char = test_timeline_event(
             "banner-2023_30150",
             utc_date(2023, 2, 24, 3),
@@ -8478,13 +8473,18 @@ mod tests {
 
         super::annotatePreliminaryChanges(&baseline, &mut preliminary, &early);
 
-        // Unchanged character banner keeps its date without a Preliminary badge.
-        assert!(!preliminary.events[0].is_preliminary);
-        assert!(preliminary.events[0].preliminary_changes.is_none());
+        // Every preliminary-confirmed banner stays flagged and records any date shift.
+        assert!(preliminary.events[0].is_preliminary);
         assert_eq!(
             preliminary.events[0].prediction.kind,
-            PredictionKind::Extrapolated
+            PredictionKind::Preliminary
         );
+        let char_changes = preliminary.events[0]
+            .preliminary_changes
+            .as_ref()
+            .expect("shifted preliminary banner should record date change");
+        assert_eq!(char_changes.release_date_shift_days, Some(3));
+        assert!(char_changes.merged_events.is_empty());
 
         // Merged support banner stays Preliminary with full diff metadata.
         assert!(preliminary.events[1].is_preliminary);
@@ -8499,8 +8499,11 @@ mod tests {
         let summary = preliminary
             .preliminary
             .as_ref()
-            .expect("changed banners should populate top-level summary");
-        assert_eq!(summary.event_ids, vec!["support-banner-2023_30151"]);
+            .expect("preliminary banners should populate top-level summary");
+        assert_eq!(
+            summary.event_ids,
+            vec!["banner-2023_30150", "support-banner-2023_30151"]
+        );
         assert_eq!(summary.merged_event_ids, vec!["support-banner-2023_30155"]);
     }
 

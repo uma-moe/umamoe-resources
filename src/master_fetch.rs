@@ -152,14 +152,6 @@ pub(crate) fn localEarlyMaster(live_master: &Path) -> Option<EarlyMaster> {
     Some(EarlyMaster { path, meta })
 }
 
-/// The newest Global CDN resource version known locally: the early staged version when one is
-/// ahead of live, else the live master's version.
-pub(crate) fn latestGlobalResourceVersion(live_master: &Path) -> Option<String> {
-    localEarlyMaster(live_master)
-        .map(|early| early.meta.resource_version)
-        .or_else(|| localResourceVersion(live_master))
-}
-
 /// Probes the Global CDN ahead of the live master's resource version for an unreleased upload.
 /// Downloads it to `early-master.mdb` when found, or removes stale early files once live catches
 /// up. Returns `true` when the local early master changed (created, updated, or cleared).
@@ -514,18 +506,10 @@ mod tests {
 
         let loaded = localEarlyMaster(&live).expect("early master ahead of live should load");
         assert_eq!(loaded.meta.resource_version, "10008800");
-        assert_eq!(
-            latestGlobalResourceVersion(&live).as_deref(),
-            Some("10008800")
-        );
 
         // Once live reaches 10008800, the early master must no longer apply.
         std::fs::write(markerPath(&live), "1.36.0:10008800\n").unwrap();
         assert!(localEarlyMaster(&live).is_none());
-        assert_eq!(
-            latestGlobalResourceVersion(&live).as_deref(),
-            Some("10008800")
-        );
 
         assert!(clearEarlyMasterFiles(&early, &markerPath(&early)));
         assert!(!early.exists());

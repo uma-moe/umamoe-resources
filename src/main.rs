@@ -119,10 +119,6 @@ enum Command {
         /// The timeline to picture, `.json` or `.json.gz`; the current one in --data-dir if unset.
         #[arg(long)]
         timeline: Option<PathBuf>,
-        /// The Global master whose resource version (or staged early version) provides CDN banner
-        /// art fallback before official webview announcements are posted.
-        #[arg(long, default_value = "master.mdb")]
-        master: PathBuf,
         #[arg(long, default_value = "generated-data")]
         data_dir: PathBuf,
         /// Report how many banners have an English, a Japanese or no source, and download nothing.
@@ -478,7 +474,6 @@ async fn main() -> Result<()> {
         }
         Command::TimelineArt {
             timeline,
-            master,
             data_dir,
             dry_run,
             out_dir,
@@ -491,9 +486,7 @@ async fn main() -> Result<()> {
                 None => assets::currentTimelinePath(&data_dir)?,
             };
             let timeline_json = assets::readTimeline(&timeline_path)?;
-            let options = assets::TimelineArtOptions::fromEnv()
-                .inFolder(GLOBAL_ART_FOLDER)
-                .withCdnVersion(master_fetch::latestGlobalResourceVersion(&master));
+            let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
 
             if let Some(sync_dir) = compare_frontend {
                 let report = assets::compareTimelineArtWithFrontend(&timeline_json, &sync_dir)?;
@@ -872,8 +865,8 @@ fn spawnArtPublishing(args: &ServeArgs) {
             tokio::time::sleep(Duration::from_secs(retry_seconds)).await;
         }
 
-        spawnGameArtLoop(retry_seconds, master.clone(), root, regions);
-        spawnTimelineArtLoop(timeline_interval_seconds, data_dir, master, tree);
+        spawnGameArtLoop(retry_seconds, master, root, regions);
+        spawnTimelineArtLoop(timeline_interval_seconds, data_dir, tree);
     });
 }
 
@@ -955,15 +948,9 @@ async fn publishRegionArt(
 
 #[allow(non_snake_case)]
 /// Publishes the current timeline's banners at start and then on every interval, which catches
-/// new timelines, new news archives, early CDN banner textures and English art uploaded around a
-/// release.
-fn spawnTimelineArtLoop(
-    interval_seconds: u64,
-    data_dir: PathBuf,
-    master: PathBuf,
-    bucket: assets::Bucket,
-) {
-    let base_options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
+/// new timelines, new news archives and English art uploaded around a release.
+fn spawnTimelineArtLoop(interval_seconds: u64, data_dir: PathBuf, bucket: assets::Bucket) {
+    let options = assets::TimelineArtOptions::fromEnv().inFolder(GLOBAL_ART_FOLDER);
 
     info!(
         interval_seconds,
@@ -988,9 +975,6 @@ fn spawnTimelineArtLoop(
                     continue;
                 }
             };
-            let options = base_options
-                .clone()
-                .withCdnVersion(master_fetch::latestGlobalResourceVersion(&master));
             if let Err(error) = assets::publishTimelineArt(&bucket, &options, &timeline_json).await
             {
                 warn!(
