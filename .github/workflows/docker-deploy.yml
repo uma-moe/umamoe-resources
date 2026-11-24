@@ -100,6 +100,9 @@ jobs:
           name: umamoe-resources-image
           path: ${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}
           if-no-files-found: error
+          # Only this run's deploys read it; ~100 MB per build counts against the org's shared artifact quota.
+          # Approve production within 7 days.
+          retention-days: 7
 
   deploy_beta:
     name: Deploy Beta
