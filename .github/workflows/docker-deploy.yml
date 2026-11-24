@@ -93,16 +93,16 @@ jobs:
           set -euo pipefail
           docker save "${{ steps.meta.outputs.image_tag }}" | gzip -1 > "${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}"
 
-      - name: Upload resources image artifact
+      # The deploy jobs take the image from the Actions cache, not from an artifact: artifact storage
+      # counts against the organisation's quota, and a full quota blocked deploys. The key has no
+      # attempt number, so re-running only a deploy job finds the image of its run. GitHub evicts
+      # entries unused for 7 days: approve production within that, or re-run the whole workflow.
+      - name: Hand the resources image to the deploy jobs
         if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/cache/save@v4
         with:
-          name: umamoe-resources-image
           path: ${{ runner.temp }}/${{ steps.meta.outputs.archive_name }}
-          if-no-files-found: error
-          # Only this run's deploys read it; ~100 MB per build counts against the org's shared artifact quota.
-          # Approve production within 7 days.
-          retention-days: 7
+          key: resources-image-${{ github.run_id }}
 
   deploy_beta:
     name: Deploy Beta
@@ -113,11 +113,12 @@ jobs:
     environment: beta
 
     steps:
-      - name: Download resources image artifact
-        uses: actions/download-artifact@v4
+      - name: Take the resources image from the build job
+        uses: actions/cache/restore@v4
         with:
-          name: umamoe-resources-image
-          path: ${{ runner.temp }}
+          path: ${{ runner.temp }}/${{ needs.build.outputs.archive_name }}
+          key: resources-image-${{ github.run_id }}
+          fail-on-cache-miss: true
 
       - name: Mask deployment metadata
         shell: bash
@@ -452,11 +453,12 @@ jobs:
     environment: production
 
     steps:
-      - name: Download resources image artifact
-        uses: actions/download-artifact@v4
+      - name: Take the resources image from the build job
+        uses: actions/cache/restore@v4
         with:
-          name: umamoe-resources-image
-          path: ${{ runner.temp }}
+          path: ${{ runner.temp }}/${{ needs.build.outputs.archive_name }}
+          key: resources-image-${{ github.run_id }}
+          fail-on-cache-miss: true
 
       - name: Mask deployment metadata
         shell: bash
