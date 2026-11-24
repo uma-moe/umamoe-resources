@@ -65,7 +65,7 @@ async fn backfillFromVersions(
             continue;
         }
 
-        backfill.add(master_path, &version.date)?;
+        backfill.add(master_path, &version.date, &version.resource_version)?;
     }
 
     backfill.finish()
@@ -135,7 +135,7 @@ impl<'a> HistoryBackfill<'a> {
     }
 
     /// Takes ownership of the master file: it is deleted as soon as it is no longer needed.
-    fn add(&mut self, master_path: PathBuf, date: &str) -> Result<()> {
+    fn add(&mut self, master_path: PathBuf, date: &str, resource_version: &str) -> Result<()> {
         let bytes = fs::read(&master_path)
             .with_context(|| format!("failed to read {}", master_path.display()))?;
         let sha256 = hex::encode(Sha256::digest(&bytes));
@@ -168,6 +168,10 @@ impl<'a> HistoryBackfill<'a> {
             hash: sha256,
             date: date.to_string(),
             summary,
+            resource_version: Some(resource_version.to_string()),
+            is_preliminary: false,
+            detected_at: None,
+            cdn_last_modified: None,
         });
         if let Some(previous_path) = self.latest_master.replace(master_path) {
             removeMaster(&previous_path)?;
@@ -309,13 +313,26 @@ mod tests {
             sha256: &later_hash,
             path: &later_path,
         };
-        recordRelease(&data_dir, &recorded_second, None, "2026-10-30").unwrap();
-        recordRelease(&data_dir, &later, Some(&recorded_second), "2026-10-31").unwrap();
+        recordRelease(&data_dir, &recorded_second, None, "2026-10-30", None).unwrap();
+        recordRelease(
+            &data_dir,
+            &later,
+            Some(&recorded_second),
+            "2026-10-31",
+            None,
+        )
+        .unwrap();
 
         let mut backfill = HistoryBackfill::new(&data_dir);
-        backfill.add(first_path.clone(), "2026-10-01").unwrap();
-        backfill.add(unchanged_path.clone(), "2026-10-08").unwrap();
-        backfill.add(second_path.clone(), "2026-10-15").unwrap();
+        backfill
+            .add(first_path.clone(), "2026-10-01", "10000100")
+            .unwrap();
+        backfill
+            .add(unchanged_path.clone(), "2026-10-08", "10000110")
+            .unwrap();
+        backfill
+            .add(second_path.clone(), "2026-10-15", "10000200")
+            .unwrap();
         let release_count = backfill.finish().unwrap();
 
         let releases = readReleases(&versionsPath(&data_dir)).unwrap();
@@ -373,10 +390,12 @@ mod tests {
             sha256: &recorded_hash,
             path: &recorded_path,
         };
-        recordRelease(&data_dir, &recorded, None, "2026-10-30").unwrap();
+        recordRelease(&data_dir, &recorded, None, "2026-10-30", None).unwrap();
 
         let mut backfill = HistoryBackfill::new(&data_dir);
-        backfill.add(backfilled_path, "2026-10-01").unwrap();
+        backfill
+            .add(backfilled_path, "2026-10-01", "10000100")
+            .unwrap();
         let result = backfill.finish();
 
         let releases = readReleases(&versionsPath(&data_dir)).unwrap();

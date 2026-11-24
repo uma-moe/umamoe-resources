@@ -2,6 +2,7 @@
 //! the official English art once it exists, else the Japanese art, else the site's own file.
 //! `art/timeline/index.json` links each published banner by the timeline's `image_path`.
 
+mod cdn;
 mod convert;
 mod fetch;
 mod layout;
@@ -39,10 +40,16 @@ const INDEX_SCHEMA: u32 = 1;
 
 const DEFAULT_SITE_ORIGIN: &str = "https://uma.moe";
 
+#[derive(Clone)]
 pub struct TimelineArtOptions {
     pub purge_origins: Vec<String>,
     /// The site whose asset folder holds the banners synced so far.
     pub site_origin: String,
+    /// Optional Global CDN resource version (live or early) used to extract early English banner
+    /// textures before official webview announcements are posted.
+    pub cdn_resource_version: Option<String>,
+    /// Decrypted `GAME_ASSET_KEY` bytes, when configured, for Global CDN bundle fallback.
+    pub cdn_base_key: Option<Vec<u8>>,
 }
 
 impl TimelineArtOptions {
@@ -59,10 +66,21 @@ impl TimelineArtOptions {
             .map(|origin| origin.trim().trim_end_matches('/').to_string())
             .filter(|origin| !origin.is_empty())
             .unwrap_or_else(|| DEFAULT_SITE_ORIGIN.to_string());
+        let cdn_base_key = std::env::var("GAME_ASSET_KEY")
+            .ok()
+            .and_then(|key| hex::decode(key.trim()).ok())
+            .filter(|bytes| !bytes.is_empty());
         Self {
             purge_origins,
             site_origin,
+            cdn_resource_version: None,
+            cdn_base_key,
         }
+    }
+
+    pub fn withCdnVersion(mut self, version: Option<String>) -> Self {
+        self.cdn_resource_version = version;
+        self
     }
 
     /// The options for a tree published below `folder`, where the site serves its files.
@@ -273,6 +291,7 @@ struct Pass<'a> {
     destination: &'a Destination<'a>,
     options: &'a TimelineArtOptions,
     fetcher: SourceFetcher,
+    cdn: cdn::CdnBannerFetcher,
     site: SiteManifests,
     work: WorkDir,
     pending: Vec<PendingPicture>,
@@ -306,6 +325,10 @@ async fn runPass(
         destination,
         options,
         fetcher,
+        cdn: cdn::CdnBannerFetcher::new(
+            options.cdn_resource_version.clone(),
+            options.cdn_base_key.clone(),
+        ),
         site,
         work: WorkDir::create()?,
         pending: Vec::new(),
@@ -376,6 +399,10 @@ impl Pass<'_> {
                     self.englishPicture(image_path, key, banner, english, records)
                         .await
                 }
+                Attempt::CdnEnglish(gacha_ids) => {
+                    self.cdnEnglishPicture(image_path, key, banner, gacha_ids, records)
+                        .await
+                }
                 Attempt::Japanese(url) => self.japanesePicture(image_path, key, url).await,
                 Attempt::SiteCopy {
                     path,
@@ -437,6 +464,44 @@ impl Pass<'_> {
             variant: Variant::English,
             planned: english.url.clone(),
             source: url,
+            downloaded,
+            fit: Some(fit),
+        }))
+    }
+
+    async fn cdnEnglishPicture(
+        &mut self,
+        image_path: &str,
+        key: &str,
+        banner: &PlannedBanner,
+        gacha_ids: &[i64],
+        records: &TimelineArtRecords,
+    ) -> Result<Option<PendingPicture>> {
+        let Some(entry) = self.cdn.findBanner(gacha_ids).await? else {
+            return Ok(None);
+        };
+        let planned = cdn::CdnBannerFetcher::plannedKey(&entry);
+        let existing = records.banners.get(image_path);
+        if existing.is_some_and(|record| {
+            record.variant == Variant::English
+                && record.planned == planned
+                && record.revision == FIT_REVISION
+        }) {
+            return Ok(None);
+        }
+
+        let sequence = self.work.nextSequence();
+        let downloaded = self
+            .cdn
+            .downloadAndExtract(&entry, self.work.root(), sequence)
+            .await?;
+        let fit = self.englishFit(image_path, banner, existing).await;
+        Ok(Some(PendingPicture {
+            image_path: image_path.to_string(),
+            key: key.to_string(),
+            variant: Variant::English,
+            planned,
+            source: self.cdn.sourceLabel(&entry),
             downloaded,
             fit: Some(fit),
         }))
@@ -682,11 +747,20 @@ impl WorkDir {
     }
 
     fn save(&mut self, bytes: &[u8]) -> Result<PathBuf> {
-        self.saved += 1;
-        let path = self.root.join(format!("{}.download", self.saved));
+        let sequence = self.nextSequence();
+        let path = self.root.join(format!("{sequence}.download"));
         std::fs::write(&path, bytes)
             .with_context(|| format!("failed to write {}", path.display()))?;
         Ok(path)
+    }
+
+    fn nextSequence(&mut self) -> usize {
+        self.saved += 1;
+        self.saved
+    }
+
+    fn root(&self) -> &Path {
+        &self.root
     }
 
     fn clear(&self) -> Result<()> {

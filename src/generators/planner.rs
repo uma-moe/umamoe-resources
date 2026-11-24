@@ -597,11 +597,12 @@ pub fn jp_master_reward_catalog_version_hash() -> String {
 
 /// `jp_connection` is the JP master given only to refresh the bundled reward catalogue;
 /// `jp_names` is the JP master the server keeps, which JP's gachas and the walking campaigns are
-/// read from.
+/// read from; `early_master` overlays unreleased Global CDN gachas and free pulls as preliminary.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
     jp_names: Option<&Connection>,
+    early_master: Option<&Connection>,
     _character_banners: &[CharacterBanner],
     _support_banners: &[SupportBanner],
     _paid_banners: &[PaidBanner],
@@ -611,8 +612,17 @@ pub fn generate(
     let global_news_archive = load_global_news_archive()?;
     let global_social_archive = load_global_social_archive()?;
     let timeline_links = timeline_gacha_links(timeline);
-    let mut gachas = load_gachas_with_jp(connection, jp_names, &timeline_links)?;
+    let mut gachas = loadGachasWithEarlyAndJp(connection, early_master, jp_names, &timeline_links)?;
     apply_free_pulls(connection, &mut gachas)?;
+    if let Some(early) = early_master {
+        applyFreePullsWithProvenance(
+            early,
+            &mut gachas,
+            "global_early_master",
+            "preliminary",
+            false,
+        )?;
+    }
     let free_pull_campaigns = apply_news_free_pulls(&archive, &timeline_links, &mut gachas);
 
     let default_cost = mode(
@@ -1685,7 +1695,35 @@ fn load_gachas_with_jp(
     jp_master: Option<&Connection>,
     timeline_links: &BTreeMap<i64, TimelineLink>,
 ) -> Result<BTreeMap<i64, GachaAccumulator>> {
+    loadGachasWithEarlyAndJp(connection, None, jp_master, timeline_links)
+}
+
+/// Precedence order: live Global master (`global_master`), unreleased early Global CDN master
+/// (`global_early_master`), then JP master / catalogue (`jp_master`).
+#[allow(non_snake_case)]
+fn loadGachasWithEarlyAndJp(
+    connection: &Connection,
+    early_master: Option<&Connection>,
+    jp_master: Option<&Connection>,
+    timeline_links: &BTreeMap<i64, TimelineLink>,
+) -> Result<BTreeMap<i64, GachaAccumulator>> {
     let mut gachas = load_gachas(connection, timeline_links)?;
+    if let Some(early_master) = early_master {
+        let early_gachas = load_gachas(early_master, timeline_links)?;
+        for (gacha_id, mut early_gacha) in early_gachas {
+            if early_gacha.provenance != Some("global_master") {
+                continue;
+            }
+            let keep_live = gachas.get(&gacha_id).is_some_and(|gacha| {
+                gacha.provenance == Some("global_master") && gacha.confidence == Some("exact")
+            });
+            if !keep_live {
+                early_gacha.provenance = Some("global_early_master");
+                early_gacha.confidence = Some("preliminary");
+                gachas.insert(gacha_id, early_gacha);
+            }
+        }
+    }
     let mut jp_gachas = if let Some(jp_master) = jp_master {
         load_gachas(jp_master, timeline_links)?
     } else {
@@ -1705,7 +1743,11 @@ fn load_gachas_with_jp(
         }
         jp_gacha.provenance = Some("jp_master");
         let keep_global = gachas.get(&gacha_id).is_some_and(|gacha| {
-            gacha.provenance == Some("global_master") && gacha.confidence == Some("exact")
+            matches!(
+                (gacha.provenance, gacha.confidence),
+                (Some("global_master"), Some("exact"))
+                    | (Some("global_early_master"), Some("preliminary"))
+            )
         });
         if !keep_global {
             gachas.insert(gacha_id, jp_gacha);
@@ -1781,6 +1823,20 @@ fn apply_free_pulls(
     connection: &Connection,
     gachas: &mut BTreeMap<i64, GachaAccumulator>,
 ) -> Result<()> {
+    applyFreePullsWithProvenance(connection, gachas, "global_master", "exact", true)
+}
+
+#[allow(non_snake_case)]
+fn applyFreePullsWithProvenance(
+    connection: &Connection,
+    gachas: &mut BTreeMap<i64, GachaAccumulator>,
+    provenance: &'static str,
+    confidence: &'static str,
+    include_existing: bool,
+) -> Result<()> {
+    if !sqlite_table_exists(connection, "gacha_free_campaign")? {
+        return Ok(());
+    }
     let mut statement = connection.prepare(
         "SELECT gacha_id, target_draw_type, start_date, end_date FROM gacha_free_campaign",
     )?;
@@ -1792,15 +1848,22 @@ fn apply_free_pulls(
             row.get::<_, i64>(3)?,
         ))
     })?;
+    let mut totals = BTreeMap::<i64, i64>::new();
     for row in rows {
         let (gacha_id, draws_per_day, start, end) = row?;
+        let days = ((end - start).max(0) + 86_399) / 86_400;
+        *totals.entry(gacha_id).or_default() += days.max(1) * draws_per_day.max(0);
+    }
+    for (gacha_id, pulls) in totals {
         let Some(gacha) = gachas.get_mut(&gacha_id) else {
             continue;
         };
-        let days = ((end - start).max(0) + 86_399) / 86_400;
-        gacha.free_pulls += days.max(1) * draws_per_day.max(0);
-        gacha.free_pulls_provenance = Some("global_master");
-        gacha.free_pulls_confidence = Some("exact");
+        if !include_existing && gacha.free_pulls_provenance == Some("global_master") {
+            continue;
+        }
+        gacha.free_pulls += pulls;
+        gacha.free_pulls_provenance = Some(provenance);
+        gacha.free_pulls_confidence = Some(confidence);
     }
     Ok(())
 }
@@ -13009,5 +13072,105 @@ mod tests {
                 && !rule.default_enabled
         }));
         assert!(!rules.iter().any(|rule| rule.id.contains("7000")));
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn earlyMasterPopulatesPreliminaryGachaRatesAndFreePullsWithoutOverridingLive() {
+        crate::store::requireStoreData!();
+        let make_master = |rows: &str| {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(&format!(
+                r#"
+                CREATE TABLE gacha_data (id INTEGER, card_type INTEGER, type INTEGER, cost_single INTEGER);
+                CREATE TABLE gacha_available (gacha_id INTEGER, card_id INTEGER, rarity INTEGER, odds INTEGER, is_pickup INTEGER);
+                CREATE TABLE gacha_exchange (gacha_id INTEGER, card_id INTEGER, pay_item_num INTEGER);
+                CREATE TABLE gacha_free_campaign (id INTEGER, gacha_id INTEGER, target_draw_type INTEGER, start_date INTEGER, end_date INTEGER);
+                {rows}
+                "#
+            ))
+            .unwrap();
+            conn
+        };
+
+        let live = make_master(
+            r#"
+            INSERT INTO gacha_data VALUES (30149, 2, 3, 150);
+            INSERT INTO gacha_available VALUES (30149, 30082, 3, 7500, 1);
+            INSERT INTO gacha_exchange VALUES (30149, 30082, 200);
+            INSERT INTO gacha_free_campaign VALUES (1, 30149, 10, 1000, 1000 + 86400 * 5 - 1);
+            "#,
+        );
+        let early = make_master(
+            r#"
+            INSERT INTO gacha_data VALUES (30149, 2, 3, 150), (30151, 2, 3, 150);
+            INSERT INTO gacha_available VALUES
+                (30149, 30082, 3, 7500, 1),
+                (30151, 30134, 3, 7500, 1),
+                (30151, 30137, 3, 7500, 1);
+            INSERT INTO gacha_exchange VALUES (30149, 30082, 200), (30151, 30134, 200), (30151, 30137, 200);
+            INSERT INTO gacha_free_campaign VALUES
+                (1, 30149, 10, 1000, 1000 + 86400 * 9 - 1),
+                (30, 30151, 10, 1796162400, 1797173999);
+            "#,
+        );
+
+        let timeline = json!({
+            "events": [
+                {
+                    "id": "support-banner-2023_30149",
+                    "type": "support_card_banner",
+                    "source": "support",
+                    "gacha_id": 30149,
+                    "gacha_type": 3,
+                    "card_type": "support",
+                    "jp_release_date": "2023-02-13T03:00:00Z",
+                    "global_release_date": "2026-11-20T22:00:00Z",
+                    "estimated_end_date": "2026-12-01T22:00:00Z",
+                    "pickup_card_ids": [30082]
+                },
+                {
+                    "id": "support-banner-2023_30151",
+                    "type": "support_card_banner",
+                    "source": "support",
+                    "gacha_id": 30151,
+                    "gacha_type": 3,
+                    "card_type": "support",
+                    "jp_release_date": "2023-02-24T03:00:00Z",
+                    "global_release_date": "2026-12-01T22:00:00Z",
+                    "estimated_end_date": "2026-12-25T22:00:00Z",
+                    "pickup_card_ids": [30134, 30137]
+                }
+            ]
+        });
+        let links = timeline_gacha_links(&timeline);
+        let mut gachas =
+            super::loadGachasWithEarlyAndJp(&live, Some(&early), None, &links).unwrap();
+        super::apply_free_pulls(&live, &mut gachas).unwrap();
+        super::applyFreePullsWithProvenance(
+            &early,
+            &mut gachas,
+            "global_early_master",
+            "preliminary",
+            false,
+        )
+        .unwrap();
+
+        let live_gacha = &gachas[&30149];
+        assert_eq!(live_gacha.provenance, Some("global_master"));
+        assert_eq!(live_gacha.confidence, Some("exact"));
+        assert_eq!(live_gacha.free_pulls, 50);
+        assert_eq!(live_gacha.free_pulls_provenance, Some("global_master"));
+
+        let early_gacha = &gachas[&30151];
+        assert_eq!(early_gacha.provenance, Some("global_early_master"));
+        assert_eq!(early_gacha.confidence, Some("preliminary"));
+        assert_eq!(early_gacha.pickups.len(), 2);
+        assert_eq!(early_gacha.free_pulls, 120);
+        assert_eq!(
+            early_gacha.free_pulls_provenance,
+            Some("global_early_master")
+        );
+        assert_eq!(early_gacha.free_pulls_confidence, Some("preliminary"));
     }
 }

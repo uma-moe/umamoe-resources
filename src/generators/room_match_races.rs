@@ -413,6 +413,7 @@ mod tests {
             global_release_date,
             estimated_end_date,
             is_confirmed: false,
+            is_preliminary: false,
             banner_duration_days: 0,
             tags: Vec::new(),
             pickup_card_ids: Vec::new(),
@@ -429,6 +430,7 @@ mod tests {
                 anchor_jp_date: None,
                 anchor_global_date: None,
             },
+            preliminary_changes: None,
         }
     }
 

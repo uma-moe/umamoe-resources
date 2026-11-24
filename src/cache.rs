@@ -59,6 +59,8 @@ fn current_paths(manifest: &ResourceManifest) -> Vec<String> {
         format!("{GLOBAL_RESOURCE_PATH}/manifest.json"),
         "/resources/manifest.json".to_string(),
         "/resources/masterdata/versions.json".to_string(),
+        "/resources/masterdata/preliminary-versions.json".to_string(),
+        "/resources/masterdata/preliminary/master.mdb.gz".to_string(),
     ];
     for artifact in &manifest.artifacts {
         paths.push(artifact.current_path.clone());
@@ -132,6 +134,7 @@ mod tests {
                 path: None,
                 bytes: None,
             },
+            preliminary_master: None,
             inputs: Default::default(),
             artifacts: vec![ResourceArtifact {
                 name: "skills.json".to_string(),
@@ -155,6 +158,8 @@ mod tests {
                 "/resources/en/manifest.json",
                 "/resources/manifest.json",
                 "/resources/masterdata/versions.json",
+                "/resources/masterdata/preliminary-versions.json",
+                "/resources/masterdata/preliminary/master.mdb.gz",
                 "/resources/en/current/skills.json.gz",
                 "/resources/current/skills.json.gz",
             ]

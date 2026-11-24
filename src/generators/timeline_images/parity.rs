@@ -112,6 +112,7 @@ mod tests {
                     url: "https://en/Header/header_1.png".to_string(),
                     campaign: true,
                 }),
+                cdn_gacha_ids: Vec::new(),
                 prefers_english: true,
             },
         );

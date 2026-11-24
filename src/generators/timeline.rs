@@ -16,8 +16,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
-/// Support card titles in brackets; 77 holds the card's character name.
+/// Support card titles in brackets; 77 holds the card's character or group name.
 const SUPPORT_CARD_NAME_CATEGORY: i64 = 76;
+const SUPPORT_CARD_CHARACTER_NAME_CATEGORY: i64 = 77;
+const GROUP_SUPPORT_CARD_TYPE: i64 = 3;
 
 const JP_LAUNCH_YEAR: i32 = 2021;
 const JP_LAUNCH_MONTH: u32 = 2;
@@ -32,10 +34,16 @@ const RECENT_ANCHOR_WINDOW_DAYS: i64 = 120;
 const FALLBACK_RECENT_ANCHORS: usize = 18;
 const GROUPING_JP_WINDOW_DAYS: i64 = 3;
 const FAMILY_ADJUSTMENT_SAMPLE_LIMIT: usize = 6;
-const TIMELINE_ALGORITHM_VERSION: u8 = 40;
+const TIMELINE_ALGORITHM_VERSION: u8 = 44;
 /// How much later in JP a banner Global confirmed must have come for Global to have skipped an
 /// unconfirmed one of its kind.
 const SKIPPED_BANNER_MARGIN_DAYS: i64 = 30;
+/// Maximum JP release separation for an unconfirmed JP banner whose pickups were merged into a
+/// Global banner to be treated as absorbed rather than a distant future rerun.
+const MERGED_BANNER_JP_WINDOW_DAYS: i64 = 90;
+/// Ignore sentinel far-future end dates (e.g. 2050 permanent head-start banners) when overriding
+/// banner end dates from a Global master.
+const MAX_GLOBAL_BANNER_DURATION_DAYS: i64 = 120;
 /// An anniversary's first mission campaign starts in JP within this many days up to its JP date.
 const ANNIVERSARY_CAMPAIGN_WINDOW_DAYS: i64 = 14;
 const LEGEND_RACE_FALLBACK_IMAGE_URL: &str =
@@ -51,6 +59,55 @@ pub struct BannerTimeline {
     pub events: Vec<BannerTimelineEvent>,
     /// English and Japanese names of every card an event picks up, by card id.
     pub card_names: BTreeMap<i64, crate::jp_names::CardNames>,
+    /// Present when an unreleased Global CDN master overlays preliminary upcoming schedule data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preliminary: Option<PreliminaryTimelineSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PreliminaryTimelineSummary {
+    pub resource_version: String,
+    pub detected_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cdn_last_modified: Option<String>,
+    pub event_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub merged_event_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PreliminaryEventChanges {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_release_date: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_end_date: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub release_date_shift_days: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_duration_days: Option<i64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub added_pickup_card_ids: Vec<i64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub removed_pickup_card_ids: Vec<i64>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub merged_events: Vec<PreliminaryMergedEvent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preliminary_free_pulls: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct PreliminaryMergedEvent {
+    pub event_id: String,
+    pub gacha_id: i64,
+    pub title: String,
+    pub estimated_release_date: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub pickup_card_ids: Vec<i64>,
+}
+
+#[allow(non_snake_case)]
+fn isFalse(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -105,6 +162,8 @@ pub struct BannerTimelineEvent {
     pub global_release_date: DateTime<Utc>,
     pub estimated_end_date: DateTime<Utc>,
     pub is_confirmed: bool,
+    #[serde(skip_serializing_if = "isFalse")]
+    pub is_preliminary: bool,
     pub banner_duration_days: i64,
     pub tags: Vec<&'static str>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -120,6 +179,15 @@ pub struct BannerTimelineEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub umapyoi_url: Option<String>,
     pub prediction: PredictionInfo,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preliminary_changes: Option<PreliminaryEventChanges>,
+}
+
+impl BannerTimelineEvent {
+    #[allow(non_snake_case)]
+    fn hasKnownGlobalDate(&self) -> bool {
+        self.is_confirmed || self.is_preliminary
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -179,6 +247,7 @@ pub struct PredictionInfo {
 #[serde(rename_all = "snake_case")]
 pub enum PredictionKind {
     Confirmed,
+    Preliminary,
     Interpolated,
     Extrapolated,
     Fallback,
@@ -233,6 +302,8 @@ pub struct TimelineAnniversary {
     pub jp_date: DateTime<Utc>,
     pub global_date: DateTime<Utc>,
     pub is_confirmed: bool,
+    #[serde(skip_serializing_if = "isFalse")]
+    pub is_preliminary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schedule_adjustment_days: Option<i64>,
 }
@@ -258,6 +329,25 @@ struct ConfirmedDateLookup {
     /// Character and support banners Global skipped, by gacha id.
     skipped_characters: BTreeSet<i64>,
     skipped_supports: BTreeSet<i64>,
+    /// JP banners merged into another Global banner (e.g. JP 30155 merged into Global 30151).
+    absorbed_characters: BTreeSet<i64>,
+    absorbed_supports: BTreeSet<i64>,
+    /// Primary Global gacha_id -> JP gacha_ids absorbed into it.
+    merged_character_gachas: BTreeMap<i64, Vec<i64>>,
+    merged_support_gachas: BTreeMap<i64, Vec<i64>>,
+    /// Exact end dates from Global master for preliminary or merged banners.
+    character_end_dates: BTreeMap<i64, DateTime<Utc>>,
+    support_end_dates: BTreeMap<i64, DateTime<Utc>>,
+    paid_end_dates: BTreeMap<i64, DateTime<Utc>>,
+    /// Keys confirmed only by an unreleased early CDN master.
+    preliminary_characters: BTreeSet<i64>,
+    preliminary_supports: BTreeSet<i64>,
+    preliminary_paid: BTreeSet<i64>,
+    preliminary_story: BTreeSet<String>,
+    preliminary_champions: BTreeSet<String>,
+    preliminary_legend: BTreeSet<String>,
+    preliminary_campaign: BTreeSet<String>,
+    preliminary_anniversary: BTreeSet<u32>,
     end_dates: BTreeMap<(ConfirmedTimelineKind, String), DateTime<Utc>>,
 }
 
@@ -472,6 +562,8 @@ struct RawTimelineCampaign {
 struct RawSupportCardName {
     id: String,
     name: String,
+    #[serde(default, rename = "type")]
+    card_type: Option<String>,
     #[serde(default)]
     card_name: Option<String>,
     #[serde(default)]
@@ -525,8 +617,19 @@ struct CalendarLikelihoodModel {
     default_month_day_probability: f64,
 }
 
+struct PreliminaryMasterInput<'a> {
+    connection: &'a Connection,
+    meta: &'a crate::master_fetch::EarlyMasterMeta,
+    character_banners: Vec<CharacterBanner>,
+    support_banners: Vec<SupportBanner>,
+    paid_banners: Vec<PaidBanner>,
+    free_pulls: BTreeMap<i64, i64>,
+    names: crate::jp_names::NameBook,
+}
+
 /// `jp_master` is the JP master the server keeps beside the Global one; its ids tie the Global
-/// master's schedules to the JP events the timeline lists.
+/// master's schedules to the JP events the timeline lists. `early_master`, when present, overlays
+/// unreleased Global CDN schedule data as preliminary entries with diffs against the live estimate.
 pub fn generate(
     connection: &Connection,
     jp_connection: Option<&Connection>,
@@ -536,6 +639,72 @@ pub fn generate(
     character_banners: &[CharacterBanner],
     support_banners: &[SupportBanner],
     paid_banners: &[PaidBanner],
+    early_master: Option<(&Connection, &crate::master_fetch::EarlyMasterMeta)>,
+) -> Result<BannerTimeline> {
+    let baseline = generateTimelinePass(
+        connection,
+        jp_connection,
+        jp_master,
+        names,
+        master_gachas,
+        character_banners,
+        support_banners,
+        paid_banners,
+        None,
+    )?;
+
+    let Some((early_connection, early_meta)) = early_master else {
+        return Ok(baseline);
+    };
+
+    let early_input = PreliminaryMasterInput {
+        connection: early_connection,
+        meta: early_meta,
+        character_banners: crate::generators::banners::generate_character_banners(
+            early_connection,
+        )?,
+        support_banners: crate::generators::banners::generate_support_banners(early_connection)?,
+        paid_banners: crate::generators::banners::generate_paid_banners(early_connection)?,
+        free_pulls: loadGachaFreePulls(early_connection)?,
+        names: crate::jp_names::NameBook::load(early_connection, jp_master)?,
+    };
+
+    let mut preliminary = generateTimelinePass(
+        connection,
+        jp_connection,
+        jp_master,
+        names,
+        master_gachas,
+        character_banners,
+        support_banners,
+        paid_banners,
+        Some(&early_input),
+    )?;
+
+    if !preliminary.events.iter().any(|event| event.is_preliminary)
+        && !preliminary
+            .anniversaries
+            .iter()
+            .any(|anniversary| anniversary.is_preliminary)
+    {
+        return Ok(baseline);
+    }
+
+    annotatePreliminaryChanges(&baseline, &mut preliminary, &early_input);
+    Ok(preliminary)
+}
+
+#[allow(non_snake_case)]
+fn generateTimelinePass(
+    connection: &Connection,
+    jp_connection: Option<&Connection>,
+    jp_master: Option<&Connection>,
+    names: &crate::jp_names::NameBook,
+    master_gachas: &[crate::jp_names::JpGacha],
+    character_banners: &[CharacterBanner],
+    support_banners: &[SupportBanner],
+    paid_banners: &[PaidBanner],
+    early: Option<&PreliminaryMasterInput<'_>>,
 ) -> Result<BannerTimeline> {
     let mut timeline_character_banners = load_timeline_character_banners()?;
     let mut timeline_support_banners = load_timeline_support_banners()?;
@@ -582,6 +751,36 @@ pub fn generate(
         &additional_gacha_banners,
         master_dates,
     )?;
+    applyGlobalBannerOverrides(
+        character_banners,
+        support_banners,
+        &mut timeline_character_banners,
+        &mut timeline_support_banners,
+        &mut confirmed_dates,
+        false,
+    );
+    if let Some(early) = early {
+        let early_master_dates = match jp_master {
+            Some(jp_master) => globalMasterConfirmations(
+                early.connection,
+                jp_master,
+                &timeline_champions_meetings,
+                &timeline_story_events,
+                &timeline_legend_races,
+                &news_timeline_events,
+            )?,
+            None => Vec::new(),
+        };
+        applyEarlyConfirmations(
+            early,
+            &mut timeline_character_banners,
+            &mut timeline_support_banners,
+            &timeline_paid_banners,
+            &additional_gacha_banners,
+            early_master_dates,
+            &mut confirmed_dates,
+        );
+    }
     let mut news_campaigns = crate::generators::jp_events::campaign_timeline_metadata()?;
     news_campaigns.retain(|campaign| include_jp_campaign(campaign, &confirmed_dates));
     let matched_campaign_posts = merge_campaign_news(&mut timeline_campaigns, &news_campaigns);
@@ -592,15 +791,32 @@ pub fn generate(
     );
     // Campaign titles come from the news merged above.
     confirmed_dates.anniversary = anniversaryDates(connection, &timeline_campaigns)?;
+    if let Some(early) = early {
+        for (index, date) in anniversaryDates(early.connection, &timeline_campaigns)? {
+            if let std::collections::btree_map::Entry::Vacant(slot) =
+                confirmed_dates.anniversary.entry(index)
+            {
+                slot.insert(date);
+                confirmed_dates.preliminary_anniversary.insert(index);
+            }
+        }
+    }
     merge_legend_race_news(
         &mut timeline_legend_races,
         &crate::generators::jp_events::legend_race_timeline_metadata()?,
     );
     let jp_names = crate::jp_names::bundledNames()?;
-    let character_names = names.english(crate::jp_names::NameKind::UmaName).clone();
-    let support_names =
-        load_support_card_names(connection, &character_names, names.cardCharacters())?;
-    let support_card_names = load_support_card_specific_names(connection, &jp_names)?;
+    let active_names = early.map_or(names, |early| &early.names);
+    let name_connection = early.map_or(connection, |early| early.connection);
+    let character_names = active_names
+        .english(crate::jp_names::NameKind::UmaName)
+        .clone();
+    let support_names = load_support_card_names(
+        name_connection,
+        &character_names,
+        active_names.cardCharacters(),
+    )?;
+    let support_card_names = load_support_card_specific_names(name_connection, &jp_names)?;
     let anchors = build_banner_confirmed_anchors(
         &timeline_character_banners,
         &timeline_support_banners,
@@ -636,6 +852,9 @@ pub fn generate(
                 !confirmed_dates
                     .skipped_characters
                     .contains(&banner.gacha_id)
+                    && !confirmed_dates
+                        .absorbed_characters
+                        .contains(&banner.gacha_id)
             })
             .map(|banner| {
                 character_event(
@@ -650,7 +869,10 @@ pub fn generate(
     events.extend(
         timeline_support_banners
             .iter()
-            .filter(|banner| !confirmed_dates.skipped_supports.contains(&banner.gacha_id))
+            .filter(|banner| {
+                !confirmed_dates.skipped_supports.contains(&banner.gacha_id)
+                    && !confirmed_dates.absorbed_supports.contains(&banner.gacha_id)
+            })
             .map(|banner| {
                 support_event(
                     banner,
@@ -666,11 +888,17 @@ pub fn generate(
         additional_gacha_banners
             .iter()
             .filter(|banner| match banner.kind {
-                AdditionalGachaKind::Character => !confirmed_dates
-                    .skipped_characters
-                    .contains(&banner.gacha_id),
+                AdditionalGachaKind::Character => {
+                    !confirmed_dates
+                        .skipped_characters
+                        .contains(&banner.gacha_id)
+                        && !confirmed_dates
+                            .absorbed_characters
+                            .contains(&banner.gacha_id)
+                }
                 AdditionalGachaKind::Support => {
                     !confirmed_dates.skipped_supports.contains(&banner.gacha_id)
+                        && !confirmed_dates.absorbed_supports.contains(&banner.gacha_id)
                 }
                 AdditionalGachaKind::Paid | AdditionalGachaKind::Unknown => true,
             })
@@ -762,6 +990,49 @@ pub fn generate(
             .then_with(|| a.id.cmp(&b.id))
     });
 
+    // Attach merged gacha IDs onto events temporarily via gacha_ids? No: keep preliminary summary
+    // self-contained using confirmed_dates.merged_*_gachas when building the diff.
+    let mut merged_by_primary: BTreeMap<(BannerTimelineEventType, i64), Vec<i64>> = BTreeMap::new();
+    for (&primary, absorbed) in &confirmed_dates.merged_character_gachas {
+        merged_by_primary.insert(
+            (BannerTimelineEventType::CharacterBanner, primary),
+            absorbed.clone(),
+        );
+    }
+    for (&primary, absorbed) in &confirmed_dates.merged_support_gachas {
+        merged_by_primary.insert(
+            (BannerTimelineEventType::SupportCardBanner, primary),
+            absorbed.clone(),
+        );
+    }
+    for event in &mut events {
+        if let Some(gacha_id) = event.gacha_id {
+            if let Some(absorbed) = merged_by_primary.get(&(event.event_type, gacha_id)) {
+                if event.is_preliminary {
+                    event.preliminary_changes = Some(PreliminaryEventChanges {
+                        estimated_release_date: None,
+                        estimated_end_date: None,
+                        release_date_shift_days: None,
+                        estimated_duration_days: None,
+                        added_pickup_card_ids: Vec::new(),
+                        removed_pickup_card_ids: Vec::new(),
+                        merged_events: absorbed
+                            .iter()
+                            .map(|&merged_id| PreliminaryMergedEvent {
+                                event_id: String::new(),
+                                gacha_id: merged_id,
+                                title: String::new(),
+                                estimated_release_date: event.global_release_date,
+                                pickup_card_ids: Vec::new(),
+                            })
+                            .collect(),
+                        preliminary_free_pulls: None,
+                    });
+                }
+            }
+        }
+    }
+
     Ok(BannerTimeline {
         version: TIMELINE_ALGORITHM_VERSION,
         calculation: TimelineCalculation {
@@ -795,12 +1066,162 @@ pub fn generate(
         card_names: events
             .iter()
             .flat_map(|event| &event.pickup_card_ids)
-            .map(|card_id| (*card_id, names.card(*card_id)))
+            .map(|card_id| (*card_id, active_names.card(*card_id)))
             // Select gachas list placeholder slots, which name nothing.
             .filter(|(_, card_names)| *card_names != crate::jp_names::CardNames::default())
             .collect(),
         events,
+        preliminary: None,
     })
+}
+
+#[allow(non_snake_case)]
+fn annotatePreliminaryChanges(
+    baseline: &BannerTimeline,
+    preliminary: &mut BannerTimeline,
+    early: &PreliminaryMasterInput<'_>,
+) {
+    let baseline_by_id: BTreeMap<&str, &BannerTimelineEvent> = baseline
+        .events
+        .iter()
+        .map(|event| (event.id.as_str(), event))
+        .collect();
+    let baseline_by_gacha: BTreeMap<(BannerTimelineEventType, i64), &BannerTimelineEvent> =
+        baseline
+            .events
+            .iter()
+            .filter_map(|event| Some(((event.event_type, event.gacha_id?), event)))
+            .collect();
+
+    let mut preliminary_event_ids = Vec::new();
+    let mut merged_event_ids = Vec::new();
+
+    for event in &mut preliminary.events {
+        if !event.is_preliminary {
+            continue;
+        }
+
+        let base = baseline_by_id.get(event.id.as_str()).copied();
+        let placeholder_merges = event
+            .preliminary_changes
+            .take()
+            .map(|changes| changes.merged_events)
+            .unwrap_or_default();
+
+        let mut merged_events = Vec::new();
+        for placeholder in placeholder_merges {
+            if let Some(absorbed) = baseline_by_gacha.get(&(event.event_type, placeholder.gacha_id))
+            {
+                merged_event_ids.push(absorbed.id.clone());
+                merged_events.push(PreliminaryMergedEvent {
+                    event_id: absorbed.id.clone(),
+                    gacha_id: placeholder.gacha_id,
+                    title: absorbed.title.clone(),
+                    estimated_release_date: absorbed.global_release_date,
+                    pickup_card_ids: absorbed.pickup_card_ids.clone(),
+                });
+            }
+        }
+
+        let estimated_release_date = base
+            .map(|base| base.global_release_date)
+            .filter(|&date| date != event.global_release_date);
+        let estimated_end_date = base
+            .map(|base| base.estimated_end_date)
+            .filter(|&date| date != event.estimated_end_date);
+        let release_date_shift_days = base
+            .map(|base| days_between(base.global_release_date, event.global_release_date))
+            .filter(|&shift| shift != 0);
+        let estimated_duration_days = base
+            .map(|base| base.banner_duration_days)
+            .filter(|&days| days != event.banner_duration_days);
+
+        let base_pickups: BTreeSet<i64> = base
+            .map(|base| base.pickup_card_ids.iter().copied().collect())
+            .unwrap_or_default();
+        let current_pickups: BTreeSet<i64> = event.pickup_card_ids.iter().copied().collect();
+        let added_pickup_card_ids: Vec<i64> = event
+            .pickup_card_ids
+            .iter()
+            .copied()
+            .filter(|id| !base_pickups.contains(id))
+            .collect();
+        let removed_pickup_card_ids: Vec<i64> = base
+            .map(|base| {
+                base.pickup_card_ids
+                    .iter()
+                    .copied()
+                    .filter(|id| !current_pickups.contains(id))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Only surface banners that actually changed (merged banners, pickup changes, or a new
+        // banner not in the baseline timeline); routine unchanged banners stay normal predicted
+        // cards without preliminary badges or popup clutter.
+        let has_banner_changes = base.is_none()
+            || !merged_events.is_empty()
+            || !added_pickup_card_ids.is_empty()
+            || !removed_pickup_card_ids.is_empty();
+        if !has_banner_changes {
+            event.is_preliminary = false;
+            if let Some(base) = base {
+                event.prediction = base.prediction.clone();
+            }
+            continue;
+        }
+
+        let preliminary_free_pulls = event
+            .gacha_id
+            .and_then(|gacha_id| early.free_pulls.get(&gacha_id).copied())
+            .filter(|&pulls| pulls > 0);
+
+        preliminary_event_ids.push(event.id.clone());
+        event.preliminary_changes = Some(PreliminaryEventChanges {
+            estimated_release_date,
+            estimated_end_date,
+            release_date_shift_days,
+            estimated_duration_days,
+            added_pickup_card_ids,
+            removed_pickup_card_ids,
+            merged_events,
+            preliminary_free_pulls,
+        });
+    }
+
+    preliminary.preliminary =
+        (!preliminary_event_ids.is_empty()).then(|| PreliminaryTimelineSummary {
+            resource_version: early.meta.resource_version.clone(),
+            detected_at: early.meta.detected_at.clone(),
+            cdn_last_modified: early.meta.last_modified.clone(),
+            event_ids: preliminary_event_ids,
+            merged_event_ids,
+        });
+}
+
+#[allow(non_snake_case)]
+fn loadGachaFreePulls(connection: &Connection) -> Result<BTreeMap<i64, i64>> {
+    if !timeline_table_exists(connection, "gacha_free_campaign")? {
+        return Ok(BTreeMap::new());
+    }
+    let mut statement = connection.prepare(
+        "SELECT gacha_id, target_draw_type, start_date, end_date FROM gacha_free_campaign",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    let mut pulls = BTreeMap::new();
+    for row in rows {
+        let (gacha_id, draws_per_day, start, end) = row?;
+        let days = ((end - start).max(0) + 86_399) / 86_400;
+        *pulls.entry(gacha_id).or_default() += days.max(1) * draws_per_day.max(0);
+    }
+    Ok(pulls)
 }
 
 fn character_event(
@@ -816,9 +1237,14 @@ fn character_event(
         .map(|card_id| character_name_for_card(*card_id, character_names))
         .collect::<Vec<_>>();
     let confirmed_global_date = confirmed_dates.character.get(&banner.gacha_id).copied();
-    let prediction = calculate_global_date(
+    let is_preliminary = confirmed_global_date.is_some()
+        && confirmed_dates
+            .preliminary_characters
+            .contains(&banner.gacha_id);
+    let prediction = calculateGlobalDateWithStatus(
         banner.start_at,
         confirmed_global_date,
+        is_preliminary,
         anchors,
         observed_rate,
     );
@@ -828,7 +1254,10 @@ fn character_event(
         prediction.global_date,
         duration,
         reset_end_adjustment(prediction.global_date, duration),
-        None,
+        confirmed_dates
+            .character_end_dates
+            .get(&banner.gacha_id)
+            .copied(),
     );
 
     BannerTimelineEvent {
@@ -849,7 +1278,8 @@ fn character_event(
         jp_release_date: banner.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags: vec!["character-banner"],
         pickup_card_ids: banner.pickup_card_ids.clone(),
@@ -862,6 +1292,7 @@ fn character_event(
         )),
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -884,9 +1315,14 @@ fn support_event(
         .filter_map(|card_id| support_card_specific_name_for_card(*card_id, support_card_names))
         .collect::<Vec<_>>();
     let confirmed_global_date = confirmed_dates.support.get(&banner.gacha_id).copied();
-    let prediction = calculate_global_date(
+    let is_preliminary = confirmed_global_date.is_some()
+        && confirmed_dates
+            .preliminary_supports
+            .contains(&banner.gacha_id);
+    let prediction = calculateGlobalDateWithStatus(
         banner.start_at,
         confirmed_global_date,
+        is_preliminary,
         anchors,
         observed_rate,
     );
@@ -896,7 +1332,10 @@ fn support_event(
         prediction.global_date,
         duration,
         reset_end_adjustment(prediction.global_date, duration),
-        None,
+        confirmed_dates
+            .support_end_dates
+            .get(&banner.gacha_id)
+            .copied(),
     );
 
     BannerTimelineEvent {
@@ -917,7 +1356,8 @@ fn support_event(
         jp_release_date: banner.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags: vec!["support-banner"],
         pickup_card_ids: banner.pickup_card_ids.clone(),
@@ -930,6 +1370,7 @@ fn support_event(
         )),
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -942,13 +1383,28 @@ fn additional_gacha_event(
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
 ) -> Option<BannerTimelineEvent> {
-    let (event_type, default_card_type, source, tag, confirmed_global_date) = match banner.kind {
+    let (
+        event_type,
+        default_card_type,
+        source,
+        tag,
+        confirmed_global_date,
+        is_preliminary,
+        end_override,
+    ) = match banner.kind {
         AdditionalGachaKind::Character => (
             BannerTimelineEventType::CharacterBanner,
             "character",
             "umapyoi_news_character",
             "character-banner",
             confirmed_dates.character.get(&banner.gacha_id).copied(),
+            confirmed_dates
+                .preliminary_characters
+                .contains(&banner.gacha_id),
+            confirmed_dates
+                .character_end_dates
+                .get(&banner.gacha_id)
+                .copied(),
         ),
         AdditionalGachaKind::Support => (
             BannerTimelineEventType::SupportCardBanner,
@@ -956,6 +1412,13 @@ fn additional_gacha_event(
             "umapyoi_news_support",
             "support-banner",
             confirmed_dates.support.get(&banner.gacha_id).copied(),
+            confirmed_dates
+                .preliminary_supports
+                .contains(&banner.gacha_id),
+            confirmed_dates
+                .support_end_dates
+                .get(&banner.gacha_id)
+                .copied(),
         ),
         AdditionalGachaKind::Paid => (
             BannerTimelineEventType::PaidBanner,
@@ -963,18 +1426,25 @@ fn additional_gacha_event(
             "umapyoi_news_paid",
             "paid-banner",
             confirmed_dates.paid.get(&banner.gacha_id).copied(),
+            confirmed_dates.preliminary_paid.contains(&banner.gacha_id),
+            confirmed_dates
+                .paid_end_dates
+                .get(&banner.gacha_id)
+                .copied(),
         ),
         AdditionalGachaKind::Unknown => return None,
     };
+    let is_preliminary = confirmed_global_date.is_some() && is_preliminary;
     let card_type = banner.card_type.as_deref().unwrap_or(default_card_type);
-    let prediction = calculate_global_date(
+    let prediction = calculateGlobalDateWithStatus(
         banner.start_at,
         confirmed_global_date,
+        is_preliminary,
         anchors,
         observed_rate,
     );
     let (estimated_end_date, banner_duration_days) =
-        event_end_date(prediction.global_date, 10, 0, None);
+        event_end_date(prediction.global_date, 10, 0, end_override);
     let gacha_type = banner.gacha_type.or_else(|| {
         matches!(
             banner.kind,
@@ -1047,7 +1517,8 @@ fn additional_gacha_event(
         jp_release_date: banner.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags,
         pickup_card_ids: banner.pickup_card_ids.clone(),
@@ -1057,6 +1528,7 @@ fn additional_gacha_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     })
 }
 
@@ -1498,10 +1970,13 @@ fn news_timeline_event(
         ),
     };
     let confirmed_global_date = confirmed_news_event_date(event, confirmed_dates);
+    let is_preliminary =
+        confirmed_global_date.is_some() && isPreliminaryNewsEvent(event, confirmed_dates);
     let prediction = apply_family_adjustment(
-        calculate_global_date(
+        calculateGlobalDateWithStatus(
             event.start_at,
             confirmed_global_date,
+            is_preliminary,
             anchors,
             observed_rate,
         ),
@@ -1540,7 +2015,8 @@ fn news_timeline_event(
         global_release_date: prediction.global_date,
         estimated_end_date: confirmed_global_end
             .unwrap_or_else(|| calculate_end_date(prediction.global_date, duration)),
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days: duration,
         tags: vec!["event", tag, "umapyoi-news"],
         pickup_card_ids: Vec::new(),
@@ -1550,7 +2026,29 @@ fn news_timeline_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
+}
+
+#[allow(non_snake_case)]
+fn isPreliminaryNewsEvent(
+    event: &NewsTimelineEvent,
+    confirmed_dates: &ConfirmedDateLookup,
+) -> bool {
+    if confirmed_dates
+        .global_news
+        .contains_key(&event.source_post_id)
+    {
+        return false;
+    }
+    matches!(
+        event.kind,
+        NewsTimelineKind::UmaSanpo
+            | NewsTimelineKind::HolidayCelebration
+            | NewsTimelineKind::Campaign
+    ) && confirmed_dates
+        .preliminary_campaign
+        .contains(&image_key(&event.key))
 }
 
 fn confirmed_news_event_date(
@@ -1662,13 +2160,30 @@ fn paid_event(
         Vec::new()
     };
     let confirmed_global_date = confirmed_dates.paid.get(&banner.gacha_id).copied();
-    let prediction = calculate_global_date(
+    let is_preliminary = confirmed_global_date.is_some()
+        && confirmed_dates.preliminary_paid.contains(&banner.gacha_id);
+    let prediction = calculateGlobalDateWithStatus(
         banner.start_at,
         confirmed_global_date,
+        is_preliminary,
         anchors,
         observed_rate,
     );
-    let duration = banner_duration_days(banner.start_at, banner.end_at).max(14);
+    let default_duration = banner_duration_days(banner.start_at, banner.end_at).max(14);
+    let (estimated_end_date, duration) = match confirmed_dates
+        .paid_end_dates
+        .get(&banner.gacha_id)
+        .copied()
+    {
+        Some(end_date) => (
+            end_date,
+            banner_duration_days(prediction.global_date, end_date).max(1),
+        ),
+        None => (
+            calculate_end_date(prediction.global_date, default_duration),
+            default_duration,
+        ),
+    };
     let title = if names.is_empty() {
         if banner.card_type == "character" {
             "Premium Character Banner".to_string()
@@ -1696,8 +2211,9 @@ fn paid_event(
         description: None,
         jp_release_date: banner.start_at,
         global_release_date: prediction.global_date,
-        estimated_end_date: calculate_end_date(prediction.global_date, duration),
-        is_confirmed: confirmed_global_date.is_some(),
+        estimated_end_date,
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days: duration,
         tags: vec!["paid-banner"],
         pickup_card_ids: banner.pickup_card_ids.clone(),
@@ -1715,6 +2231,7 @@ fn paid_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -1731,10 +2248,13 @@ fn story_event(
         .is_none()
         .then(|| confirmed_dates.story.get(&key).copied())
         .flatten();
+    let is_preliminary =
+        confirmed_global_date.is_some() && confirmed_dates.preliminary_story.contains(&key);
     let prediction = apply_family_adjustment(
-        calculate_global_date(
+        calculateGlobalDateWithStatus(
             event.start_at,
             confirmed_global_date,
+            is_preliminary,
             anchors,
             observed_rate,
         ),
@@ -1773,7 +2293,8 @@ fn story_event(
         jp_release_date: event.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags: vec!["event", "story-event"],
         pickup_card_ids: Vec::new(),
@@ -1783,6 +2304,7 @@ fn story_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -1795,10 +2317,13 @@ fn champions_meeting_event(
 ) -> BannerTimelineEvent {
     let key = champions_key(event.index);
     let confirmed_global_date = confirmed_dates.champions.get(&key).copied();
+    let is_preliminary =
+        confirmed_global_date.is_some() && confirmed_dates.preliminary_champions.contains(&key);
     let prediction = apply_family_adjustment(
-        calculate_global_date(
+        calculateGlobalDateWithStatus(
             event.start_at,
             confirmed_global_date,
+            is_preliminary,
             anchors,
             observed_rate,
         ),
@@ -1839,7 +2364,8 @@ fn champions_meeting_event(
         jp_release_date: event.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags: vec!["champions-meeting"],
         pickup_card_ids: Vec::new(),
@@ -1849,6 +2375,7 @@ fn champions_meeting_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -1861,10 +2388,13 @@ fn legend_race_event(
 ) -> BannerTimelineEvent {
     let key = legend_key(event.index);
     let confirmed_global_date = confirmed_dates.legend.get(&key).copied();
+    let is_preliminary =
+        confirmed_global_date.is_some() && confirmed_dates.preliminary_legend.contains(&key);
     let prediction = apply_family_adjustment(
-        calculate_global_date(
+        calculateGlobalDateWithStatus(
             event.start_at,
             confirmed_global_date,
+            is_preliminary,
             anchors,
             observed_rate,
         ),
@@ -1899,7 +2429,8 @@ fn legend_race_event(
         jp_release_date: event.start_at,
         global_release_date: prediction.global_date,
         estimated_end_date,
-        is_confirmed: confirmed_global_date.is_some(),
+        is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+        is_preliminary,
         banner_duration_days,
         tags: vec!["event", "legend-race"],
         pickup_card_ids: boss_card_ids,
@@ -1909,6 +2440,7 @@ fn legend_race_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -2001,6 +2533,7 @@ fn campaign_event(
         estimated_end_date: confirmed_global_end
             .unwrap_or_else(|| calculate_end_date(prediction.global_date, duration + adjustment)),
         is_confirmed: confirmed_global_date.is_some(),
+        is_preliminary: false,
         banner_duration_days: duration,
         tags: vec!["mission campaign"],
         pickup_card_ids: Vec::new(),
@@ -2010,6 +2543,7 @@ fn campaign_event(
         gametora_url: None,
         umapyoi_url: None,
         prediction: prediction.into_info(),
+        preliminary_changes: None,
     }
 }
 
@@ -2173,7 +2707,10 @@ fn apply_family_adjustment(
     jp_date: DateTime<Utc>,
     family_adjustments: &FamilyAdjustmentModels,
 ) -> DatePrediction {
-    if prediction.kind == PredictionKind::Confirmed {
+    if matches!(
+        prediction.kind,
+        PredictionKind::Confirmed | PredictionKind::Preliminary
+    ) {
         return prediction;
     }
 
@@ -2294,7 +2831,7 @@ fn apply_closed_schedule_adjustment(
     let first_unconfirmed = events
         .iter()
         .filter(|event| {
-            !event.is_confirmed
+            !event.hasKnownGlobalDate()
                 && matches!(
                     event.event_type,
                     BannerTimelineEventType::CharacterBanner
@@ -2317,7 +2854,7 @@ fn apply_closed_schedule_adjustment(
 
     let adjustment_days = shift.num_days();
     for event in events.iter_mut().filter(|event| {
-        !event.is_confirmed
+        !event.hasKnownGlobalDate()
             && normalize_to_midnight_utc(event.jp_release_date) >= first_unconfirmed_jp
     }) {
         event.global_release_date += shift;
@@ -2351,7 +2888,7 @@ fn apply_grouped_event_adjustment(events: &mut [BannerTimelineEvent]) {
 
     for event in events
         .iter_mut()
-        .filter(|event| !event.is_confirmed && is_groupable_event_type(event.event_type))
+        .filter(|event| !event.hasKnownGlobalDate() && is_groupable_event_type(event.event_type))
     {
         let event_jp = normalize_to_midnight_utc(event.jp_release_date);
         let Some((character_jp, character_global)) =
@@ -2387,7 +2924,7 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent], observed
     let primary_dates = events
         .iter()
         .filter(|event| {
-            event.is_confirmed
+            event.hasKnownGlobalDate()
                 && matches!(
                     event.event_type,
                     BannerTimelineEventType::CharacterBanner
@@ -2439,7 +2976,7 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent], observed
     // Split paid pools released together must all wait for their latest pickup.
     let mut pickup_floors = BTreeMap::new();
     for event in events.iter().filter(|event| {
-        event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
+        event.event_type == BannerTimelineEventType::PaidBanner && !event.hasKnownGlobalDate()
     }) {
         let kind = match event.card_type.as_deref() {
             Some("character") => BannerTimelineEventType::CharacterBanner,
@@ -2461,7 +2998,7 @@ fn align_paid_banners_with_releases(events: &mut [BannerTimelineEvent], observed
     }
 
     for event in events.iter_mut().filter(|event| {
-        event.event_type == BannerTimelineEventType::PaidBanner && !event.is_confirmed
+        event.event_type == BannerTimelineEventType::PaidBanner && !event.hasKnownGlobalDate()
     }) {
         let jp_date = normalize_to_midnight_utc(event.jp_release_date);
         let scheduled_date = primary_dates.get(&jp_date).copied().unwrap_or_else(|| {
@@ -2977,6 +3514,12 @@ fn build_banner_confirmed_anchors(
     let mut anchors = Vec::new();
 
     for banner in character_banners {
+        if confirmed_dates
+            .preliminary_characters
+            .contains(&banner.gacha_id)
+        {
+            continue;
+        }
         if let Some(global) = confirmed_dates.character.get(&banner.gacha_id).copied() {
             anchors.push(CalibrationAnchor {
                 jp: normalize_to_midnight_utc(banner.start_at),
@@ -2986,6 +3529,12 @@ fn build_banner_confirmed_anchors(
     }
 
     for banner in support_banners {
+        if confirmed_dates
+            .preliminary_supports
+            .contains(&banner.gacha_id)
+        {
+            continue;
+        }
         if let Some(global) = confirmed_dates.support.get(&banner.gacha_id).copied() {
             anchors.push(CalibrationAnchor {
                 jp: normalize_to_midnight_utc(banner.start_at),
@@ -3004,6 +3553,9 @@ fn build_anniversary_schedule_anchors(
     let mut anchors = base_anchors.to_vec();
 
     for (&index, &global) in &confirmed_dates.anniversary {
+        if confirmed_dates.preliminary_anniversary.contains(&index) {
+            continue;
+        }
         anchors.push(CalibrationAnchor {
             jp: projected_jp_anniversary_date(index),
             global,
@@ -3249,6 +3801,21 @@ fn build_confirmed_date_lookup(
         anniversary: BTreeMap::new(),
         skipped_characters: BTreeSet::new(),
         skipped_supports: BTreeSet::new(),
+        absorbed_characters: BTreeSet::new(),
+        absorbed_supports: BTreeSet::new(),
+        merged_character_gachas: BTreeMap::new(),
+        merged_support_gachas: BTreeMap::new(),
+        character_end_dates: BTreeMap::new(),
+        support_end_dates: BTreeMap::new(),
+        paid_end_dates: BTreeMap::new(),
+        preliminary_characters: BTreeSet::new(),
+        preliminary_supports: BTreeSet::new(),
+        preliminary_paid: BTreeSet::new(),
+        preliminary_story: BTreeSet::new(),
+        preliminary_champions: BTreeSet::new(),
+        preliminary_legend: BTreeSet::new(),
+        preliminary_campaign: BTreeSet::new(),
+        preliminary_anniversary: BTreeSet::new(),
         end_dates: BTreeMap::new(),
     };
 
@@ -3374,7 +3941,7 @@ fn character_banner_matches_timeline(
     timeline_banner: &TimelineCharacterBanner,
 ) -> bool {
     banner.gacha_id == timeline_banner.gacha_id
-        && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+        && matchesOrExtendsPickupCardIds(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
 }
 
 fn support_banner_matches_timeline(
@@ -3382,7 +3949,7 @@ fn support_banner_matches_timeline(
     timeline_banner: &TimelineSupportBanner,
 ) -> bool {
     banner.gacha_id == timeline_banner.gacha_id
-        && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+        && matchesOrExtendsPickupCardIds(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
 }
 
 fn paid_banner_matches_timeline(banner: &PaidBanner, timeline_banner: &TimelinePaidBanner) -> bool {
@@ -3390,6 +3957,16 @@ fn paid_banner_matches_timeline(banner: &PaidBanner, timeline_banner: &TimelineP
         && banner.gacha_type == timeline_banner.gacha_type
         && banner.card_type == timeline_banner.card_type
         && same_pickup_card_ids(&banner.pickup_card_ids, &timeline_banner.pickup_card_ids)
+}
+
+/// Exact pickup equality, or a Global merged banner that keeps every JP pickup and adds more
+/// (such as Global 30151 merging JP 30151 and JP 30155). Disjoint reused gacha IDs still reject.
+#[allow(non_snake_case)]
+fn matchesOrExtendsPickupCardIds(global: &[i64], jp: &[i64]) -> bool {
+    if same_pickup_card_ids(global, jp) {
+        return true;
+    }
+    !jp.is_empty() && jp.iter().all(|card_id| global.contains(card_id))
 }
 
 fn same_pickup_card_ids(left: &[i64], right: &[i64]) -> bool {
@@ -3402,6 +3979,251 @@ fn same_pickup_card_ids(left: &[i64], right: &[i64]) -> bool {
     let mut right = right.to_vec();
     right.sort_unstable();
     left == right
+}
+
+#[allow(non_snake_case)]
+fn normalizedGlobalBannerEnd(
+    start_at: DateTime<Utc>,
+    end_at: DateTime<Utc>,
+) -> Option<DateTime<Utc>> {
+    let adjusted = if end_at.timestamp() % 60 == 59 {
+        end_at + Duration::seconds(1)
+    } else {
+        end_at
+    };
+    let duration_days = days_between(start_at, adjusted);
+    (1..=MAX_GLOBAL_BANNER_DURATION_DAYS)
+        .contains(&duration_days)
+        .then_some(adjusted)
+}
+
+/// Updates JP timeline banners whose matched Global banner merged extra pickups, and marks any
+/// nearby unconfirmed JP banner whose pickups were fully absorbed into that Global banner.
+#[allow(non_snake_case)]
+fn applyGlobalBannerOverrides(
+    character_banners: &[CharacterBanner],
+    support_banners: &[SupportBanner],
+    timeline_character_banners: &mut [TimelineCharacterBanner],
+    timeline_support_banners: &mut [TimelineSupportBanner],
+    lookup: &mut ConfirmedDateLookup,
+    preliminary_only: bool,
+) {
+    let mut character_merges: Vec<(i64, DateTime<Utc>, BTreeSet<i64>)> = Vec::new();
+    for banner in character_banners {
+        if preliminary_only && !lookup.preliminary_characters.contains(&banner.gacha_id) {
+            continue;
+        }
+        let Some(timeline_banner) = timeline_character_banners
+            .iter_mut()
+            .find(|tb| character_banner_matches_timeline(banner, tb))
+        else {
+            continue;
+        };
+        let jp_set: BTreeSet<i64> = timeline_banner.pickup_card_ids.iter().copied().collect();
+        let added: BTreeSet<i64> = banner
+            .pickup_card_ids
+            .iter()
+            .copied()
+            .filter(|id| !jp_set.contains(id))
+            .collect();
+        if !added.is_empty() {
+            timeline_banner.pickup_card_ids = banner.pickup_card_ids.clone();
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.character_end_dates.insert(banner.gacha_id, end);
+            }
+            character_merges.push((timeline_banner.gacha_id, timeline_banner.start_at, added));
+        } else if preliminary_only {
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.character_end_dates.insert(banner.gacha_id, end);
+            }
+        }
+    }
+    for (primary_id, primary_jp_start, added) in character_merges {
+        for other in timeline_character_banners.iter() {
+            if other.gacha_id == primary_id
+                || lookup.character.contains_key(&other.gacha_id)
+                || other.pickup_card_ids.is_empty()
+            {
+                continue;
+            }
+            let within_window = (other.start_at - primary_jp_start).num_days().abs()
+                <= MERGED_BANNER_JP_WINDOW_DAYS;
+            if within_window
+                && other
+                    .pickup_card_ids
+                    .iter()
+                    .all(|card_id| added.contains(card_id))
+            {
+                lookup.absorbed_characters.insert(other.gacha_id);
+                let merged = lookup
+                    .merged_character_gachas
+                    .entry(primary_id)
+                    .or_default();
+                if !merged.contains(&other.gacha_id) {
+                    merged.push(other.gacha_id);
+                }
+            }
+        }
+    }
+
+    let mut support_merges: Vec<(i64, DateTime<Utc>, BTreeSet<i64>)> = Vec::new();
+    for banner in support_banners {
+        if preliminary_only && !lookup.preliminary_supports.contains(&banner.gacha_id) {
+            continue;
+        }
+        let Some(timeline_banner) = timeline_support_banners
+            .iter_mut()
+            .find(|tb| support_banner_matches_timeline(banner, tb))
+        else {
+            continue;
+        };
+        let jp_set: BTreeSet<i64> = timeline_banner.pickup_card_ids.iter().copied().collect();
+        let added: BTreeSet<i64> = banner
+            .pickup_card_ids
+            .iter()
+            .copied()
+            .filter(|id| !jp_set.contains(id))
+            .collect();
+        if !added.is_empty() {
+            timeline_banner.pickup_card_ids = banner.pickup_card_ids.clone();
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.support_end_dates.insert(banner.gacha_id, end);
+            }
+            support_merges.push((timeline_banner.gacha_id, timeline_banner.start_at, added));
+        } else if preliminary_only {
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.support_end_dates.insert(banner.gacha_id, end);
+            }
+        }
+    }
+    for (primary_id, primary_jp_start, added) in support_merges {
+        for other in timeline_support_banners.iter() {
+            if other.gacha_id == primary_id
+                || lookup.support.contains_key(&other.gacha_id)
+                || other.pickup_card_ids.is_empty()
+            {
+                continue;
+            }
+            let within_window = (other.start_at - primary_jp_start).num_days().abs()
+                <= MERGED_BANNER_JP_WINDOW_DAYS;
+            if within_window
+                && other
+                    .pickup_card_ids
+                    .iter()
+                    .all(|card_id| added.contains(card_id))
+            {
+                lookup.absorbed_supports.insert(other.gacha_id);
+                let merged = lookup.merged_support_gachas.entry(primary_id).or_default();
+                if !merged.contains(&other.gacha_id) {
+                    merged.push(other.gacha_id);
+                }
+            }
+        }
+    }
+}
+
+/// Adds confirmations present only in an unreleased early CDN master and marks them preliminary.
+#[allow(non_snake_case)]
+fn applyEarlyConfirmations(
+    early: &PreliminaryMasterInput<'_>,
+    timeline_character_banners: &mut [TimelineCharacterBanner],
+    timeline_support_banners: &mut [TimelineSupportBanner],
+    timeline_paid_banners: &[TimelinePaidBanner],
+    additional_gacha_banners: &[AdditionalGachaBanner],
+    early_master_dates: Vec<ConfirmedTimelineDate>,
+    lookup: &mut ConfirmedDateLookup,
+) {
+    for banner in &early.character_banners {
+        if lookup.character.contains_key(&banner.gacha_id) {
+            continue;
+        }
+        let matches = timeline_character_banners
+            .iter()
+            .any(|timeline_banner| character_banner_matches_timeline(banner, timeline_banner))
+            || additional_gacha_banners.iter().any(|additional| {
+                additional.kind == AdditionalGachaKind::Character
+                    && additional.gacha_id == banner.gacha_id
+                    && matching_pickup_candidates(
+                        &banner.pickup_card_ids,
+                        &additional.pickup_card_ids,
+                    )
+            });
+        if matches {
+            lookup.character.insert(banner.gacha_id, banner.start_at);
+            lookup.preliminary_characters.insert(banner.gacha_id);
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.character_end_dates.insert(banner.gacha_id, end);
+            }
+        }
+    }
+    for banner in &early.support_banners {
+        if lookup.support.contains_key(&banner.gacha_id) {
+            continue;
+        }
+        let matches = timeline_support_banners
+            .iter()
+            .any(|timeline_banner| support_banner_matches_timeline(banner, timeline_banner))
+            || additional_gacha_banners.iter().any(|additional| {
+                additional.kind == AdditionalGachaKind::Support
+                    && additional.gacha_id == banner.gacha_id
+                    && matching_pickup_candidates(
+                        &banner.pickup_card_ids,
+                        &additional.pickup_card_ids,
+                    )
+            });
+        if matches {
+            lookup.support.insert(banner.gacha_id, banner.start_at);
+            lookup.preliminary_supports.insert(banner.gacha_id);
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.support_end_dates.insert(banner.gacha_id, end);
+            }
+        }
+    }
+    for banner in &early.paid_banners {
+        if lookup.paid.contains_key(&banner.gacha_id) {
+            continue;
+        }
+        if timeline_paid_banners
+            .iter()
+            .any(|timeline_banner| paid_banner_matches_timeline(banner, timeline_banner))
+        {
+            lookup.paid.insert(banner.gacha_id, banner.start_at);
+            lookup.preliminary_paid.insert(banner.gacha_id);
+            if let Some(end) = normalizedGlobalBannerEnd(banner.start_at, banner.end_at) {
+                lookup.paid_end_dates.insert(banner.gacha_id, end);
+            }
+        }
+    }
+
+    for date in early_master_dates {
+        let (confirmed, preliminary) = match date.kind {
+            ConfirmedTimelineKind::Story => (&mut lookup.story, &mut lookup.preliminary_story),
+            ConfirmedTimelineKind::Champions => {
+                (&mut lookup.champions, &mut lookup.preliminary_champions)
+            }
+            ConfirmedTimelineKind::Legend => (&mut lookup.legend, &mut lookup.preliminary_legend),
+            ConfirmedTimelineKind::Campaign => {
+                (&mut lookup.campaign, &mut lookup.preliminary_campaign)
+            }
+        };
+        if let std::collections::btree_map::Entry::Vacant(slot) = confirmed.entry(date.key.clone())
+        {
+            slot.insert(date.global_date);
+            preliminary.insert(date.key.clone());
+            lookup
+                .end_dates
+                .insert((date.kind, date.key), date.global_end_date);
+        }
+    }
+
+    applyGlobalBannerOverrides(
+        &early.character_banners,
+        &early.support_banners,
+        timeline_character_banners,
+        timeline_support_banners,
+        lookup,
+        true,
+    );
 }
 
 /// The timeline's own share of the resource version: its algorithm and the mission campaigns it
@@ -3434,10 +4256,31 @@ fn calculate_global_date(
     anchors: &[CalibrationAnchor],
     observed_rate: f64,
 ) -> DatePrediction {
+    calculateGlobalDateWithStatus(
+        jp_date,
+        confirmed_global_date,
+        false,
+        anchors,
+        observed_rate,
+    )
+}
+
+#[allow(non_snake_case)]
+fn calculateGlobalDateWithStatus(
+    jp_date: DateTime<Utc>,
+    confirmed_global_date: Option<DateTime<Utc>>,
+    is_preliminary: bool,
+    anchors: &[CalibrationAnchor],
+    observed_rate: f64,
+) -> DatePrediction {
     if let Some(global_date) = confirmed_global_date {
         return DatePrediction {
             global_date,
-            kind: PredictionKind::Confirmed,
+            kind: if is_preliminary {
+                PredictionKind::Preliminary
+            } else {
+                PredictionKind::Confirmed
+            },
             acceleration_rate: None,
             schedule_adjustment_days: None,
             anchor_jp_date: None,
@@ -3684,8 +4527,15 @@ fn timeline_anniversaries_through(
     loop {
         let jp_date = projected_jp_anniversary_date(index);
         let confirmed_global_date = confirmed_dates.anniversary.get(&index).copied();
-        let prediction =
-            calculate_global_date(jp_date, confirmed_global_date, anchors, observed_rate);
+        let is_preliminary = confirmed_global_date.is_some()
+            && confirmed_dates.preliminary_anniversary.contains(&index);
+        let prediction = calculateGlobalDateWithStatus(
+            jp_date,
+            confirmed_global_date,
+            is_preliminary,
+            anchors,
+            observed_rate,
+        );
         let global_date = prediction.global_date;
 
         if global_date > end_date {
@@ -3697,7 +4547,8 @@ fn timeline_anniversaries_through(
             label: anniversary_label(index),
             jp_date,
             global_date,
-            is_confirmed: confirmed_global_date.is_some(),
+            is_confirmed: confirmed_global_date.is_some() && !is_preliminary,
+            is_preliminary,
             schedule_adjustment_days: None,
         });
 
@@ -3723,6 +4574,7 @@ fn apply_closed_anniversary_adjustment(
         .iter()
         .filter(|anniversary| {
             !anniversary.is_confirmed
+                && !anniversary.is_preliminary
                 && latest_confirmed_jp.map_or(true, |latest_jp| {
                     normalize_to_midnight_utc(anniversary.jp_date) >= latest_jp
                 })
@@ -3741,7 +4593,9 @@ fn apply_closed_anniversary_adjustment(
 
     let adjustment_days = shift.num_days();
     for anniversary in anniversaries.iter_mut().filter(|anniversary| {
-        !anniversary.is_confirmed && anniversary.index >= first_unconfirmed_index
+        !anniversary.is_confirmed
+            && !anniversary.is_preliminary
+            && anniversary.index >= first_unconfirmed_index
     }) {
         anniversary.global_date += shift;
         anniversary.schedule_adjustment_days =
@@ -4887,18 +5741,28 @@ fn load_support_card_names(
     card_characters: &BTreeMap<i64, i64>,
 ) -> Result<BTreeMap<i64, String>> {
     let mut names = load_bundled_support_card_names()?;
+    let mut group_card_ids = loadBundledGroupSupportCardIds()?;
     names.extend(load_umapyoi_support_character_names(character_names)?);
     let mut statement = connection.prepare(
         r#"
-        SELECT id, chara_id
+        SELECT id, chara_id, support_card_type
         FROM support_card_data
         ORDER BY id
         "#,
     )?;
-    let rows = statement.query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, i64>(1)?,
+            row.get::<_, i64>(2)?,
+        ))
+    })?;
 
     for row in rows {
-        let (card_id, chara_id) = row?;
+        let (card_id, chara_id, support_card_type) = row?;
+        if support_card_type == GROUP_SUPPORT_CARD_TYPE {
+            group_card_ids.insert(card_id);
+        }
         if let Some(name) = character_names.get(&chara_id) {
             names.insert(card_id, name.clone());
         }
@@ -4908,6 +5772,20 @@ fn load_support_card_names(
     for (card_id, chara_id) in card_characters {
         if let Some(name) = character_names.get(chara_id) {
             names.entry(*card_id).or_insert_with(|| name.clone());
+        }
+    }
+
+    // Group support cards carry their own group name in text_data category 77
+    // (e.g. "Progenitors and Guides", "Team Sirius") rather than the representative Uma's name.
+    let card_display_names =
+        load_text_data_by_category(connection, SUPPORT_CARD_CHARACTER_NAME_CATEGORY)?;
+    for card_id in group_card_ids {
+        if let Some(group_name) = card_display_names
+            .get(&card_id)
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+        {
+            names.insert(card_id, group_name.to_string());
         }
     }
 
@@ -5019,6 +5897,25 @@ fn load_bundled_support_card_names() -> Result<BTreeMap<i64, String>> {
         .collect::<BTreeMap<_, _>>())
 }
 
+#[allow(non_snake_case)]
+fn loadBundledGroupSupportCardIds() -> Result<BTreeSet<i64>> {
+    let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(&store::bytes(
+        StoreFile::SupportCardsDb,
+    ))
+    .context("failed to parse store file support-cards-db.json for group support card ids")?;
+
+    Ok(raw_entries
+        .into_iter()
+        .filter(|entry| {
+            entry
+                .card_type
+                .as_deref()
+                .is_some_and(|card_type| card_type.eq_ignore_ascii_case("group"))
+        })
+        .filter_map(|entry| entry.id.parse::<i64>().ok())
+        .collect())
+}
+
 fn load_bundled_support_card_specific_names() -> Result<BTreeMap<i64, String>> {
     let raw_entries: Vec<RawSupportCardName> = serde_json::from_slice(&store::bytes(
         StoreFile::SupportCardsDb,
@@ -5117,13 +6014,21 @@ fn normalize_to_release_hour(date: DateTime<Utc>) -> DateTime<Utc> {
 }
 
 /// The latest month whose character and support banners are all known: the month before the
-/// newest one the Global master confirms, as the master holds a month's banners before any later
-/// one.
+/// newest one the live Global master confirms, as the master holds a month's banners before any
+/// later one. Preliminary early-CDN banners do not close a month before official release.
 fn latest_closed_global_month(confirmed_dates: &ConfirmedDateLookup) -> Option<(i32, u32)> {
     let latest = confirmed_dates
         .character
-        .values()
-        .chain(confirmed_dates.support.values())
+        .iter()
+        .filter(|(id, _)| !confirmed_dates.preliminary_characters.contains(id))
+        .map(|(_, date)| date)
+        .chain(
+            confirmed_dates
+                .support
+                .iter()
+                .filter(|(id, _)| !confirmed_dates.preliminary_supports.contains(id))
+                .map(|(_, date)| date),
+        )
         .max()?;
     Some(match latest.month() {
         1 => (latest.year() - 1, 12),
@@ -7059,6 +7964,21 @@ mod tests {
             anniversary: BTreeMap::new(),
             skipped_characters: BTreeSet::new(),
             skipped_supports: BTreeSet::new(),
+            absorbed_characters: BTreeSet::new(),
+            absorbed_supports: BTreeSet::new(),
+            merged_character_gachas: BTreeMap::new(),
+            merged_support_gachas: BTreeMap::new(),
+            character_end_dates: BTreeMap::new(),
+            support_end_dates: BTreeMap::new(),
+            paid_end_dates: BTreeMap::new(),
+            preliminary_characters: BTreeSet::new(),
+            preliminary_supports: BTreeSet::new(),
+            preliminary_paid: BTreeSet::new(),
+            preliminary_story: BTreeSet::new(),
+            preliminary_champions: BTreeSet::new(),
+            preliminary_legend: BTreeSet::new(),
+            preliminary_campaign: BTreeSet::new(),
+            preliminary_anniversary: BTreeSet::new(),
             end_dates: BTreeMap::new(),
         }
     }
@@ -7120,6 +8040,7 @@ mod tests {
             start_date_string: String::new(),
             end_date_string: String::new(),
             start_at,
+            end_at: start_at + chrono::Duration::days(10),
         }
     }
 
@@ -7137,6 +8058,7 @@ mod tests {
             end_date: String::new(),
             pickup_card_ids,
             start_at,
+            end_at: start_at + chrono::Duration::days(10),
         }
     }
 
@@ -7286,6 +8208,7 @@ mod tests {
             global_release_date,
             estimated_end_date: global_release_date,
             is_confirmed,
+            is_preliminary: false,
             banner_duration_days: 7,
             tags: Vec::new(),
             pickup_card_ids: Vec::new(),
@@ -7306,7 +8229,279 @@ mod tests {
                 anchor_jp_date: None,
                 anchor_global_date: None,
             },
+            preliminary_changes: None,
         }
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn mergedGlobalSupportBannerMatchesUpdatesPickupsAndAbsorbsNeighbor() {
+        let mut jp_30151 = test_timeline_support_banner(
+            30151,
+            vec![30134, 20056, 20057, 20058, 20059, 10088, 10089, 10091],
+        );
+        jp_30151.start_at = utc_date(2023, 2, 24, 3);
+        jp_30151.end_at = utc_date(2023, 3, 20, 2);
+        let mut jp_30155 = test_timeline_support_banner(30155, vec![30137, 20060]);
+        jp_30155.start_at = utc_date(2023, 3, 20, 3);
+        jp_30155.end_at = utc_date(2023, 3, 29, 3);
+        let mut jp_distant_rerun = test_timeline_support_banner(30999, vec![30137]);
+        jp_distant_rerun.start_at = utc_date(2024, 1, 1, 3);
+        jp_distant_rerun.end_at = utc_date(2024, 1, 10, 3);
+
+        let mut global_30151 = test_support_banner(
+            30151,
+            utc_date(2026, 12, 1, 22),
+            vec![
+                30134, 30137, 20056, 20057, 20058, 20059, 20060, 10088, 10089, 10091,
+            ],
+        );
+        global_30151.end_at = utc_date(2026, 12, 25, 22) - chrono::Duration::seconds(1);
+
+        let mut supports = vec![jp_30151, jp_30155, jp_distant_rerun];
+        let mut lookup = empty_confirmed_date_lookup();
+        assert!(super::support_banner_matches_timeline(
+            &global_30151,
+            &supports[0]
+        ));
+        lookup.support.insert(30151, global_30151.start_at);
+        lookup.preliminary_supports.insert(30151);
+
+        super::applyGlobalBannerOverrides(
+            &[],
+            &[global_30151.clone()],
+            &mut [],
+            &mut supports,
+            &mut lookup,
+            true,
+        );
+
+        assert!(supports[0].pickup_card_ids.contains(&30137));
+        assert!(supports[0].pickup_card_ids.contains(&20060));
+        assert!(lookup.absorbed_supports.contains(&30155));
+        assert!(!lookup.absorbed_supports.contains(&30999));
+        assert_eq!(lookup.merged_support_gachas.get(&30151), Some(&vec![30155]));
+        assert_eq!(
+            lookup.support_end_dates.get(&30151).copied(),
+            Some(utc_date(2026, 12, 25, 22))
+        );
+        // Preliminary banner must not close November 2026 on its own.
+        assert_eq!(latest_closed_global_month(&lookup), None);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn preliminaryBannerEventsKeepIsConfirmedFalseAndSkipAdjustments() {
+        let mut jp_30151 = test_timeline_support_banner(30151, vec![30134, 30137]);
+        jp_30151.start_at = utc_date(2023, 2, 24, 3);
+        jp_30151.end_at = utc_date(2023, 3, 20, 2);
+
+        let mut lookup = empty_confirmed_date_lookup();
+        lookup.support.insert(30151, utc_date(2026, 12, 1, 22));
+        lookup.preliminary_supports.insert(30151);
+        lookup
+            .support_end_dates
+            .insert(30151, utc_date(2026, 12, 25, 22));
+
+        let support_names = BTreeMap::from([
+            (30134, "Mejiro Ramonu".to_string()),
+            (30137, "Progenitors and Guides".to_string()),
+        ]);
+        let event = super::support_event(
+            &jp_30151,
+            &support_names,
+            &BTreeMap::new(),
+            &lookup,
+            &[],
+            FALLBACK_ACCELERATION_RATE,
+        );
+
+        assert!(!event.is_confirmed);
+        assert!(event.is_preliminary);
+        assert_eq!(event.prediction.kind, PredictionKind::Preliminary);
+        assert_eq!(event.global_release_date, utc_date(2026, 12, 1, 22));
+        assert_eq!(event.estimated_end_date, utc_date(2026, 12, 25, 22));
+        assert_eq!(event.banner_duration_days, 24);
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn groupSupportCardsUseGroupNameInsteadOfSourceUma() {
+        crate::store::requireStoreData!();
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                r#"
+                CREATE TABLE support_card_data (
+                    id INTEGER PRIMARY KEY,
+                    chara_id INTEGER NOT NULL,
+                    support_card_type INTEGER NOT NULL
+                );
+                CREATE TABLE text_data (
+                    category INTEGER NOT NULL,
+                    "index" INTEGER NOT NULL,
+                    text TEXT NOT NULL
+                );
+                INSERT INTO support_card_data VALUES
+                    (30134, 1086, 1),
+                    (30137, 9040, 3);
+                INSERT INTO text_data VALUES
+                    (77, 30134, 'Mejiro Ramonu'),
+                    (77, 30137, 'Progenitors and Guides');
+                "#,
+            )
+            .unwrap();
+        let character_names = BTreeMap::from([
+            (1086, "Mejiro Ramonu".to_string()),
+            (9040, "Darley Arabian".to_string()),
+        ]);
+
+        let names = super::load_support_card_names(&connection, &character_names, &BTreeMap::new())
+            .unwrap();
+
+        assert_eq!(names.get(&30134).map(String::as_str), Some("Mejiro Ramonu"));
+        assert_eq!(
+            names.get(&30137).map(String::as_str),
+            Some("Progenitors and Guides")
+        );
+    }
+
+    #[test]
+    #[allow(non_snake_case)]
+    fn annotatePreliminaryChangesOnlyFlagsBannersWithActualChanges() {
+        let mut base_char = test_timeline_event(
+            "banner-2023_30150",
+            utc_date(2023, 2, 24, 3),
+            utc_date(2026, 11, 28, 22),
+            false,
+        );
+        base_char.gacha_id = Some(30150);
+        base_char.pickup_card_ids = vec![105701];
+
+        let mut base_support = test_timeline_event_with_type(
+            "support-banner-2023_30151",
+            BannerTimelineEventType::SupportCardBanner,
+            utc_date(2023, 2, 24, 3),
+            utc_date(2026, 11, 28, 22),
+            false,
+        );
+        base_support.gacha_id = Some(30151);
+        base_support.pickup_card_ids = vec![30134];
+
+        let mut base_absorbed = test_timeline_event_with_type(
+            "support-banner-2023_30155",
+            BannerTimelineEventType::SupportCardBanner,
+            utc_date(2023, 3, 20, 3),
+            utc_date(2026, 12, 14, 22),
+            false,
+        );
+        base_absorbed.gacha_id = Some(30155);
+        base_absorbed.title = "Progenitors and Guides + 1 more".to_string();
+        base_absorbed.pickup_card_ids = vec![30137, 20060];
+
+        let mut prelim_char = base_char.clone();
+        prelim_char.global_release_date = utc_date(2026, 12, 1, 22);
+        prelim_char.is_preliminary = true;
+        prelim_char.prediction.kind = PredictionKind::Preliminary;
+
+        let mut prelim_support = base_support.clone();
+        prelim_support.global_release_date = utc_date(2026, 12, 1, 22);
+        prelim_support.is_preliminary = true;
+        prelim_support.prediction.kind = PredictionKind::Preliminary;
+        prelim_support.pickup_card_ids = vec![30134, 30137, 20060];
+        prelim_support.preliminary_changes = Some(super::PreliminaryEventChanges {
+            estimated_release_date: None,
+            estimated_end_date: None,
+            release_date_shift_days: None,
+            estimated_duration_days: None,
+            added_pickup_card_ids: Vec::new(),
+            removed_pickup_card_ids: Vec::new(),
+            merged_events: vec![super::PreliminaryMergedEvent {
+                event_id: String::new(),
+                gacha_id: 30155,
+                title: String::new(),
+                estimated_release_date: prelim_support.global_release_date,
+                pickup_card_ids: Vec::new(),
+            }],
+            preliminary_free_pulls: None,
+        });
+
+        let empty_calc = super::TimelineCalculation {
+            jp_launch_date: utc_date(2021, 2, 24, 0),
+            global_launch_date: utc_date(2025, 6, 26, 0),
+            fallback_acceleration_rate: 1.6,
+            observed_acceleration_rate: 1.6,
+            confirmed_anchor_count: 0,
+            character_banner_month_count_likelihoods: Vec::new(),
+            character_banner_gap_likelihoods: Vec::new(),
+            character_banner_weekday_likelihoods: Vec::new(),
+            character_banner_month_day_likelihoods: Vec::new(),
+            event_type_calendar_likelihoods: Vec::new(),
+            latest_closed_global_month: None,
+            unconfirmed_schedule_floor: None,
+            latest_confirmed_jp_date: None,
+            latest_confirmed_global_date: None,
+        };
+        let baseline = super::BannerTimeline {
+            version: super::TIMELINE_ALGORITHM_VERSION,
+            calculation: empty_calc.clone(),
+            anniversaries: Vec::new(),
+            card_names: BTreeMap::new(),
+            events: vec![base_char, base_support, base_absorbed],
+            preliminary: None,
+        };
+        let mut preliminary = super::BannerTimeline {
+            version: super::TIMELINE_ALGORITHM_VERSION,
+            calculation: empty_calc,
+            anniversaries: Vec::new(),
+            card_names: BTreeMap::new(),
+            events: vec![prelim_char, prelim_support],
+            preliminary: None,
+        };
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        let meta = crate::master_fetch::EarlyMasterMeta {
+            resource_version: "10008800".to_string(),
+            live_resource_version: "10008790".to_string(),
+            detected_at: "2026-11-24T19:35:00Z".to_string(),
+            last_modified: None,
+        };
+        let early = super::PreliminaryMasterInput {
+            connection: &conn,
+            meta: &meta,
+            character_banners: Vec::new(),
+            support_banners: Vec::new(),
+            paid_banners: Vec::new(),
+            free_pulls: BTreeMap::from([(30151, 120)]),
+            names: crate::jp_names::NameBook::default(),
+        };
+
+        super::annotatePreliminaryChanges(&baseline, &mut preliminary, &early);
+
+        // Unchanged character banner keeps its date without a Preliminary badge.
+        assert!(!preliminary.events[0].is_preliminary);
+        assert!(preliminary.events[0].preliminary_changes.is_none());
+        assert_eq!(
+            preliminary.events[0].prediction.kind,
+            PredictionKind::Extrapolated
+        );
+
+        // Merged support banner stays Preliminary with full diff metadata.
+        assert!(preliminary.events[1].is_preliminary);
+        let changes = preliminary.events[1]
+            .preliminary_changes
+            .as_ref()
+            .expect("changed banner should keep preliminary_changes");
+        assert_eq!(changes.added_pickup_card_ids, vec![30137, 20060]);
+        assert_eq!(changes.merged_events.len(), 1);
+        assert_eq!(changes.preliminary_free_pulls, Some(120));
+
+        let summary = preliminary
+            .preliminary
+            .as_ref()
+            .expect("changed banners should populate top-level summary");
+        assert_eq!(summary.event_ids, vec!["support-banner-2023_30151"]);
+        assert_eq!(summary.merged_event_ids, vec!["support-banner-2023_30155"]);
     }
 
     fn assert_webp_reference(image: &str) {

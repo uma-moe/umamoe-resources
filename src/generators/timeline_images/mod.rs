@@ -49,10 +49,15 @@ pub struct TimelineEvent {
     pub jp_release_date: String,
     pub global_release_date: String,
     pub is_confirmed: bool,
+    pub is_preliminary: bool,
     pub umapyoi_url: Option<String>,
 }
 
 impl TimelineEvent {
+    fn has_global_schedule(&self) -> bool {
+        self.is_confirmed || self.is_preliminary
+    }
+
     fn gacha_ids(&self) -> Vec<i64> {
         let mut ids = Vec::new();
         for id in self.gacha_id.iter().chain(&self.gacha_ids) {
@@ -181,6 +186,9 @@ pub struct BannerImagePlan {
 pub struct PlannedBanner {
     pub japanese: Option<String>,
     pub english: Option<EnglishSource>,
+    /// Gacha IDs eligible for early/fallback English banner art from the Global game CDN when the
+    /// official announcement header has not been uploaded yet.
+    pub cdn_gacha_ids: Vec<i64>,
     /// Whether the site shows English art for the banner when it has any. A Champions Meeting
     /// keeps its Japanese art until it is confirmed.
     pub prefers_english: bool,
@@ -206,6 +214,16 @@ pub fn plan_from_news(events: &[TimelineEvent], news: &BannerNews) -> BannerImag
         if let Some(image_path) = banner_image_path(event) {
             let banner = plan.banners.entry(image_path).or_default();
             banner.prefers_english |= site_prefers_english(event);
+            if matches!(
+                event.event_type.as_str(),
+                "character_banner" | "support_card_banner" | "paid_banner"
+            ) {
+                for id in event.gacha_ids() {
+                    if !banner.cdn_gacha_ids.contains(&id) {
+                        banner.cdn_gacha_ids.push(id);
+                    }
+                }
+            }
         }
     }
 
@@ -219,7 +237,7 @@ pub fn plan_from_news(events: &[TimelineEvent], news: &BannerNews) -> BannerImag
 }
 
 fn site_prefers_english(event: &TimelineEvent) -> bool {
-    event.event_type != "champions_meeting" || event.is_confirmed
+    event.event_type != "champions_meeting" || event.has_global_schedule()
 }
 
 /// The picture an event shows. An event without one shows its type's picture for its master

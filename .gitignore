@@ -5,6 +5,8 @@
 .env.local
 master.mdb
 master.mdb.version
+early-master.mdb
+early-master.mdb.version
 jp-master.mdb
 __pycache__/
 *.py[cod]

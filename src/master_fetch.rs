@@ -2,12 +2,18 @@
 
 use crate::game_cdn::{self, CdnSource};
 use anyhow::{Context, Result};
+use chrono::Utc;
 use std::path::{Path, PathBuf};
-use tracing::info;
+use tokio::task::JoinSet;
+use tracing::{info, warn};
 
 #[path = "types/master_fetch.rs"]
 mod types;
-use types::{GameVersion, VERSION_URL, VERSION_URL_VARIABLE};
+pub use types::{EarlyMaster, EarlyMasterMeta};
+use types::{
+    GameVersion, EARLY_PROBE_CONCURRENCY, EARLY_PROBE_MAX_STEPS, EARLY_PROBE_STEP, VERSION_URL,
+    VERSION_URL_VARIABLE,
+};
 
 pub(crate) async fn fetchMasterMdb(
     source: &CdnSource,
@@ -118,6 +124,181 @@ pub(crate) fn localResourceVersion(mdb_path: &Path) -> Option<String> {
 pub(crate) fn jpMasterPath(master: &Path) -> PathBuf {
     let name = master.file_name().unwrap_or_default().to_string_lossy();
     master.with_file_name(format!("jp-{name}"))
+}
+
+/// Where an unreleased Global master staged ahead of the live app version is kept: beside
+/// `master.mdb` as `early-master.mdb`.
+pub(crate) fn earlyMasterPath(master: &Path) -> PathBuf {
+    let name = master.file_name().unwrap_or_default().to_string_lossy();
+    master.with_file_name(format!("early-{name}"))
+}
+
+/// The staged early Global master when present on disk and strictly ahead of the live master.
+pub(crate) fn localEarlyMaster(live_master: &Path) -> Option<EarlyMaster> {
+    let path = earlyMasterPath(live_master);
+    if !path.is_file() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(markerPath(&path)).ok()?;
+    let meta: EarlyMasterMeta = serde_json::from_str(&raw).ok()?;
+    let early_version: u64 = meta.resource_version.trim().parse().ok()?;
+    if let Some(live_version) =
+        localResourceVersion(live_master).and_then(|version| version.trim().parse::<u64>().ok())
+    {
+        if early_version <= live_version {
+            return None;
+        }
+    }
+    Some(EarlyMaster { path, meta })
+}
+
+/// The newest Global CDN resource version known locally: the early staged version when one is
+/// ahead of live, else the live master's version.
+pub(crate) fn latestGlobalResourceVersion(live_master: &Path) -> Option<String> {
+    localEarlyMaster(live_master)
+        .map(|early| early.meta.resource_version)
+        .or_else(|| localResourceVersion(live_master))
+}
+
+/// Probes the Global CDN ahead of the live master's resource version for an unreleased upload.
+/// Downloads it to `early-master.mdb` when found, or removes stale early files once live catches
+/// up. Returns `true` when the local early master changed (created, updated, or cleared).
+pub async fn maybeUpdateEarlyMasterMdb(source: &CdnSource, live_master: &Path) -> Result<bool> {
+    if source.hashed_root {
+        return Ok(false);
+    }
+    let Some(live_version_str) = localResourceVersion(live_master) else {
+        return Ok(false);
+    };
+    let Ok(live_version) = live_version_str.trim().parse::<u64>() else {
+        return Ok(false);
+    };
+
+    let client = reqwest::Client::new();
+    let found = probeHighestAhead(
+        &client,
+        source.base_url,
+        live_version,
+        EARLY_PROBE_STEP,
+        EARLY_PROBE_MAX_STEPS,
+    )
+    .await?;
+
+    let early_path = earlyMasterPath(live_master);
+    let early_marker = markerPath(&early_path);
+
+    let Some((candidate, last_modified)) = found else {
+        return Ok(clearEarlyMasterFiles(&early_path, &early_marker));
+    };
+
+    let candidate_version = candidate.to_string();
+    let existing = std::fs::read_to_string(&early_marker)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<EarlyMasterMeta>(&raw).ok());
+    if early_path.is_file()
+        && existing.as_ref().is_some_and(|meta| {
+            meta.resource_version == candidate_version && meta.last_modified == last_modified
+        })
+    {
+        info!(
+            region = source.region,
+            early_resource_version = candidate_version,
+            live_resource_version = live_version_str,
+            "early master.mdb is up to date"
+        );
+        return Ok(false);
+    }
+
+    info!(
+        region = source.region,
+        early_resource_version = candidate_version,
+        live_resource_version = live_version_str,
+        last_modified = last_modified.as_deref().unwrap_or("unknown"),
+        "Found unreleased CDN resource version ahead of live; downloading early master.mdb"
+    );
+    fetchMasterMdb(source, &candidate_version, &early_path).await?;
+    let meta = EarlyMasterMeta {
+        resource_version: candidate_version,
+        live_resource_version: live_version_str,
+        detected_at: Utc::now().to_rfc3339(),
+        last_modified,
+    };
+    let body = serde_json::to_vec_pretty(&meta)?;
+    std::fs::write(&early_marker, body).with_context(|| {
+        format!(
+            "failed to write early master marker to {}",
+            early_marker.display()
+        )
+    })?;
+    Ok(true)
+}
+
+fn clearEarlyMasterFiles(early_path: &Path, early_marker: &Path) -> bool {
+    let mut removed = false;
+    for path in [early_path, early_marker] {
+        if path.exists() {
+            match std::fs::remove_file(path) {
+                Ok(()) => removed = true,
+                Err(error) => warn!(
+                    path = %path.display(),
+                    error = %error,
+                    "failed to remove stale early master file"
+                ),
+            }
+        }
+    }
+    if removed {
+        info!("Cleared stale early master.mdb after live version caught up");
+    }
+    removed
+}
+
+async fn probeHighestAhead(
+    client: &reqwest::Client,
+    base_url: &str,
+    live_version: u64,
+    step: u64,
+    max_steps: u64,
+) -> Result<Option<(u64, Option<String>)>> {
+    let base = base_url.trim_end_matches('/').to_string();
+    let mut pending = (1..=max_steps).map(|index| live_version + index * step);
+    let mut tasks = JoinSet::new();
+    let mut highest: Option<(u64, Option<String>)> = None;
+
+    loop {
+        while tasks.len() < EARLY_PROBE_CONCURRENCY {
+            let Some(candidate) = pending.next() else {
+                break;
+            };
+            let client = client.clone();
+            let url = format!("{base}/{candidate}/manifests/manifestdat/root.manifest.bsv.lz4");
+            tasks.spawn(async move {
+                let outcome = game_cdn::probeRootManifestUrl(&client, &url).await;
+                (candidate, outcome)
+            });
+        }
+        let Some(joined) = tasks.join_next().await else {
+            break;
+        };
+        let (candidate, outcome) = joined.context("early CDN probe task failed")?;
+        match outcome {
+            Ok(Some(last_modified)) => {
+                if highest.as_ref().is_none_or(|(best, _)| candidate > *best) {
+                    highest = Some((candidate, last_modified));
+                }
+            }
+            Ok(None) => {}
+            Err(error) => {
+                warn!(
+                    candidate,
+                    error = format!("{error:#}"),
+                    "early CDN version probe failed"
+                );
+            }
+        }
+    }
+
+    Ok(highest)
 }
 
 /// The version marker next to master.mdb.
@@ -303,5 +484,103 @@ mod tests {
             Some("10021450:TZH99sxhsgYr")
         );
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn earlyMasterIsIgnoredOnceLiveCatchesUp() {
+        assert_eq!(
+            earlyMasterPath(Path::new("data/master.mdb")),
+            Path::new("data/early-master.mdb")
+        );
+
+        let folder = std::env::temp_dir().join(format!(
+            "early-master-marker-{}-{}",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        std::fs::create_dir_all(&folder).unwrap();
+        let live = folder.join("master.mdb");
+        let early = earlyMasterPath(&live);
+        std::fs::write(&live, b"live").unwrap();
+        std::fs::write(&early, b"early").unwrap();
+        std::fs::write(markerPath(&live), "1.35.5:10008790\n").unwrap();
+        let meta = EarlyMasterMeta {
+            resource_version: "10008800".to_string(),
+            live_resource_version: "10008790".to_string(),
+            detected_at: "2026-11-24T12:00:00Z".to_string(),
+            last_modified: Some("Tue, 24 Nov 2026 11:14:05 GMT".to_string()),
+        };
+        std::fs::write(markerPath(&early), serde_json::to_vec(&meta).unwrap()).unwrap();
+
+        let loaded = localEarlyMaster(&live).expect("early master ahead of live should load");
+        assert_eq!(loaded.meta.resource_version, "10008800");
+        assert_eq!(
+            latestGlobalResourceVersion(&live).as_deref(),
+            Some("10008800")
+        );
+
+        // Once live reaches 10008800, the early master must no longer apply.
+        std::fs::write(markerPath(&live), "1.36.0:10008800\n").unwrap();
+        assert!(localEarlyMaster(&live).is_none());
+        assert_eq!(
+            latestGlobalResourceVersion(&live).as_deref(),
+            Some("10008800")
+        );
+
+        assert!(clearEarlyMasterFiles(&early, &markerPath(&early)));
+        assert!(!early.exists());
+        assert!(!clearEarlyMasterFiles(&early, &markerPath(&early)));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[tokio::test]
+    async fn probeHighestAheadPicksNewestUploadedManifest() {
+        use axum::http::{header, HeaderMap, StatusCode};
+        use axum::{routing::head, Router};
+
+        let app = Router::new()
+            .route(
+                "/10008800/manifests/manifestdat/root.manifest.bsv.lz4",
+                head(|| async {
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        header::LAST_MODIFIED,
+                        "Tue, 24 Nov 2026 11:14:05 GMT".parse().unwrap(),
+                    );
+                    (StatusCode::OK, headers)
+                }),
+            )
+            .route(
+                "/10008830/manifests/manifestdat/root.manifest.bsv.lz4",
+                head(|| async {
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        header::LAST_MODIFIED,
+                        "Wed, 25 Nov 2026 09:00:00 GMT".parse().unwrap(),
+                    );
+                    (StatusCode::OK, headers)
+                }),
+            )
+            .fallback(|| async { StatusCode::FORBIDDEN });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = reqwest::Client::new();
+        let base = format!("http://{address}");
+        let found = probeHighestAhead(&client, &base, 10008790, 10, 5)
+            .await
+            .unwrap();
+        assert_eq!(
+            found,
+            Some((10008830, Some("Wed, 25 Nov 2026 09:00:00 GMT".to_string())))
+        );
+
+        let none = probeHighestAhead(&client, &base, 10008830, 10, 5)
+            .await
+            .unwrap();
+        assert_eq!(none, None);
+        server.abort();
     }
 }
