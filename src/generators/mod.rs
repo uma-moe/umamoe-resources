@@ -52,7 +52,7 @@ pub fn generate_all(
         Some(jp) => crate::jp_names::masterGachas(jp)?,
         None => Vec::new(),
     };
-    let mut timeline = serde_json::to_value(timeline::generate(
+    let banner_timeline = timeline::generate(
         connection,
         jp_connection,
         jp_names,
@@ -61,7 +61,8 @@ pub fn generate_all(
         &character_banners,
         &support_banners,
         &paid_banners,
-    )?)?;
+    )?;
+    let mut timeline = serde_json::to_value(&banner_timeline)?;
     let planner = planner::generate(
         connection,
         jp_connection,
@@ -83,7 +84,7 @@ pub fn generate_all(
         )?,
         output(
             "room_match_races.json",
-            room_match_races::generate(connection, jp_names)?,
+            room_match_races::generate(connection, jp_names, &banner_timeline.events)?,
         )?,
         output(
             "simulator_skills.json",
@@ -150,10 +151,7 @@ pub fn generate_jp(jp: &Connection, global: &Connection) -> Result<Vec<ResourceO
         output("factors.json", factors::generate(jp)?)?,
         output("race_program.json", race_program::generate(jp)?)?,
         output("race_to_saddle_mapping.json", race_to_saddle::generate(jp)?)?,
-        output(
-            "room_match_races.json",
-            room_match_races::generate(jp, None)?,
-        )?,
+        output("room_match_races.json", room_match_races::generate_jp(jp)?)?,
         output(
             "character_banners.json",
             banners::generate_character_banners(jp)?,

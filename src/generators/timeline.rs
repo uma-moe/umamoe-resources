@@ -4426,7 +4426,7 @@ fn timeline_table_exists(connection: &Connection, table: &str) -> Result<bool> {
     Ok(count > 0)
 }
 
-fn master_timestamp(timestamp: i64) -> Result<DateTime<Utc>> {
+pub(crate) fn master_timestamp(timestamp: i64) -> Result<DateTime<Utc>> {
     Utc.timestamp_opt(timestamp, 0)
         .single()
         .with_context(|| format!("invalid master timestamp {timestamp}"))
