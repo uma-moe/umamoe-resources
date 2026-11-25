@@ -52,9 +52,12 @@ WEBP_QUALITY = 90
 GLB_JSON_CHUNK = 0x4E4F534A
 
 
-def read_images(environment: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def read_images(
+    environment: Any,
+) -> tuple[dict[str, Any], dict[str, Any], dict[int, Any]]:
     sprites: dict[str, Any] = {}
     textures: dict[str, Any] = {}
+    textures_by_id: dict[int, Any] = {}
     for obj in environment.objects:
         if obj.type.name == "Sprite":
             data = obj.read()
@@ -62,21 +65,105 @@ def read_images(environment: Any) -> tuple[dict[str, Any], dict[str, Any]]:
         elif obj.type.name == "Texture2D":
             data = obj.read()
             textures[data.m_Name] = data
+            textures_by_id[obj.path_id] = data
 
-    return sprites, textures
+    return sprites, textures, textures_by_id
 
 
-def pick_image(sprites: dict[str, Any], textures: dict[str, Any], name: str) -> Image.Image:
+def resolve_flash_texture(
+    group: dict[str, Any],
+    textures: dict[str, Any],
+    textures_by_id: dict[int, Any],
+) -> Any | None:
+    color = group.get("_textureSetColor")
+    if isinstance(color, dict):
+        path_id = color.get("m_PathID")
+        if path_id and path_id in textures_by_id:
+            return textures_by_id[path_id]
+
+    base = group.get("_textureSetName")
+    if isinstance(base, str):
+        return textures.get(base) or textures.get(f"{base}_C")
+
+    return None
+
+
+def crop_flash_sprite(
+    sheet: Image.Image,
+    uv_offset: dict[str, float],
+    uv_size: dict[str, float],
+    rotated: int,
+) -> Image.Image:
+    width, height = sheet.size
+    left = round(uv_offset["x"] * width)
+    right = round((uv_offset["x"] + uv_size["x"]) * width)
+    # Unity texture UVs start at the bottom; PIL image coordinates start at the top.
+    top = round((1.0 - (uv_offset["y"] + uv_size["y"])) * height)
+    bottom = round((1.0 - uv_offset["y"]) * height)
+    piece = sheet.crop((left, top, right, bottom))
+    if rotated:
+        piece = piece.transpose(Image.Transpose.ROTATE_90)
+    return piece
+
+
+def read_flash_sprites(
+    environment: Any,
+    textures: dict[str, Any],
+    textures_by_id: dict[int, Any],
+) -> dict[str, tuple[Any, dict[str, float], dict[str, float], int]]:
+    """Named pieces from Flash UI prefabs, mapped to their texture and UV rect."""
+    flash: dict[str, tuple[Any, dict[str, float], dict[str, float], int]] = {}
+    for obj in environment.objects:
+        if obj.type.name != "MonoBehaviour":
+            continue
+        try:
+            tree = obj.read_typetree()
+        except Exception:
+            continue
+        groups = tree.get("_meshParameterGroupList")
+        if not isinstance(groups, list):
+            continue
+        for group in groups:
+            texture = resolve_flash_texture(group, textures, textures_by_id)
+            if texture is None:
+                continue
+            for item in group.get("_meshInfoParameterList", []):
+                name = item.get("_textureName")
+                uv_offset = item.get("_uvOffset")
+                uv_size = item.get("_uvSize")
+                if name and isinstance(uv_offset, dict) and isinstance(uv_size, dict):
+                    flash[name] = (texture, uv_offset, uv_size, int(item.get("_rotated", 0)))
+
+    return flash
+
+
+def pick_image(
+    sprites: dict[str, Any],
+    textures: dict[str, Any],
+    name: str,
+    flash_sprites: dict[str, tuple[Any, dict[str, float], dict[str, float], int]] | None = None,
+    decoded_sheets: dict[str, Image.Image] | None = None,
+) -> Image.Image:
     # Atlases hold many named sprites; single-image bundles hold one texture named like the file.
     if name in sprites:
         return sprites[name].image
     if name in textures:
         return textures[name].image
+    if flash_sprites and name in flash_sprites:
+        texture, uv_offset, uv_size, rotated = flash_sprites[name]
+        if decoded_sheets is not None:
+            sheet = decoded_sheets.get(texture.m_Name)
+            if sheet is None:
+                sheet = texture.image
+                decoded_sheets[texture.m_Name] = sheet
+        else:
+            sheet = texture.image
+        return crop_flash_sprite(sheet, uv_offset, uv_size, rotated)
     # An atlas's one texture holds all its sprites, so only a bundle without sprites falls back.
     if not sprites and len(textures) == 1:
         return next(iter(textures.values())).image
 
-    available = sorted([*sprites, *textures])
+    available = sorted([*sprites, *textures, *(flash_sprites or ())])
     raise ValueError(f"no sprite or texture named {name!r}; bundle has {available[:20]}")
 
 
@@ -170,6 +257,8 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
         environment = UnityPy.load(*bundle_paths)
 
         images = None
+        flash_sprites = None
+        decoded_sheets: dict[str, Image.Image] = {}
         written = []
         files = []
         shaders: set[str] = set()
@@ -181,7 +270,17 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
                 files.extend(export_json(environment, job, output))
             else:
                 images = images or read_images(environment)
-                save_image(pick_image(*images, output["object"]), output)
+                sprites, textures, textures_by_id = images
+                if (
+                    output["object"] not in sprites
+                    and output["object"] not in textures
+                    and flash_sprites is None
+                ):
+                    flash_sprites = read_flash_sprites(environment, textures, textures_by_id)
+                image = pick_image(
+                    sprites, textures, output["object"], flash_sprites, decoded_sheets
+                )
+                save_image(image, output)
             written.append(output["path"])
         return {
             "bundle": job["bundle"],
@@ -195,7 +294,7 @@ def convert_bundle(job: dict[str, Any]) -> dict[str, Any]:
 
 
 def inspect_bundle(bundle_path: str) -> dict[str, Any]:
-    sprites, textures = read_images(UnityPy.load(bundle_path))
+    sprites, textures, _ = read_images(UnityPy.load(bundle_path))
     return {
         "bundle": bundle_path,
         "sprites": {name: list(sprite.image.size) for name, sprite in sorted(sprites.items())},

@@ -175,8 +175,9 @@ impl Catalog {
     }
 }
 
-/// The CDN categories the catalog reads from: the first segment of each picture's game path,
-/// the category that lists race tracks and the shader bundle's, which models look shaders up in.
+/// The CDN categories the catalog reads from: the first segment of each picture's game path
+/// (except `sourceresources`, whose files live in `_3d_cutt` and `uianimation`), the category
+/// that lists race tracks and the shader bundle's, which models look shaders up in.
 pub(super) fn catalogCategories() -> Vec<&'static str> {
     let mut categories: Vec<&str> = ART_FAMILIES
         .iter()
@@ -186,6 +187,7 @@ pub(super) fn catalogCategories() -> Vec<&'static str> {
         .chain(OUTFIT_PICTURES.iter().map(|picture| picture.source))
         .chain(ATLAS_FAMILIES.iter().map(|family| family.atlas))
         .filter_map(|source| source.split('/').next())
+        .filter(|category| *category != "sourceresources")
         .chain([TRACK_CATEGORY, SHADER_BUNDLE])
         .collect();
     categories.sort_unstable();
@@ -464,7 +466,7 @@ fn plannedOutputs(
         .iter()
         .map(|output| PlannedOutput {
             key: fillPattern(output.path, captures),
-            object: object.to_string(),
+            object: output.object.unwrap_or(object).to_string(),
             fit: output.fit,
         })
         .collect()
@@ -875,16 +877,66 @@ mod tests {
         let catalog = Catalog::fromOutfits(&SPECIAL_WEEK);
         let mut seen = std::collections::HashSet::new();
 
+        let family_keys = ART_FAMILIES
+            .iter()
+            .flat_map(|family| family.outputs.iter())
+            .map(|output| output.path.to_string());
         let duplicates: Vec<String> = catalog
             .atlases
             .values()
             .flat_map(|plan| plan.outputs.iter())
             .chain(catalog.portraits.values().flatten())
-            .filter(|output| !seen.insert(output.key.clone()))
             .map(|output| output.key.clone())
+            .chain(family_keys)
+            .filter(|key| !seen.insert(key.clone()))
             .collect();
 
         assert!(duplicates.is_empty(), "{duplicates:?}");
+    }
+
+    #[test]
+    fn gachaGatesFlashPiecesAndAtlasSpritesResolveToTheirObjects() {
+        let catalog = Catalog::fromOutfits(&[]);
+
+        let bookmarks = catalog
+            .outputs("sourceresources/3d/env/gacha/gacha_support_card00/materials/mtl_env_gacha_support_card00_bookmark00")
+            .unwrap();
+        assert_eq!(bookmarks.len(), 1);
+        assert_eq!(bookmarks[0].key, "art/gacha/gates/support-bookmarks.webp");
+        assert_eq!(
+            bookmarks[0].object,
+            "tex_env_gacha_support_card00_bookmark00"
+        );
+        assert_eq!(bookmarks[0].fit, Fit::Native);
+
+        let backs = catalog
+            .outputs("uianimation/flash/chara/prefab/pf_fl_chara_supportcard00")
+            .unwrap();
+        assert_eq!(
+            backs
+                .iter()
+                .map(|o| (o.object.as_str(), o.key.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("R", "art/gacha/cards/back-r.webp"),
+                ("SR", "art/gacha/cards/back-sr.webp"),
+                ("SSR", "art/gacha/cards/back-ssr.webp"),
+            ]
+        );
+
+        let gacha_atlas = catalog.outputs("atlas/gacha/gacha").unwrap();
+        assert_eq!(
+            catalog.dependencies("atlas/gacha/gacha"),
+            Dependencies::AtlasTexture("atlas/gacha/gacha_tex")
+        );
+        assert!(gacha_atlas.iter().any(|o| {
+            o.object == "img_supportcard_ssr_frame_effect"
+                && o.key == "art/gacha/frames/card-glow-ssr.webp"
+        }));
+        assert!(gacha_atlas.iter().any(|o| {
+            o.object == "utx_txt_gacha_ribbontext_05_20"
+                && o.key == "art/gacha/ribbons/per-day-20.webp"
+        }));
     }
 
     #[test]

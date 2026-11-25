@@ -20,7 +20,7 @@ const INDEX_FILE: &str = "index.json";
 
 /// Folders below `art/` listed file by file, for browsing; nothing needs them to load an uma.
 const LIBRARY_FOLDERS: &[&str] = &[
-    "motions", "effects", "props", "cutins", "skills", "races", "items", "ui",
+    "motions", "effects", "props", "cutins", "skills", "races", "items", "ui", "gacha",
 ];
 
 const SHARED_SCENERY_FOLDER: &str = "racecourses/shared";
@@ -1133,6 +1133,33 @@ mod tests {
             json!({"schema": 1, "folders": ["/art/motions/race/index.json"]})
         );
         assert_eq!(bright["files"].as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn gachaLibraryFolderIsIndexedInRootAndBySubfolder() {
+        let catalog = catalog();
+        let layout = Layout::new(&catalog, &sources());
+        let mut state = ArtState::default();
+        state.files.insert(
+            "sourceresources/3d/env/gacha/gacha_support_card00/materials/mtl_env_gacha_support_card00_bookmark00"
+                .to_string(),
+            record("art/gacha/gates/support-bookmarks.webp", &[]),
+        );
+
+        let documents = directoryDocuments(&catalog, &layout, &state).unwrap();
+        let root = document(&documents, "art/index.json");
+        let gacha = document(&documents, "art/gacha/index.json");
+        let gates = document(&documents, "art/gacha/gates/index.json");
+
+        assert_eq!(root["sections"]["gacha"], "/art/gacha/index.json");
+        assert_eq!(
+            gacha,
+            json!({"schema": 1, "folders": ["/art/gacha/gates/index.json"]})
+        );
+        assert_eq!(
+            gates,
+            json!({"schema": 1, "files": ["/art/gacha/gates/support-bookmarks.webp"]})
+        );
     }
 
     #[test]

@@ -204,13 +204,32 @@ pub(super) enum Fit {
 }
 
 pub(super) struct ArtOutput {
+    /// Sprite, texture or Flash piece inside the bundle; `None` uses the bundle's file name.
+    pub(super) object: Option<&'static str>,
     pub(super) path: &'static str,
     pub(super) fit: Fit,
 }
 
 impl ArtOutput {
+    const fn native(path: &'static str) -> Self {
+        Self {
+            object: None,
+            path,
+            fit: Fit::Native,
+        }
+    }
+
+    const fn named(object: &'static str, path: &'static str) -> Self {
+        Self {
+            object: Some(object),
+            path,
+            fit: Fit::Native,
+        }
+    }
+
     const fn resized(path: &'static str, size: (u32, u32)) -> Self {
         Self {
+            object: None,
             path,
             fit: Fit::Resize(size.0, size.1),
         }
@@ -218,6 +237,7 @@ impl ArtOutput {
 
     const fn centred(path: &'static str, size: (u32, u32), art: (u32, u32)) -> Self {
         Self {
+            object: None,
             path,
             fit: Fit::Centre { size, art },
         }
@@ -265,6 +285,208 @@ pub(super) const ART_FAMILIES: &[ArtFamily] = &[
     ArtFamily {
         source: "item/item_icon_{item}",
         outputs: &[ArtOutput::resized("art/items/{item}.webp", (128, 128))],
+    },
+    // High-res support card rarity shields (128 px), beside the smaller atlas/common icons.
+    ArtFamily {
+        source: "uianimation/flash/singlemode/supportrarity/supportcard_rarity_00",
+        outputs: &[ArtOutput::native("art/ui/support-rarities/r-large.webp")],
+    },
+    ArtFamily {
+        source: "uianimation/flash/singlemode/supportrarity/supportcard_rarity_01",
+        outputs: &[ArtOutput::native("art/ui/support-rarities/sr-large.webp")],
+    },
+    ArtFamily {
+        source: "uianimation/flash/singlemode/supportrarity/supportcard_rarity_02",
+        outputs: &[ArtOutput::native("art/ui/support-rarities/ssr-large.webp")],
+    },
+    // 3D gacha gate, bookmark, door and album textures (listed in `_3d_cutt`).
+    ArtFamily {
+        source: "sourceresources/3d/env/gacha/gacha_support_card00/materials/mtl_env_gacha_support_card00_bookmark00",
+        outputs: &[ArtOutput::named(
+            "tex_env_gacha_support_card00_bookmark00",
+            "art/gacha/gates/support-bookmarks.webp",
+        )],
+    },
+    ArtFamily {
+        source: "sourceresources/3d/env/gacha/gacha_support_card00/materials/mtl_env_gacha_support_card00_album00",
+        outputs: &[ArtOutput::named(
+            "tex_env_gacha_support_card00_album00",
+            "art/gacha/gates/support-album.webp",
+        )],
+    },
+    ArtFamily {
+        source: "sourceresources/3d/env/gacha/gacha_chara00/materials/mtl_env_gacha_chara00_gate00",
+        outputs: &[ArtOutput::named(
+            "tex_env_gacha_chara00_gate00",
+            "art/gacha/gates/character.webp",
+        )],
+    },
+    ArtFamily {
+        source: "sourceresources/3d/env/gacha/gacha_chara00/materials/mtl_env_gacha_chara00_corridor00_door00_ssr",
+        outputs: &[ArtOutput::named(
+            "tex_env_gacha_chara00_corridor00_door00_ssr",
+            "art/gacha/gates/ssr-door.webp",
+        )],
+    },
+    // Support card detail rarity backgrounds.
+    ArtFamily {
+        source: "outgame/supportcarddetails/tex_supportcard_bg_sr",
+        outputs: &[ArtOutput::native("art/gacha/backgrounds/card-sr.webp")],
+    },
+    ArtFamily {
+        source: "outgame/supportcarddetails/tex_supportcard_bg_ssr",
+        outputs: &[ArtOutput::native("art/gacha/backgrounds/card-ssr.webp")],
+    },
+    ArtFamily {
+        source: "outgame/supportcarddetails/tex_supportcard_diagonalline",
+        outputs: &[ArtOutput::native("art/gacha/backgrounds/diagonal-lines.webp")],
+    },
+    // Gacha UI animation standalone textures.
+    ArtFamily {
+        source: "uianimation/uiunityanimation/gacha/texture/utx_gacha_white_alpha_gradation00",
+        outputs: &[ArtOutput::native("art/gacha/effects/white-fade.webp")],
+    },
+    ArtFamily {
+        source: "sourceresources/uiunityanimation/gacha/gacha_chara_comment00/texture/uieff_tx_gacha_cross01",
+        outputs: &[ArtOutput::native("art/gacha/effects/sparkle-cross.webp")],
+    },
+    // Flash UI prefabs: named pieces cut from each prefab's texture sheet by its mesh UVs.
+    ArtFamily {
+        source: "uianimation/flash/chara/prefab/pf_fl_chara_supportcard00",
+        outputs: &[
+            ArtOutput::named("R", "art/gacha/cards/back-r.webp"),
+            ArtOutput::named("SR", "art/gacha/cards/back-sr.webp"),
+            ArtOutput::named("SSR", "art/gacha/cards/back-ssr.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/chara/prefab/pf_fl_chara_limit_break00",
+        outputs: &[
+            ArtOutput::named("img_frm_card_silver00", "art/gacha/frames/card-r.webp"),
+            ArtOutput::named("img_frm_card_gold00", "art/gacha/frames/card-sr.webp"),
+            ArtOutput::named("img_frm_card_rainbow00", "art/gacha/frames/card-ssr.webp"),
+            ArtOutput::named(
+                "img_glow_frm_card00",
+                "art/gacha/frames/card-glow-white-large.webp",
+            ),
+            ArtOutput::named("utx_ico_limit_00", "art/ui/limit-break/filled-large.webp"),
+            ArtOutput::named("utx_ico_limit_01", "art/ui/limit-break/empty-large.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_supportcard_open00",
+        outputs: &[
+            ArtOutput::named("tx_icon_r_sq00", "art/gacha/frames/reveal-card-r.webp"),
+            ArtOutput::named("tx_icon_sr_sq00", "art/gacha/frames/reveal-card-sr.webp"),
+            ArtOutput::named(
+                "ssr_rainbow_frame",
+                "art/gacha/frames/reveal-card-ssr.webp",
+            ),
+            ArtOutput::named("ssr_rainbow_plate", "art/gacha/effects/ssr-card-plate.webp"),
+            ArtOutput::named(
+                "ssr_rainbow_plate_hole",
+                "art/gacha/effects/ssr-card-plate-hole.webp",
+            ),
+            ArtOutput::named("eff_cir_ssr00", "art/gacha/effects/ssr-circle.webp"),
+            ArtOutput::named(
+                "rainbow_reflect_circle",
+                "art/gacha/effects/rainbow-reflect-01.webp",
+            ),
+            ArtOutput::named(
+                "rainbow_reflect_circle02",
+                "art/gacha/effects/rainbow-reflect-02.webp",
+            ),
+            ArtOutput::named(
+                "rainbow_reflect_circle03",
+                "art/gacha/effects/rainbow-reflect-03.webp",
+            ),
+            ArtOutput::named("eff_lig_gr00", "art/gacha/effects/light-glow.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_charaicon_open00",
+        outputs: &[
+            ArtOutput::named("fr_icon_ssr00", "art/gacha/frames/character-icon-ssr.webp"),
+            ArtOutput::named("tx_icon_sq00", "art/gacha/frames/character-icon-square.webp"),
+            ArtOutput::named("eff_dought_ssr00", "art/gacha/effects/ssr-ring-icon.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_supportcard_r00",
+        outputs: &[
+            ArtOutput::named("bg_r00", "art/gacha/backgrounds/reveal-r.webp"),
+            ArtOutput::named("icon_r", "art/gacha/badges/reveal-r.webp"),
+            ArtOutput::named("BG_effect_ring_1", "art/gacha/effects/ring-r.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_supportcard_sr00",
+        outputs: &[
+            ArtOutput::named("bg_sr00", "art/gacha/backgrounds/reveal-sr.webp"),
+            ArtOutput::named("icon_sr", "art/gacha/badges/reveal-sr.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_supportcard_ssr00",
+        outputs: &[
+            ArtOutput::named("bg_ssr00", "art/gacha/backgrounds/reveal-ssr.webp"),
+            ArtOutput::named("icon_ssr", "art/gacha/badges/reveal-ssr.webp"),
+            ArtOutput::named("ef_rainbow_ring", "art/gacha/effects/ring-ssr.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_chara_comment00",
+        outputs: &[
+            ArtOutput::named(
+                "tx_bg_gacha_comment",
+                "art/gacha/backgrounds/character-reveal.webp",
+            ),
+            ArtOutput::named("img_urasymbol", "art/gacha/effects/ura-symbol.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_chara_name00_00",
+        outputs: &[
+            ArtOutput::named("base101A", "art/gacha/nameplates/1-star.webp"),
+            ArtOutput::named("base101B", "art/gacha/nameplates/1-star-sub.webp"),
+            ArtOutput::named("utx_ico_star00", "art/gacha/badges/star.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_chara_name01_00",
+        outputs: &[
+            ArtOutput::named("base201A", "art/gacha/nameplates/2-star.webp"),
+            ArtOutput::named("base201B", "art/gacha/nameplates/2-star-sub.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_chara_name02_00",
+        outputs: &[
+            ArtOutput::named("base300", "art/gacha/nameplates/3-star.webp"),
+            ArtOutput::named("base301B", "art/gacha/nameplates/3-star-sub.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_icon_new00",
+        outputs: &[
+            ArtOutput::named("img_icon_new", "art/gacha/badges/new.webp"),
+            ArtOutput::named("icon_new_base", "art/gacha/badges/new-base.webp"),
+            ArtOutput::named("icon_new_text", "art/gacha/badges/new-text.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_chara_piece00",
+        outputs: &[
+            ArtOutput::named("ico_muse_h00", "art/gacha/badges/goddess-statue.webp"),
+            ArtOutput::named("ico_bonus", "art/gacha/badges/bonus.webp"),
+        ],
+    },
+    ArtFamily {
+        source: "uianimation/flash/gacha/pf_fl_gacha_ribbon_gachatop_btn00",
+        outputs: &[ArtOutput::named(
+            "utx_frm_gacha_ribbon_00",
+            "art/gacha/ui/button-ribbon.webp",
+        )],
     },
 ];
 
@@ -461,10 +683,107 @@ pub(super) const ATLAS_FAMILIES: &[AtlasFamily] = &[
             named("utx_ico_rarity_00", "art/ui/support-rarities/r.webp"),
             named("utx_ico_rarity_01", "art/ui/support-rarities/sr.webp"),
             named("utx_ico_rarity_02", "art/ui/support-rarities/ssr.webp"),
+            named("utx_frm_effect00", "art/ui/frames/glow-gold.webp"),
+            named("utx_frm_effect01", "art/ui/frames/glow-white.webp"),
+            named(
+                "utx_eff_listbase_glow_00_sl",
+                "art/ui/frames/list-glow-gold.webp",
+            ),
+            named(
+                "utx_eff_listbase_glow_01_sl",
+                "art/ui/frames/list-glow-pink.webp",
+            ),
+            named("utx_ico_strong_star_00", "art/ui/stars/filled.webp"),
+            named("utx_ico_strong_star_01", "art/ui/stars/empty.webp"),
+            named("utx_ico_limit_00", "art/ui/limit-break/empty.webp"),
+            named("utx_ico_limit_01", "art/ui/limit-break/filled.webp"),
+            named("utx_txt_new_00", "art/ui/badges/new.webp"),
+            named("utx_ico_limited_00", "art/ui/badges/limited-ribbon.webp"),
             named("utx_txt_season_00", "art/ui/seasons/spring.webp"),
             named("utx_txt_season_01", "art/ui/seasons/summer.webp"),
             named("utx_txt_season_02", "art/ui/seasons/fall.webp"),
             named("utx_txt_season_03", "art/ui/seasons/winter.webp"),
+        ],
+    },
+    AtlasFamily {
+        atlas: "atlas/gacha/gacha",
+        texture: "atlas/gacha/gacha_tex",
+        sprites: &[
+            named(
+                "img_supportcard_ssr_frame_effect",
+                "art/gacha/frames/card-glow-ssr.webp",
+            ),
+            named(
+                "img_supportcard_ssr_frame_effect_white",
+                "art/gacha/frames/card-glow-white.webp",
+            ),
+            named(
+                "img_chara_icon_ssr_frame00",
+                "art/gacha/frames/character-glow-ssr.webp",
+            ),
+            named(
+                "img_chara_icon_ssr_frame01",
+                "art/gacha/frames/character-glow-ssr-small.webp",
+            ),
+            named(
+                "utx_ico_gacha_item_00",
+                "art/gacha/tickets/character-3-star.webp",
+            ),
+            named(
+                "utx_ico_gacha_item_01",
+                "art/gacha/tickets/support-ssr.webp",
+            ),
+            named(
+                "utx_ico_gacha_item_02",
+                "art/gacha/tickets/character-2-star.webp",
+            ),
+            named("utx_ico_gacha_item_03", "art/gacha/tickets/support-sr.webp"),
+            named("utx_txt_prize_00", "art/gacha/prizes/1st.webp"),
+            named("utx_txt_prize_01", "art/gacha/prizes/2nd.webp"),
+            named("utx_txt_prize_02", "art/gacha/prizes/3rd.webp"),
+            named("utx_txt_prize_03", "art/gacha/prizes/4th.webp"),
+            named("utx_txt_prize_04", "art/gacha/prizes/5th.webp"),
+            named("utx_txt_prize_05", "art/gacha/prizes/6th.webp"),
+            named("utx_btn_gacha_00", "art/gacha/buttons/scout-gold.webp"),
+            named("utx_btn_gacha_01", "art/gacha/buttons/scout-green.webp"),
+            named("utx_btn_gacha_change_00", "art/gacha/buttons/exchange.webp"),
+            named(
+                "utx_ico_gacha_change_00",
+                "art/gacha/buttons/exchange-icon.webp",
+            ),
+            named("utx_frm_gachacopy_00", "art/gacha/ui/copy-bubble.webp"),
+            named("utx_frm_gachalogo_00", "art/gacha/ui/logo-glow.webp"),
+            named("utx_frm_gachashadow_00_sl", "art/gacha/ui/shadow.webp"),
+            named(
+                "utx_txt_gacha_ribbontext_01",
+                "art/gacha/ribbons/2-star-guaranteed.webp",
+            ),
+            named(
+                "utx_txt_gacha_ribbontext_02",
+                "art/gacha/ribbons/3-star-guaranteed.webp",
+            ),
+            named(
+                "utx_txt_gacha_ribbontext_03",
+                "art/gacha/ribbons/ssr-guaranteed.webp",
+            ),
+            named(
+                "utx_txt_gacha_ribbontext_04",
+                "art/gacha/ribbons/sr-guaranteed.webp",
+            ),
+            named(
+                "utx_txt_gacha_ribbontext_05",
+                "art/gacha/ribbons/one-per-day.webp",
+            ),
+            named(
+                "utx_txt_gacha_ribbontext_06",
+                "art/gacha/ribbons/one-more-free.webp",
+            ),
+            numbered(
+                "utx_txt_gacha_ribbontext_05_{n}",
+                1..=20,
+                2,
+                "art/gacha/ribbons/per-day-{n}.webp",
+            ),
         ],
     },
     AtlasFamily {
