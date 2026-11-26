@@ -62,6 +62,12 @@ fn current_paths(manifest: &ResourceManifest) -> Vec<String> {
         "/resources/masterdata/preliminary-versions.json".to_string(),
         "/resources/masterdata/preliminary/master.mdb.gz".to_string(),
     ];
+    if let Some(preliminary) = &manifest.preliminary_master {
+        paths.push(format!(
+            "/resources/masterdata/diffs/{}.json.gz",
+            preliminary.short_hash
+        ));
+    }
     for artifact in &manifest.artifacts {
         paths.push(artifact.current_path.clone());
         paths.push(format!("/resources/current/{}.gz", artifact.name));
@@ -175,5 +181,25 @@ mod tests {
                 "/resources/jp/current/skills.json.gz",
             ]
         );
+    }
+
+    #[test]
+    fn global_purge_includes_preliminary_diff_when_staged() {
+        let mut with_prelim = manifest("/resources/en");
+        with_prelim.preliminary_master = Some(crate::pipeline::PreliminaryMasterInfo {
+            marker: "preliminary:10008800".to_string(),
+            resource_version: "10008800".to_string(),
+            live_resource_version: "10008795".to_string(),
+            detected_at: "2026-11-24T12:00:00Z".to_string(),
+            cdn_last_modified: None,
+            sha256: "d2ef9d9033fd0000000000000000000000000000000000000000000000000000".to_string(),
+            short_hash: "d2ef9d9033fd".to_string(),
+            path: "/resources/masterdata/preliminary/v1/master.mdb.gz".to_string(),
+            current_path: "/resources/masterdata/preliminary/master.mdb.gz".to_string(),
+            bytes: 123,
+        });
+
+        assert!(current_paths(&with_prelim)
+            .contains(&"/resources/masterdata/diffs/d2ef9d9033fd.json.gz".to_string()));
     }
 }

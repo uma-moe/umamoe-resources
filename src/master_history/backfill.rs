@@ -207,6 +207,7 @@ impl<'a> HistoryBackfill<'a> {
 
         let mut releases = self.releases;
         releases.extend_from_slice(later_releases);
+        super::sortReleasesByResourceVersion(&mut releases);
         writeReleases(&versions_path, &releases)?;
         Ok(releases.len())
     }

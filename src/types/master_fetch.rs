@@ -7,11 +7,11 @@ pub(super) const VERSION_URL: &str = "https://uma.moe/api/ver";
 /// Points the version check at another backend, such as a local one.
 pub(super) const VERSION_URL_VARIABLE: &str = "GAME_VERSION_URL";
 
-/// Global CDN resource versions advance in multiples of ten.
-pub(super) const EARLY_PROBE_STEP: u64 = 10;
+/// Global CDN resource versions advance on multiples of ten, with hotfixes in between (such as +5).
+pub(super) const EARLY_PROBE_STEP: u64 = 5;
 
-/// Look ahead up to +1000 from the live Global resource version (100 steps of +10).
-pub(super) const EARLY_PROBE_MAX_STEPS: u64 = 100;
+/// Look ahead up to +1000 from the live Global resource version (200 steps of +5).
+pub(super) const EARLY_PROBE_MAX_STEPS: u64 = 200;
 
 /// Concurrent HEAD probes when scanning ahead for an unreleased Global CDN manifest.
 pub(super) const EARLY_PROBE_CONCURRENCY: usize = 8;

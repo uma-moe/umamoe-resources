@@ -56,6 +56,7 @@ pub fn recordRelease(
 ) -> Result<()> {
     let versions_path = versionsPath(data_dir);
     let mut releases = readReleases(&versions_path)?;
+    let mut reordered = sortReleasesByResourceVersion(&mut releases);
     let last_live_hash = releases
         .iter()
         .rev()
@@ -67,8 +68,13 @@ pub fn recordRelease(
         .find(|release| release.hash == current.sha256)
     {
         if !existing.is_preliminary {
+            let mut updated = false;
             if existing.resource_version.is_none() && resource_version.is_some() {
                 existing.resource_version = resource_version.map(str::to_string);
+                updated = true;
+            }
+            reordered |= sortReleasesByResourceVersion(&mut releases);
+            if updated || reordered {
                 writeReleases(&versions_path, &releases)?;
             }
             return Ok(());
@@ -91,6 +97,7 @@ pub fn recordRelease(
         }
         let short_hash = existing.short_hash.clone();
         let summary = existing.summary;
+        sortReleasesByResourceVersion(&mut releases);
         writeReleases(&versions_path, &releases)?;
         info!(
             short_hash,
@@ -116,6 +123,7 @@ pub fn recordRelease(
         detected_at: None,
         cdn_last_modified: None,
     });
+    sortReleasesByResourceVersion(&mut releases);
 
     // The diff is written first, so the history never lists a diff that is not there yet.
     writeReleases(&versions_path, &releases)?;
@@ -139,14 +147,17 @@ pub fn recordPreliminaryRelease(
 
     let versions_path = versionsPath(data_dir);
     let mut releases = readReleases(&versions_path)?;
+    let mut changed = sortReleasesByResourceVersion(&mut releases);
     if let Some(existing) = releases
         .iter_mut()
         .find(|release| release.hash == early.sha256)
     {
         if !existing.is_preliminary {
+            if changed {
+                writeReleases(&versions_path, &releases)?;
+            }
             return Ok(());
         }
-        let mut changed = false;
         if existing.resource_version.as_deref() != Some(meta.resource_version.as_str()) {
             existing.resource_version = Some(meta.resource_version.clone());
             changed = true;
@@ -155,6 +166,13 @@ pub fn recordPreliminaryRelease(
             existing.cdn_last_modified = meta.last_modified.clone();
             changed = true;
         }
+        if existing.previous_hash.as_deref() != Some(live.sha256) || existing.summary.is_none() {
+            let diff_date = existing.date.clone();
+            existing.previous_hash = Some(live.sha256.to_string());
+            existing.summary = writeDiff(data_dir, live.sha256, Some(live), early, &diff_date)?;
+            changed = true;
+        }
+        changed |= sortReleasesByResourceVersion(&mut releases);
         if changed {
             writeReleases(&versions_path, &releases)?;
         }
@@ -174,6 +192,7 @@ pub fn recordPreliminaryRelease(
         detected_at: Some(meta.detected_at.clone()),
         cdn_last_modified: meta.last_modified.clone(),
     });
+    sortReleasesByResourceVersion(&mut releases);
     writeReleases(&versions_path, &releases)?;
     info!(
         short_hash,
@@ -194,14 +213,15 @@ pub fn recordPreliminaryVersion(
 ) -> Result<()> {
     let path = preliminaryVersionsPath(data_dir);
     let mut versions = readPreliminaryVersions(&path)?;
+    let mut changed = sortPreliminaryVersions(&mut versions);
     if let Some(existing) = versions.iter_mut().find(|entry| {
         entry.resource_version == meta.resource_version && entry.master_sha256 == master_sha256
     }) {
-        let mut changed = false;
         if existing.cdn_last_modified != meta.last_modified {
             existing.cdn_last_modified = meta.last_modified.clone();
             changed = true;
         }
+        changed |= sortPreliminaryVersions(&mut versions);
         if changed {
             writePreliminaryVersions(&path, &versions)?;
         }
@@ -218,6 +238,7 @@ pub fn recordPreliminaryVersion(
         cdn_last_modified: meta.last_modified.clone(),
         promoted_at: None,
     });
+    sortPreliminaryVersions(&mut versions);
     writePreliminaryVersions(&path, &versions)?;
     Ok(())
 }
@@ -237,7 +258,7 @@ pub fn markPromotedPreliminaryVersions(
         return Ok(());
     }
     let mut versions = readPreliminaryVersions(&path)?;
-    let mut changed = false;
+    let mut changed = sortPreliminaryVersions(&mut versions);
     for entry in &mut versions {
         if entry.promoted_at.is_some() {
             continue;
@@ -256,6 +277,71 @@ pub fn markPromotedPreliminaryVersions(
         writePreliminaryVersions(&path, &versions)?;
     }
     Ok(())
+}
+
+fn parseResourceVersionNumber(value: Option<&str>) -> Option<u64> {
+    value.and_then(|version| version.trim().parse::<u64>().ok())
+}
+
+/// Orders releases with a numeric `resource_version` ascending (oldest/lowest first) while keeping
+/// legacy unversioned entries in their recorded slots. When a preliminary upload and a live release
+/// share the same `resource_version`, the preliminary entry sorts earlier so live appears newest.
+pub(super) fn sortReleasesByResourceVersion(releases: &mut [MasterRelease]) -> bool {
+    let versioned_indices: Vec<usize> = releases
+        .iter()
+        .enumerate()
+        .filter_map(|(index, release)| {
+            parseResourceVersionNumber(release.resource_version.as_deref()).map(|_| index)
+        })
+        .collect();
+    if versioned_indices.len() <= 1 {
+        return false;
+    }
+
+    let mut versioned: Vec<(usize, MasterRelease)> = versioned_indices
+        .iter()
+        .map(|&index| (index, releases[index].clone()))
+        .collect();
+    versioned.sort_by(|(left_index, left), (right_index, right)| {
+        let left_ver = parseResourceVersionNumber(left.resource_version.as_deref()).unwrap_or(0);
+        let right_ver = parseResourceVersionNumber(right.resource_version.as_deref()).unwrap_or(0);
+        left_ver
+            .cmp(&right_ver)
+            .then_with(|| (!left.is_preliminary).cmp(&(!right.is_preliminary)))
+            .then_with(|| left.date.cmp(&right.date))
+            .then_with(|| left_index.cmp(right_index))
+    });
+
+    let mut changed = false;
+    for (slot_index, (_, sorted_release)) in versioned_indices.into_iter().zip(versioned) {
+        if releases[slot_index] != sorted_release {
+            releases[slot_index] = sorted_release;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn sortPreliminaryVersions(versions: &mut [PreliminaryResourceVersion]) -> bool {
+    let mut indexed: Vec<(usize, PreliminaryResourceVersion)> =
+        versions.iter().cloned().enumerate().collect();
+    indexed.sort_by(|(left_index, left), (right_index, right)| {
+        let left_ver = parseResourceVersionNumber(Some(&left.resource_version));
+        let right_ver = parseResourceVersionNumber(Some(&right.resource_version));
+        left_ver
+            .cmp(&right_ver)
+            .then_with(|| left.detected_at.cmp(&right.detected_at))
+            .then_with(|| left_index.cmp(right_index))
+    });
+
+    let mut changed = false;
+    for (slot_index, (_, sorted_entry)) in indexed.into_iter().enumerate() {
+        if versions[slot_index] != sorted_entry {
+            versions[slot_index] = sorted_entry;
+            changed = true;
+        }
+    }
+    changed
 }
 
 /// Writes the diff from the latest listed release when its database is the one being replaced.
@@ -601,6 +687,113 @@ mod tests {
             prelim_versions[0].promoted_at.as_deref(),
             Some("2026-12-01T22:00:00Z")
         );
+        std::fs::remove_dir_all(data_dir).unwrap();
+    }
+
+    #[test]
+    fn inBetweenLiveHotfixSortsBeforeHigherPreliminaryAndRefreshesPreliminaryDiff() {
+        let data_dir = temporaryDirectory("hotfix-order");
+        let legacy_path = data_dir.join("legacy.mdb");
+        let live_path = data_dir.join("live.mdb");
+        let hotfix_path = data_dir.join("hotfix.mdb");
+        let early_path = data_dir.join("early.mdb");
+        writeMaster(
+            &legacy_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'legacy');",
+        );
+        writeMaster(
+            &live_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'live');",
+        );
+        writeMaster(
+            &hotfix_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'hotfix');",
+        );
+        writeMaster(
+            &early_path,
+            "CREATE TABLE item (id INTEGER PRIMARY KEY, name TEXT); INSERT INTO item VALUES (1, 'live'), (2, 'early');",
+        );
+
+        let legacy_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        let legacy = MasterSnapshot {
+            sha256: legacy_hash,
+            path: &legacy_path,
+        };
+        let live = MasterSnapshot {
+            sha256: FIRST_HASH,
+            path: &live_path,
+        };
+        let hotfix = MasterSnapshot {
+            sha256: THIRD_HASH,
+            path: &hotfix_path,
+        };
+        let early = MasterSnapshot {
+            sha256: SECOND_HASH,
+            path: &early_path,
+        };
+        let meta = EarlyMasterMeta {
+            resource_version: "10008800".into(),
+            live_resource_version: "10008790".into(),
+            detected_at: "2026-11-24T12:00:00Z".into(),
+            last_modified: Some("Tue, 24 Nov 2026 11:14:05 GMT".into()),
+        };
+
+        recordRelease(&data_dir, &legacy, None, "2026-11-17", None).unwrap();
+        recordRelease(
+            &data_dir,
+            &live,
+            Some(&legacy),
+            "2026-11-20",
+            Some("10008790"),
+        )
+        .unwrap();
+        recordPreliminaryRelease(&data_dir, &early, &live, &meta, "2026-11-24").unwrap();
+
+        // An in-between live hotfix (10008795) arrives after preliminary 10008800 was recorded.
+        recordRelease(
+            &data_dir,
+            &hotfix,
+            Some(&live),
+            "2026-11-26",
+            Some("10008795"),
+        )
+        .unwrap();
+
+        let releases = readReleases(&data_dir);
+        let ordered: Vec<(Option<&str>, bool)> = releases
+            .iter()
+            .map(|r| (r.resource_version.as_deref(), r.is_preliminary))
+            .collect();
+        assert_eq!(
+            ordered,
+            vec![
+                (None, false),
+                (Some("10008790"), false),
+                (Some("10008795"), false),
+                (Some("10008800"), true),
+            ]
+        );
+        assert_eq!(releases[2].previous_hash.as_deref(), Some(FIRST_HASH));
+
+        // Re-recording the preliminary release against the new live hotfix refreshes its diff base.
+        let updated_meta = EarlyMasterMeta {
+            live_resource_version: "10008795".into(),
+            ..meta
+        };
+        recordPreliminaryRelease(&data_dir, &early, &hotfix, &updated_meta, "2026-11-26").unwrap();
+
+        let releases = readReleases(&data_dir);
+        assert_eq!(releases[3].hash, SECOND_HASH);
+        assert_eq!(releases[3].previous_hash.as_deref(), Some(THIRD_HASH));
+        assert_eq!(releases[3].date, "2026-11-24");
+        assert_eq!(releases[3].summary.unwrap().added, 1);
+        assert_eq!(releases[3].summary.unwrap().modified, 1);
+
+        let compressed = std::fs::read(diffPath(&data_dir, "222222222222")).unwrap();
+        let diff: MasterDiff = serde_json::from_reader(GzDecoder::new(&compressed[..])).unwrap();
+        assert_eq!(diff.from_hash, THIRD_HASH);
+        assert_eq!(diff.to_hash, SECOND_HASH);
+
         std::fs::remove_dir_all(data_dir).unwrap();
     }
 }

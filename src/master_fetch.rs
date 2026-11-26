@@ -166,32 +166,78 @@ pub async fn maybeUpdateEarlyMasterMdb(source: &CdnSource, live_master: &Path) -
         return Ok(false);
     };
 
+    let early_path = earlyMasterPath(live_master);
+    let early_marker = markerPath(&early_path);
+    let existing = std::fs::read_to_string(&early_marker)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<EarlyMasterMeta>(&raw).ok());
+    let existing_version = existing
+        .as_ref()
+        .filter(|_| early_path.is_file())
+        .and_then(|meta| meta.resource_version.trim().parse::<u64>().ok());
+
     let client = reqwest::Client::new();
-    let found = probeHighestAhead(
+    let outcome = probeHighestAhead(
         &client,
         source.base_url,
         live_version,
         EARLY_PROBE_STEP,
         EARLY_PROBE_MAX_STEPS,
+        existing_version,
     )
     .await?;
 
-    let early_path = earlyMasterPath(live_master);
-    let early_marker = markerPath(&early_path);
-
-    let Some((candidate, last_modified)) = found else {
+    let Some((candidate, last_modified)) = outcome.highest else {
+        if outcome.had_errors && existing_version.is_some_and(|version| version > live_version) {
+            warn!(
+                region = source.region,
+                early_resource_version = existing_version.unwrap_or_default(),
+                live_resource_version = live_version_str,
+                "keeping staged early master.mdb after transient CDN probe errors"
+            );
+            return Ok(false);
+        }
         return Ok(clearEarlyMasterFiles(&early_path, &early_marker));
     };
 
+    if outcome.had_errors
+        && existing_version.is_some_and(|version| version > live_version && candidate < version)
+    {
+        warn!(
+            region = source.region,
+            early_resource_version = existing_version.unwrap_or_default(),
+            probed_resource_version = candidate,
+            live_resource_version = live_version_str,
+            "keeping higher staged early master.mdb after transient CDN probe errors"
+        );
+        return Ok(false);
+    }
+
     let candidate_version = candidate.to_string();
-    let existing = std::fs::read_to_string(&early_marker)
-        .ok()
-        .and_then(|raw| serde_json::from_str::<EarlyMasterMeta>(&raw).ok());
     if early_path.is_file()
         && existing.as_ref().is_some_and(|meta| {
             meta.resource_version == candidate_version && meta.last_modified == last_modified
         })
     {
+        if let Some(mut meta) = existing {
+            if meta.live_resource_version != live_version_str {
+                meta.live_resource_version = live_version_str.clone();
+                let body = serde_json::to_vec_pretty(&meta)?;
+                std::fs::write(&early_marker, body).with_context(|| {
+                    format!(
+                        "failed to write early master marker to {}",
+                        early_marker.display()
+                    )
+                })?;
+                info!(
+                    region = source.region,
+                    early_resource_version = candidate_version,
+                    live_resource_version = live_version_str,
+                    "kept staged early master.mdb ahead of new live version"
+                );
+                return Ok(true);
+            }
+        }
         info!(
             region = source.region,
             early_resource_version = candidate_version,
@@ -245,17 +291,51 @@ fn clearEarlyMasterFiles(early_path: &Path, early_marker: &Path) -> bool {
     removed
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct EarlyProbeOutcome {
+    highest: Option<(u64, Option<String>)>,
+    had_errors: bool,
+}
+
+/// Builds sorted candidate resource versions strictly greater than `live_version`, aligned to
+/// multiples of `step` so an in-between hotfix (such as `10008795`) still probes regular releases
+/// (such as `10008800`), plus any already-staged higher preliminary version.
+fn probeCandidates(
+    live_version: u64,
+    step: u64,
+    max_steps: u64,
+    existing_version: Option<u64>,
+) -> Vec<u64> {
+    let mut candidates = Vec::with_capacity(max_steps as usize + 1);
+    if step > 0 {
+        let first = (live_version / step + 1).saturating_mul(step);
+        for index in 0..max_steps {
+            candidates.push(first.saturating_add(index.saturating_mul(step)));
+        }
+    }
+    if let Some(existing) = existing_version.filter(|&version| version > live_version) {
+        if !candidates.contains(&existing) {
+            candidates.push(existing);
+        }
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+    candidates
+}
+
 async fn probeHighestAhead(
     client: &reqwest::Client,
     base_url: &str,
     live_version: u64,
     step: u64,
     max_steps: u64,
-) -> Result<Option<(u64, Option<String>)>> {
+    existing_version: Option<u64>,
+) -> Result<EarlyProbeOutcome> {
     let base = base_url.trim_end_matches('/').to_string();
-    let mut pending = (1..=max_steps).map(|index| live_version + index * step);
+    let mut pending = probeCandidates(live_version, step, max_steps, existing_version).into_iter();
     let mut tasks = JoinSet::new();
     let mut highest: Option<(u64, Option<String>)> = None;
+    let mut had_errors = false;
 
     loop {
         while tasks.len() < EARLY_PROBE_CONCURRENCY {
@@ -281,6 +361,7 @@ async fn probeHighestAhead(
             }
             Ok(None) => {}
             Err(error) => {
+                had_errors = true;
                 warn!(
                     candidate,
                     error = format!("{error:#}"),
@@ -290,7 +371,10 @@ async fn probeHighestAhead(
         }
     }
 
-    Ok(highest)
+    Ok(EarlyProbeOutcome {
+        highest,
+        had_errors,
+    })
 }
 
 /// The version marker next to master.mdb.
@@ -553,18 +637,91 @@ mod tests {
 
         let client = reqwest::Client::new();
         let base = format!("http://{address}");
-        let found = probeHighestAhead(&client, &base, 10008790, 10, 5)
+        let found = probeHighestAhead(&client, &base, 10008790, 10, 5, None)
             .await
             .unwrap();
         assert_eq!(
             found,
-            Some((10008830, Some("Wed, 25 Nov 2026 09:00:00 GMT".to_string())))
+            EarlyProbeOutcome {
+                highest: Some((10008830, Some("Wed, 25 Nov 2026 09:00:00 GMT".to_string()))),
+                had_errors: false,
+            }
         );
 
-        let none = probeHighestAhead(&client, &base, 10008830, 10, 5)
+        // An in-between live hotfix (10008795) must still find aligned releases (10008800, 10008830).
+        let from_hotfix = probeHighestAhead(&client, &base, 10008795, 5, 10, None)
             .await
             .unwrap();
-        assert_eq!(none, None);
+        assert_eq!(
+            from_hotfix,
+            EarlyProbeOutcome {
+                highest: Some((10008830, Some("Wed, 25 Nov 2026 09:00:00 GMT".to_string()))),
+                had_errors: false,
+            }
+        );
+
+        let none = probeHighestAhead(&client, &base, 10008830, 10, 5, None)
+            .await
+            .unwrap();
+        assert_eq!(
+            none,
+            EarlyProbeOutcome {
+                highest: None,
+                had_errors: false,
+            }
+        );
+        server.abort();
+    }
+
+    #[test]
+    fn probeCandidatesAlignToStepAndKeepStagedHigherVersion() {
+        assert_eq!(
+            probeCandidates(10008795, 5, 4, None),
+            vec![10008800, 10008805, 10008810, 10008815]
+        );
+        assert_eq!(
+            probeCandidates(10008795, 10, 3, None),
+            vec![10008800, 10008810, 10008820]
+        );
+        assert_eq!(
+            probeCandidates(10008795, 5, 3, Some(10008802)),
+            vec![10008800, 10008802, 10008805, 10008810]
+        );
+        // Once live reaches or passes the staged version, it is not probed again.
+        assert_eq!(
+            probeCandidates(10008800, 5, 2, Some(10008800)),
+            vec![10008805, 10008810]
+        );
+    }
+
+    #[tokio::test]
+    async fn probeHighestAheadReportsTransientServerErrors() {
+        use axum::http::StatusCode;
+        use axum::{routing::head, Router};
+
+        let app = Router::new()
+            .route(
+                "/10008800/manifests/manifestdat/root.manifest.bsv.lz4",
+                head(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+            )
+            .fallback(|| async { StatusCode::FORBIDDEN });
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let client = reqwest::Client::new();
+        let base = format!("http://{address}");
+        let outcome = probeHighestAhead(&client, &base, 10008795, 5, 2, Some(10008800))
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome,
+            EarlyProbeOutcome {
+                highest: None,
+                had_errors: true,
+            }
+        );
         server.abort();
     }
 }
